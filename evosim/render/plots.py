@@ -140,6 +140,60 @@ def plot_run(run_dir: str | Path) -> Path:
             fig.savefig(out / "performance.png", dpi=110)
             plt.close(fig)
 
+    # 資源利用率 (改善方針 Ver.1.2 §5): 累積値の差分から区間レートを求める
+    if "flow_light_cum" in s and len(t) > 1:
+        dt = np.diff(t)
+        dt[dt == 0] = 1
+
+        def rate(name: str) -> np.ndarray:
+            return np.diff(s[name]) / dt
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+        ax = axes[0]
+        ax.plot(t[1:], rate("flow_light_cum"), label="light", color="tab:green")
+        ax.plot(t[1:], rate("flow_chemical_cum"), label="chemical", color="tab:purple")
+        ax.plot(t[1:], rate("flow_corpse_energy_cum"), label="corpse E", color="tab:brown")
+        ax.plot(t[1:], rate("flow_predation_energy_cum"), label="predation E", color="tab:red")
+        unused = rate("light_supply_cum") - rate("flow_light_cum")
+        ax.plot(t[1:], unused, label="unused light", color="gray", ls=":")
+        ax.set_title("Energy intake per tick")
+        ax.set_xlabel("tick")
+        ax.legend(fontsize=8)
+        _mark_disasters(ax, dis)
+        ax = axes[1]
+        ax.plot(t[1:], rate("flow_nutrient_cum"), label="inorganic nutrient", color="tab:green")
+        ax.plot(t[1:], rate("flow_corpse_matter_cum"), label="corpse matter", color="tab:brown")
+        ax.plot(t[1:], rate("flow_predation_matter_cum"), label="predation matter", color="tab:red")
+        ax.set_title("Matter intake per tick")
+        ax.set_xlabel("tick")
+        ax.legend(fontsize=8)
+        _mark_disasters(ax, dis)
+        fig.tight_layout()
+        fig.savefig(out / "resources.png", dpi=110)
+        plt.close(fig)
+
+    # 系統別人口シェア (改善方針 Ver.1.2 §4): 席巻が起きているかを見る
+    lin_path = run_dir / "lineages.csv"
+    if lin_path.exists():
+        ln = _load_csv(lin_path)
+        if len(ln["tick"]) > 0:
+            ids = np.unique(ln["lineage_id"])
+            peak = sorted(((lid, float(ln["frac"][ln["lineage_id"] == lid].max()))
+                           for lid in ids), key=lambda kv: -kv[1])
+            fig, ax = plt.subplots(figsize=(10, 5))
+            for lid, _ in peak[:10]:
+                m = ln["lineage_id"] == lid
+                ax.plot(ln["tick"][m], ln["frac"][m], lw=1.2, label=f"lineage {int(lid)}")
+            ax.set_xlabel("tick")
+            ax.set_ylabel("population share")
+            ax.set_ylim(0, 1)
+            ax.set_title("Top lineage population share")
+            ax.legend(fontsize=7, ncol=2)
+            _mark_disasters(ax, dis)
+            fig.tight_layout()
+            fig.savefig(out / "lineages.png", dpi=110)
+            plt.close(fig)
+
     snaps = sorted((run_dir / "snapshots").glob("snap_*.csv"))
     if snaps:
         with open(snaps[-1], encoding="utf-8") as f:

@@ -44,6 +44,21 @@ class Simulation:
         self.energy_in_cum = 0.0        # 光吸収 + 化学湧出
         self.energy_out_cum = 0.0       # 全散逸 (熱)
 
+        # 資源利用率 (改善方針 Ver.1.2 §5): 経路別の累積獲得量。進化には不使用
+        self.flows = {
+            "light": 0.0,             # 光から得たエネルギー
+            "chemical": 0.0,          # 化学ストックから得たエネルギー
+            "nutrient": 0.0,          # 無機栄養から得た物質
+            "corpse_matter": 0.0,     # 死骸から同化した物質
+            "corpse_energy": 0.0,     # 死骸から得たエネルギー
+            "predation_energy": 0.0,  # 捕食で得たエネルギー
+            "predation_matter": 0.0,  # 捕食で同化した物質
+        }
+        # 世界全体の光供給量/tick (未利用光量の算出用・不変)
+        self.light_supply_per_tick = float(self.world.light.sum())
+        # 系統別の累積出生数 (系統別統計用)
+        self.births_by_lineage: dict[int, int] = {}
+
         self.recorder: Recorder | None = (
             Recorder(run_dir, cfg, seed) if run_dir is not None else None)
 
@@ -68,6 +83,8 @@ class Simulation:
             if self.recorder:
                 self.recorder.birth(0, org)
             self.births_cum += 1
+            self.births_by_lineage[org.lineage_id] = (
+                self.births_by_lineage.get(org.lineage_id, 0) + 1)
         # 初期個体の身体物質は栄養プール外から与えられたものとして台帳初期化
         # (initial_system_matter に含まれるので保存則は成立する)
 
@@ -192,6 +209,7 @@ class Simulation:
             gain = min(share, max(0.0, e_max - org.energy))
             org.energy += gain
             self.energy_in_cum += gain
+            self.flows["light"] += gain
 
         # 化学 (現在セルのストックから; フィールド→個体の移動なので流入計上なし)
         ix, iy = self.world.cell_index(org.x, org.y)
@@ -202,6 +220,7 @@ class Simulation:
                 u = min(rate, stock, max(0.0, e_max - org.energy))
                 org.energy += u
                 self.world.chemical[ix, iy] = stock - u
+                self.flows["chemical"] += u
 
         # 無機栄養 (物質; 吸収には同化エネルギーコスト)
         matter_cap = cfg.matter_cap_frac * org.target_size
@@ -219,6 +238,7 @@ class Simulation:
                     org.energy -= cost
                     self.world.nutrients[ix, iy] = stock - u
                     self.energy_out_cum += cost
+                    self.flows["nutrient"] += u
 
     def _eat_corpse(self, org: Organism) -> None:
         cfg = self.cfg
@@ -261,6 +281,8 @@ class Simulation:
         self.energy_out_cum += e_take - e_gain
         target.energy -= e_take
         target.matter -= bite
+        self.flows["corpse_matter"] += assim
+        self.flows["corpse_energy"] += e_gain
 
     def _predate(self, org: Organism) -> None:
         cfg = self.cfg
@@ -307,6 +329,8 @@ class Simulation:
         m_gain = min(m_take * cfg.assimilation, max(0.0, matter_cap - org.matter))
         target.matter -= m_take
         org.matter += m_gain
+        self.flows["predation_energy"] += e_gain
+        self.flows["predation_matter"] += m_gain
         tx, ty = self.world.cell_index(target.x, target.y)
         self.world.nutrients[tx, ty] += m_take - m_gain
         # 咬まれて身体を失った獲物のエネルギー上限超過分は散逸
@@ -391,6 +415,8 @@ class Simulation:
                          cx, cy, ang, e_child, m_child)
         self.next_id += 1
         self.births_cum += 1
+        self.births_by_lineage[child.lineage_id] = (
+            self.births_by_lineage.get(child.lineage_id, 0) + 1)
         if self.recorder:
             self.recorder.birth(self.tick, child)
         return child

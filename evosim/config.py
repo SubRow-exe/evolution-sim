@@ -106,6 +106,10 @@ class Config:
     stats_interval: int = 20
     snapshot_interval: int = 2000
 
+    # --- 安全装置 (改善方針 Ver.1.2 §9) ---
+    # 個体数がこの値に達したら自動保存して停止する。個体を殺す処理ではない。0=無効
+    max_population_halt: int = 20000
+
     def to_json(self, path: str | Path) -> None:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
