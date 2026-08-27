@@ -48,6 +48,10 @@ def main() -> None:
                 if not sim.organisms:
                     print(f"EXTINCT at tick {sim.tick}")
                     break
+                if cfg.max_population_halt and len(sim.organisms) >= cfg.max_population_halt:
+                    print(f"個体数が上限 {cfg.max_population_halt} に到達: "
+                          f"tick {sim.tick} で自動保存して停止します")
+                    break
                 if (i + 1) % 5000 == 0:
                     el = time.perf_counter() - t0
                     print(f"tick {sim.tick:>8}  pop {len(sim.organisms):>5}  "

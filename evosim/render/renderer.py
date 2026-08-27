@@ -16,11 +16,12 @@ from ..simulation import Simulation
 
 SIDEBAR = 230
 FPS = 30
-FRAME_BUDGET_SEC = 0.1
+FRAME_BUDGET_SEC = 0.1  # 1フレームでシミュレーションに使う時間の上限 (キー応答性の確保)
 
 
 class Viewer:
     def __init__(self, sim: Simulation, make_sim=None):
+        """make_sim: 新しいseedで Simulation を作るファクトリ (Rキー用)。"""
         self.sim = sim
         self.make_sim = make_sim
         self.paused = False
@@ -31,6 +32,7 @@ class Viewer:
 
     def run(self) -> None:
         pygame.init()
+        # 日本語IMEがキー入力を横取りしてKEYDOWNが届かなくなるのを防ぐ
         pygame.key.stop_text_input()
         cfg = self.sim.cfg
         w = int(cfg.world_width)
@@ -48,6 +50,7 @@ class Viewer:
                 elif ev.type == pygame.KEYDOWN:
                     running = self._on_key(ev)
                 elif ev.type == pygame.TEXTINPUT:
+                    # IME等でKEYDOWNが届かない環境向けのフォールバック
                     running = self._on_char(ev.text)
 
             if not self.paused:
@@ -62,6 +65,14 @@ class Viewer:
                     if not self.sim.organisms:
                         self.paused = True
                         self.message = "EXTINCT"
+                        break
+                    halt = self.sim.cfg.max_population_halt
+                    if halt and len(self.sim.organisms) >= halt:
+                        # 安全装置: 自動保存して一時停止 (個体は殺さない)
+                        if self.sim.recorder:
+                            self.sim.recorder.finalize(self.sim)
+                        self.paused = True
+                        self.message = f"POP LIMIT {halt}: saved & paused"
                         break
                     if time.perf_counter() > budget_end:
                         break
@@ -129,7 +140,7 @@ class Viewer:
         self.message = "plots saved -> opening folder"
         try:
             import os
-            os.startfile(str(out))
+            os.startfile(str(out))  # エクスプローラーでグラフフォルダを開く
         except OSError:
             self.message = f"plots -> {out}"
 
