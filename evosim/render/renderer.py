@@ -28,6 +28,7 @@ class Viewer:
         self.paused = False
         self.speed = 1
         self.message = ""
+        self.last_key = "-"
 
     def run(self) -> None:
         pygame.init()
@@ -47,7 +48,10 @@ class Viewer:
                 if ev.type == pygame.QUIT:
                     running = False
                 elif ev.type == pygame.KEYDOWN:
-                    running = self._on_key(ev.key)
+                    running = self._on_key(ev)
+                elif ev.type == pygame.TEXTINPUT:
+                    # IME等でKEYDOWNが届かない環境向けのフォールバック
+                    running = self._on_char(ev.text)
 
             if not self.paused:
                 # 高速時も1フレームの実行時間に上限を設け、キー入力の応答性を保つ
@@ -70,32 +74,74 @@ class Viewer:
 
     # ------------------------------------------------------------------
 
-    def _on_key(self, key: int) -> bool:
+    def _on_key(self, ev) -> bool:
+        key = ev.key
+        self.last_key = pygame.key.name(key)
+        ch = (getattr(ev, "unicode", "") or "").lower()
         if key == pygame.K_ESCAPE:
             return False
-        if key == pygame.K_SPACE:
-            self.paused = not self.paused
-        elif key in (pygame.K_1, pygame.K_KP1):
-            self.speed = 1
-        elif key in (pygame.K_2, pygame.K_KP2):
-            self.speed = 10
-        elif key in (pygame.K_3, pygame.K_KP3):
-            self.speed = 100
-        elif key == pygame.K_d:
-            n = random_disaster(self.sim)
-            self.message = f"DISASTER: {n} killed"
-        elif key == pygame.K_g:
-            if self.sim.recorder:
-                from .plots import plot_run
-                out = plot_run(self.sim.recorder.dir)
-                self.message = f"plots -> {out}"
-            else:
-                self.message = "no recorder"
-        elif key == pygame.K_r and self.make_sim is not None:
-            self.sim.close()
-            self.sim = self.make_sim()
-            self.message = f"RESET seed={self.sim.seed}"
+        if key == pygame.K_SPACE or ch == " ":
+            self._toggle_pause()
+        elif key in (pygame.K_1, pygame.K_KP1) or ch == "1":
+            self._set_speed(1)
+        elif key in (pygame.K_2, pygame.K_KP2) or ch == "2":
+            self._set_speed(10)
+        elif key in (pygame.K_3, pygame.K_KP3) or ch == "3":
+            self._set_speed(100)
+        elif key == pygame.K_d or ch == "d":
+            self._disaster()
+        elif key == pygame.K_g or ch == "g":
+            self._graphs()
+        elif key == pygame.K_r or ch == "r":
+            self._reset()
         return True
+
+    def _on_char(self, text: str) -> bool:
+        ch = (text or "").lower()
+        self.last_key = f"'{ch}'"
+        actions = {" ": self._toggle_pause,
+                   "1": lambda: self._set_speed(1),
+                   "2": lambda: self._set_speed(10),
+                   "3": lambda: self._set_speed(100),
+                   "d": self._disaster, "g": self._graphs, "r": self._reset}
+        fn = actions.get(ch)
+        if fn:
+            fn()
+        return True
+
+    # --- キー動作 ---
+
+    def _toggle_pause(self) -> None:
+        self.paused = not self.paused
+        self.message = "PAUSED" if self.paused else "RESUMED"
+
+    def _set_speed(self, n: int) -> None:
+        self.speed = n
+        self.message = f"speed x{n}"
+
+    def _disaster(self) -> None:
+        n = random_disaster(self.sim)
+        self.message = f"DISASTER: {n} killed ({int(self.sim.cfg.disaster_kill_frac*100)}%)"
+
+    def _graphs(self) -> None:
+        if not self.sim.recorder:
+            self.message = "no recorder (--no-record)"
+            return
+        from .plots import plot_run
+        out = plot_run(self.sim.recorder.dir)
+        self.message = "plots saved -> opening folder"
+        try:
+            import os
+            os.startfile(str(out))  # エクスプローラーでグラフフォルダを開く
+        except OSError:
+            self.message = f"plots -> {out}"
+
+    def _reset(self) -> None:
+        if self.make_sim is None:
+            return
+        self.sim.close()
+        self.sim = self.make_sim()
+        self.message = f"RESET seed={self.sim.seed}"
 
     # ------------------------------------------------------------------
 
@@ -150,6 +196,7 @@ class Viewer:
             f"seed      {sim.seed}",
             "",
             f"speed x{self.speed}" + ("  [PAUSED]" if self.paused else ""),
+            f"last key  {self.last_key}",
             "",
             "SPACE pause  1/2/3 speed",
             "G graphs  D disaster",
@@ -164,3 +211,11 @@ class Viewer:
         for ln in lines:
             screen.blit(font.render(ln, True, (220, 220, 220)), (w + 10, y))
             y += 19
+
+        # 画面上部の目立つメッセージバー (直近のキー操作の結果)
+        if self.message:
+            bar = pygame.Surface((w, 28))
+            bar.set_alpha(180)
+            bar.fill((0, 0, 0))
+            screen.blit(bar, (0, 0))
+            screen.blit(font.render(self.message, True, (255, 230, 120)), (10, 6))
