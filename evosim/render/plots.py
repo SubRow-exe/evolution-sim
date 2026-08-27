@@ -1,6 +1,6 @@
 """Matplotlibグラフ生成 (仕様書 Ver.1.1 §14.3)。
 
-stats.csv / snapshots からPNGを生成する。GUIのGキーおよび tools/plot_run.py から呼ぶ。
+stats.csv / snapshots / performance.csv からPNGを生成する。
 """
 from __future__ import annotations
 
@@ -15,14 +15,17 @@ import numpy as np
 from ..genome import GENE_NAMES
 
 
-def _load_stats(run_dir: Path) -> dict[str, np.ndarray]:
-    path = run_dir / "stats.csv"
+def _load_csv(path: Path) -> dict[str, np.ndarray]:
     with open(path, encoding="utf-8") as f:
         reader = csv.reader(f)
         header = next(reader)
         rows = [[float(v) if v != "" else np.nan for v in r] for r in reader if r]
     data = np.array(rows) if rows else np.zeros((0, len(header)))
     return {name: data[:, i] for i, name in enumerate(header)}
+
+
+def _load_stats(run_dir: Path) -> dict[str, np.ndarray]:
+    return _load_csv(run_dir / "stats.csv")
 
 
 def _disaster_ticks(run_dir: Path) -> list[int]:
@@ -42,7 +45,6 @@ def _mark_disasters(ax, disasters: list[int]) -> None:
 
 
 def plot_run(run_dir: str | Path) -> Path:
-    """実行ディレクトリの全グラフを plots/ に生成する。"""
     run_dir = Path(run_dir)
     out = run_dir / "plots"
     out.mkdir(exist_ok=True)
@@ -50,7 +52,6 @@ def plot_run(run_dir: str | Path) -> Path:
     dis = _disaster_ticks(run_dir)
     t = s["tick"]
 
-    # --- 個体群動態 ---
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     ax = axes[0, 0]
     ax.plot(t, s["population"], color="tab:blue")
@@ -82,7 +83,6 @@ def plot_run(run_dir: str | Path) -> Path:
     fig.savefig(out / "population.png", dpi=110)
     plt.close(fig)
 
-    # --- 遺伝子平均 (分散帯付き) ---
     fig, axes = plt.subplots(4, 4, figsize=(16, 12))
     for i, name in enumerate(GENE_NAMES):
         ax = axes.flat[i]
@@ -99,7 +99,6 @@ def plot_run(run_dir: str | Path) -> Path:
     fig.savefig(out / "genes.png", dpi=110)
     plt.close(fig)
 
-    # --- エネルギー・物質収支 ---
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
     ax = axes[0]
     ax.plot(t, s["total_energy"], label="organisms E")
@@ -123,12 +122,28 @@ def plot_run(run_dir: str | Path) -> Path:
     fig.savefig(out / "budget.png", dpi=110)
     plt.close(fig)
 
-    # --- 最新スナップショットの遺伝子ヒストグラム ---
+    # 計算性能: 個体数との関係を直接確認できるようにする
+    perf_path = run_dir / "performance.csv"
+    if perf_path.exists():
+        p = _load_csv(perf_path)
+        if len(p["tick"]) > 0:
+            fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+            axes[0].plot(p["tick"], p["tick_ms"], lw=0.7)
+            axes[0].set_xlabel("tick")
+            axes[0].set_ylabel("ms/tick")
+            axes[0].set_title("Simulation cost over time")
+            axes[1].scatter(p["population"], p["tick_ms"], s=4, alpha=0.25)
+            axes[1].set_xlabel("population")
+            axes[1].set_ylabel("ms/tick")
+            axes[1].set_title("Cost vs population")
+            fig.tight_layout()
+            fig.savefig(out / "performance.png", dpi=110)
+            plt.close(fig)
+
     snaps = sorted((run_dir / "snapshots").glob("snap_*.csv"))
     if snaps:
         with open(snaps[-1], encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
+            rows = list(csv.DictReader(f))
         if rows:
             fig, axes = plt.subplots(4, 4, figsize=(16, 12))
             for i, name in enumerate(GENE_NAMES):
@@ -141,6 +156,42 @@ def plot_run(run_dir: str | Path) -> Path:
             fig.suptitle(f"Gene distributions @ {snaps[-1].stem}")
             fig.tight_layout()
             fig.savefig(out / "histograms.png", dpi=110)
+            plt.close(fig)
+
+            # 最新時点の空間分布。RGB = 捕食 / 光利用 / 死骸分解。
+            x = np.array([float(r["x"]) for r in rows])
+            y = np.array([float(r["y"]) for r in rows])
+            pred = np.array([float(r["predation_efficiency"]) for r in rows])
+            light = np.array([float(r["light_absorption"]) for r in rows])
+            scav = np.array([float(r["corpse_digestion"]) for r in rows])
+            rgb = np.stack([
+                np.clip(pred / 1.5, 0, 1),
+                np.clip(light / 1.5, 0, 1),
+                np.clip(scav / 1.5, 0, 1),
+            ], axis=1)
+            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+            axes[0].scatter(x, y, c=rgb, s=8, alpha=0.65)
+            axes[0].invert_yaxis()
+            axes[0].set_title("Spatial distribution (R=pred, G=light, B=scavenge)")
+            axes[0].set_xlabel("x")
+            axes[0].set_ylabel("y (north at top)")
+
+            bins = np.linspace(y.min(), y.max() + 1e-9, 13)
+            idx = np.digitize(y, bins) - 1
+            centers = (bins[:-1] + bins[1:]) / 2
+            for vals, label in [(light, "light_absorption"),
+                                (scav, "corpse_digestion"),
+                                (pred, "predation_efficiency")]:
+                means = [np.mean(vals[idx == i]) if np.any(idx == i) else np.nan
+                         for i in range(len(centers))]
+                axes[1].plot(means, centers, marker="o", label=label)
+            axes[1].invert_yaxis()
+            axes[1].set_title("Mean strategy by latitude")
+            axes[1].set_xlabel("mean gene value")
+            axes[1].set_ylabel("y (north at top)")
+            axes[1].legend(fontsize=8)
+            fig.tight_layout()
+            fig.savefig(out / "spatial.png", dpi=110)
             plt.close(fig)
 
     return out
