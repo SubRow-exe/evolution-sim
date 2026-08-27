@@ -1,9 +1,10 @@
 """データ記録 (仕様書 Ver.1.1 §12)。
 
-events.csv   : 出生・死亡・災害の全イベント (系統樹再構築可能)
-stats.csv    : 一定間隔の集計統計 (全遺伝子の平均と分散を含む)
-snapshots/   : 全個体スナップショット
-config.json  : 全設定 + seed (完全再現の根拠)
+events.csv       : 出生・死亡・災害の全イベント (系統樹再構築可能)
+stats.csv        : 一定間隔の集計統計 (全遺伝子の平均と分散を含む)
+performance.csv  : 計算性能ログ (tick時間・人口・処理速度)
+snapshots/       : 全個体スナップショット
+config.json      : 全設定 + seed (完全再現の根拠)
 """
 from __future__ import annotations
 
@@ -47,6 +48,11 @@ class Recorder:
             *[f"var_{n}" for n in GENE_NAMES],
         ]
         self._stats.writerow(header)
+
+        self._perf_f = open(self.dir / "performance.csv", "w", newline="", encoding="utf-8")
+        self._perf = csv.writer(self._perf_f)
+        self._perf.writerow(["tick", "population", "tick_ms", "ticks_per_sec"])
+
         self._last_stats_tick = -1
         self._last_snap_tick = -1
 
@@ -62,6 +68,21 @@ class Recorder:
 
     def disaster(self, tick: int, killed: int) -> None:
         self._events.writerow([tick, "disaster", "", "", "", "", f"killed={killed}", ""])
+
+    # --- 計算性能 ---
+
+    def performance(self, sim, tick_seconds: float) -> None:
+        """1 tick の実測時間を記録する。進化ロジックには一切使用しない。"""
+        if tick_seconds <= 0.0:
+            return
+        self._perf.writerow([
+            sim.tick,
+            len(sim.organisms),
+            round(tick_seconds * 1000.0, 6),
+            round(1.0 / tick_seconds, 3),
+        ])
+        if sim.tick % sim.cfg.stats_interval == 0:
+            self._perf_f.flush()
 
     # --- 統計 ---
 
@@ -98,7 +119,7 @@ class Recorder:
         ]
         self._stats.writerow(row)
         self._stats_f.flush()
-        self._events_f.flush()  # 中断時にイベントログの末尾が欠けないように
+        self._events_f.flush()
         self._last_stats_tick = sim.tick
 
     # --- スナップショット ---
@@ -126,3 +147,4 @@ class Recorder:
     def close(self) -> None:
         self._events_f.close()
         self._stats_f.close()
+        self._perf_f.close()
