@@ -10,14 +10,13 @@ import time
 import numpy as np
 import pygame
 
-from ..config import Config
 from ..disasters import random_disaster
 from ..genome import CORPSE_DIG, LIGHT_ABS, PREDATION
 from ..simulation import Simulation
 
 SIDEBAR = 230
 FPS = 30
-FRAME_BUDGET_SEC = 0.1  # 1フレームでシミュレーションに使う時間の上限
+FRAME_BUDGET_SEC = 0.1  # 1フレームでシミュレーションに使う時間の上限 (キー応答性の確保)
 
 
 class Viewer:
@@ -29,6 +28,7 @@ class Viewer:
         self.speed = 1
         self.message = ""
         self.last_key = "-"
+        self.last_tick_ms = 0.0
 
     def run(self) -> None:
         pygame.init()
@@ -54,13 +54,25 @@ class Viewer:
                     running = self._on_char(ev.text)
 
             if not self.paused:
-                # 高速時も1フレームの実行時間に上限を設け、キー入力の応答性を保つ
                 budget_end = time.perf_counter() + FRAME_BUDGET_SEC
                 for _ in range(self.speed):
+                    ts = time.perf_counter()
                     self.sim.step()
+                    dt = time.perf_counter() - ts
+                    self.last_tick_ms = dt * 1000.0
+                    if self.sim.recorder:
+                        self.sim.recorder.performance(self.sim, dt)
                     if not self.sim.organisms:
                         self.paused = True
                         self.message = "EXTINCT"
+                        break
+                    halt = self.sim.cfg.max_population_halt
+                    if halt and len(self.sim.organisms) >= halt:
+                        # 安全装置: 自動保存して一時停止 (個体は殺さない)
+                        if self.sim.recorder:
+                            self.sim.recorder.finalize(self.sim)
+                        self.paused = True
+                        self.message = f"POP LIMIT {halt}: saved & paused"
                         break
                     if time.perf_counter() > budget_end:
                         break
@@ -71,8 +83,6 @@ class Viewer:
 
         self.sim.close()
         pygame.quit()
-
-    # ------------------------------------------------------------------
 
     def _on_key(self, ev) -> bool:
         key = ev.key
@@ -109,8 +119,6 @@ class Viewer:
             fn()
         return True
 
-    # --- キー動作 ---
-
     def _toggle_pause(self) -> None:
         self.paused = not self.paused
         self.message = "PAUSED" if self.paused else "RESUMED"
@@ -143,15 +151,12 @@ class Viewer:
         self.sim = self.make_sim()
         self.message = f"RESET seed={self.sim.seed}"
 
-    # ------------------------------------------------------------------
-
     def _draw(self, screen, font) -> None:
         sim = self.sim
         cfg = sim.cfg
         w = int(cfg.world_width)
         h = int(cfg.world_height)
 
-        # 背景: 光(明度) + 栄養(緑) + 化学(紫)
         light = sim.world.light / max(cfg.light_max, 1e-9)
         nut = np.clip(sim.world.nutrients / (cfg.nutrient_initial * 2.0), 0, 1)
         chem = np.clip(sim.world.chemical / max(cfg.chem_capacity, 1e-9), 0, 1)
@@ -163,12 +168,10 @@ class Viewer:
         surf = pygame.surfarray.make_surface(rgb)
         screen.blit(pygame.transform.scale(surf, (w, h)), (0, 0))
 
-        # 死骸
         for c in sim.corpses:
             r = max(2, int(cfg.radius_coef * np.sqrt(max(c.matter, 1e-9))))
             pygame.draw.circle(screen, (110, 100, 90), (int(c.x), int(c.y)), r, 1)
 
-        # 個体 (色 = 栄養戦略)
         for o in sim.organisms:
             g = o.genome
             col = (
@@ -179,7 +182,6 @@ class Viewer:
             r = max(2, int(o.radius(cfg.radius_coef)))
             pygame.draw.circle(screen, col, (int(o.x), int(o.y)), r)
 
-        # サイドバー
         pygame.draw.rect(screen, (18, 18, 24), (w, 0, SIDEBAR, h))
         lines = [
             f"tick      {sim.tick}",
@@ -194,6 +196,7 @@ class Viewer:
             f"lineages  {len({o.lineage_id for o in sim.organisms})}",
             f"max gen   {max((o.generation for o in sim.organisms), default=0)}",
             f"seed      {sim.seed}",
+            f"tick ms   {self.last_tick_ms:.2f}",
             "",
             f"speed x{self.speed}" + ("  [PAUSED]" if self.paused else ""),
             f"last key  {self.last_key}",
@@ -212,7 +215,6 @@ class Viewer:
             screen.blit(font.render(ln, True, (220, 220, 220)), (w + 10, y))
             y += 19
 
-        # 画面上部の目立つメッセージバー (直近のキー操作の結果)
         if self.message:
             bar = pygame.Surface((w, 28))
             bar.set_alpha(180)

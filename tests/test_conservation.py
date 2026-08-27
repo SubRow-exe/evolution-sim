@@ -25,6 +25,33 @@ def test_energy_ledger():
     assert sim.system_energy() == pytest.approx(expected, rel=1e-6, abs=1e-3)
 
 
+def test_resource_flows_are_bounded():
+    """資源フロー計上 (改善方針 Ver.1.2 §5) が物理的にあり得る範囲に収まるか。"""
+    sim = Simulation(Config(), 7)
+    for _ in range(400):
+        sim.step()
+
+    assert all(v >= 0.0 for v in sim.flows.values()), "資源フローに負値がある"
+
+    # 光の利用累計は供給累計を超えられない
+    supplied = sim.light_supply_per_tick * sim.tick
+    assert sim.flows["light"] <= supplied + 1e-6
+
+    # 光由来のエネルギーは外部流入なので、流入台帳の一部でなければならない
+    assert sim.flows["light"] <= sim.energy_in_cum + 1e-6
+
+    # 生体が獲得した物質は世界の総物質量を超えられない
+    assert sim.flows["nutrient"] <= sim.initial_system_matter * sim.tick
+
+
+def test_lineage_births_match_total():
+    """系統別出生数の合計が全体の出生数と一致するか。"""
+    sim = Simulation(Config(), 7)
+    for _ in range(400):
+        sim.step()
+    assert sum(sim.births_by_lineage.values()) == sim.births_cum
+
+
 def test_matter_conserved_through_disaster():
     sim = Simulation(Config(), 11)
     m0 = sim.initial_system_matter

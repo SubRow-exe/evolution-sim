@@ -1,9 +1,11 @@
 """データ記録 (仕様書 Ver.1.1 §12)。
 
-events.csv   : 出生・死亡・災害の全イベント (系統樹再構築可能)
-stats.csv    : 一定間隔の集計統計 (全遺伝子の平均と分散を含む)
-snapshots/   : 全個体スナップショット
-config.json  : 全設定 + seed (完全再現の根拠)
+events.csv       : 出生・死亡・災害の全イベント (系統樹再構築可能)
+stats.csv        : 一定間隔の集計統計 (全遺伝子の平均と分散・資源フロー累積を含む)
+lineages.csv     : 系統別統計 (stats間隔ごとの上位系統の人口・出生数・代表遺伝子)
+performance.csv  : 計算性能ログ (tick時間・人口・処理速度)
+snapshots/       : 全個体スナップショット
+config.json      : 全設定 + seed (完全再現の根拠)
 """
 from __future__ import annotations
 
@@ -15,7 +17,9 @@ import numpy as np
 
 from . import __version__
 from .config import Config
-from .genome import GENE_NAMES
+from .genome import BODY_SIZE, GENE_NAMES, LIGHT_ABS, MUTATION_RATE, REPRO_INVEST
+
+TOP_LINEAGES = 8  # lineages.csv に記録する上位系統数
 
 DEATH_CAUSES = ["starvation", "damage", "predation", "disaster"]
 
@@ -43,10 +47,29 @@ class Recorder:
             "corpse_count", "corpse_matter", "corpse_energy",
             "total_energy", "total_biomass", "nutrient_total", "chemical_total",
             "mean_age", "max_age", "max_generation", "n_lineages",
+            # 資源利用率 (累積値。区間レートは差分で求める)
+            "light_supply_cum", "flow_light_cum", "flow_chemical_cum",
+            "flow_nutrient_cum", "flow_corpse_matter_cum", "flow_corpse_energy_cum",
+            "flow_predation_energy_cum", "flow_predation_matter_cum",
+            # 系統支配度
+            "top_lineage_id", "top_lineage_frac",
             *[f"mean_{n}" for n in GENE_NAMES],
             *[f"var_{n}" for n in GENE_NAMES],
         ]
         self._stats.writerow(header)
+
+        self._lineage_f = open(self.dir / "lineages.csv", "w", newline="", encoding="utf-8")
+        self._lineage = csv.writer(self._lineage_f)
+        self._lineage.writerow([
+            "tick", "lineage_id", "population", "frac", "births_cum",
+            "mean_body_size", "mean_light_absorption",
+            "mean_reproduction_investment", "mean_mutation_rate",
+        ])
+
+        self._perf_f = open(self.dir / "performance.csv", "w", newline="", encoding="utf-8")
+        self._perf = csv.writer(self._perf_f)
+        self._perf.writerow(["tick", "population", "tick_ms", "ticks_per_sec"])
+
         self._last_stats_tick = -1
         self._last_snap_tick = -1
 
@@ -62,6 +85,21 @@ class Recorder:
 
     def disaster(self, tick: int, killed: int) -> None:
         self._events.writerow([tick, "disaster", "", "", "", "", f"killed={killed}", ""])
+
+    # --- 計算性能 ---
+
+    def performance(self, sim, tick_seconds: float) -> None:
+        """1 tick の実測時間を記録する。進化ロジックには一切使用しない。"""
+        if tick_seconds <= 0.0:
+            return
+        self._perf.writerow([
+            sim.tick,
+            len(sim.organisms),
+            round(tick_seconds * 1000.0, 6),
+            round(1.0 / tick_seconds, 3),
+        ])
+        if sim.tick % sim.cfg.stats_interval == 0:
+            self._perf_f.flush()
 
     # --- 統計 ---
 
@@ -83,6 +121,28 @@ class Recorder:
             mean_age = max_age = max_gen = n_lin = 0
             tot_e = tot_m = 0.0
 
+        # 系統別集計 (改善方針 Ver.1.2 §4)
+        by_lineage: dict[int, list] = {}
+        for o in orgs:
+            by_lineage.setdefault(o.lineage_id, []).append(o)
+        ranked = sorted(by_lineage.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+        if ranked:
+            top_id = ranked[0][0]
+            top_frac = len(ranked[0][1]) / n
+        else:
+            top_id, top_frac = -1, 0.0
+        for lid, members in ranked[:TOP_LINEAGES]:
+            g = np.stack([o.genome for o in members])
+            self._lineage.writerow([
+                sim.tick, lid, len(members), round(len(members) / n, 6),
+                sim.births_by_lineage.get(lid, 0),
+                round(float(g[:, BODY_SIZE].mean()), 6),
+                round(float(g[:, LIGHT_ABS].mean()), 6),
+                round(float(g[:, REPRO_INVEST].mean()), 6),
+                round(float(g[:, MUTATION_RATE].mean()), 6),
+            ])
+        self._lineage_f.flush()
+
         row = [
             sim.tick, n, sim.births_cum, sim.deaths_cum,
             *[sim.deaths_by_cause[c] for c in DEATH_CAUSES],
@@ -93,6 +153,11 @@ class Recorder:
             round(sim.world.total_nutrients(), 6),
             round(sim.world.total_chemical(), 6),
             round(mean_age, 2), max_age, max_gen, n_lin,
+            round(sim.light_supply_per_tick * sim.tick, 4),
+            *[round(sim.flows[k], 4) for k in
+              ("light", "chemical", "nutrient", "corpse_matter",
+               "corpse_energy", "predation_energy", "predation_matter")],
+            top_id, round(top_frac, 6),
             *[round(float(v), 6) for v in gmean],
             *[round(float(v), 6) for v in gvar],
         ]
@@ -126,3 +191,5 @@ class Recorder:
     def close(self) -> None:
         self._events_f.close()
         self._stats_f.close()
+        self._perf_f.close()
+        self._lineage_f.close()
