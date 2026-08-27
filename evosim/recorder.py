@@ -47,6 +47,8 @@ class Recorder:
             *[f"var_{n}" for n in GENE_NAMES],
         ]
         self._stats.writerow(header)
+        self._last_stats_tick = -1
+        self._last_snap_tick = -1
 
     # --- イベント ---
 
@@ -96,10 +98,13 @@ class Recorder:
         ]
         self._stats.writerow(row)
         self._stats_f.flush()
+        self._events_f.flush()  # 中断時にイベントログの末尾が欠けないように
+        self._last_stats_tick = sim.tick
 
     # --- スナップショット ---
 
     def snapshot(self, sim) -> None:
+        self._last_snap_tick = sim.tick
         path = self.dir / "snapshots" / f"snap_{sim.tick:08d}.csv"
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
@@ -110,6 +115,13 @@ class Recorder:
                             round(o.x, 2), round(o.y, 2),
                             round(o.energy, 4), round(o.matter, 4), round(o.damage, 4),
                             *[round(float(g), 6) for g in o.genome]])
+
+    def finalize(self, sim) -> None:
+        """中断・終了時に、最終時点の統計とスナップショットを確実に残す。"""
+        if sim.tick != self._last_stats_tick:
+            self.stats(sim)
+        if sim.tick != self._last_snap_tick:
+            self.snapshot(sim)
 
     def close(self) -> None:
         self._events_f.close()
