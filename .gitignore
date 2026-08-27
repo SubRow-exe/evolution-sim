@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Tests
+.pytest_cache/
+
+# 日常のシミュレーション実行データは除外。
+# 残す価値のある実験は experiments/ へ厳選してコピーする (seedで完全再現可能)。
+runs/
