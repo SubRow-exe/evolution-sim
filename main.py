@@ -38,17 +38,22 @@ def main() -> None:
 
     if args.headless:
         t0 = time.perf_counter()
-        for i in range(args.ticks):
-            sim.step()
-            if not sim.organisms:
-                print(f"EXTINCT at tick {sim.tick}")
-                break
-            if (i + 1) % 5000 == 0:
-                el = time.perf_counter() - t0
-                print(f"tick {sim.tick:>8}  pop {len(sim.organisms):>5}  "
-                      f"births {sim.births_cum:>7}  {sim.tick / el:,.0f} t/s")
+        try:
+            for i in range(args.ticks):
+                sim.step()
+                if not sim.organisms:
+                    print(f"EXTINCT at tick {sim.tick}")
+                    break
+                if (i + 1) % 5000 == 0:
+                    el = time.perf_counter() - t0
+                    print(f"tick {sim.tick:>8}  pop {len(sim.organisms):>5}  "
+                          f"births {sim.births_cum:>7}  {sim.tick / el:,.0f} t/s")
+        except KeyboardInterrupt:
+            print(f"\n中断 (Ctrl+C): tick {sim.tick} までの結果を出力します")
         el = time.perf_counter() - t0
         print(f"done: {sim.tick} ticks in {el:.1f}s  final pop={len(sim.organisms)}")
+        if sim.recorder:
+            sim.recorder.finalize(sim)  # 最終時点の統計・スナップショットを確実に記録
         sim.close()
         if run_dir is not None:
             from evosim.render.plots import plot_run
