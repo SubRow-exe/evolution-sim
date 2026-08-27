@@ -3,9 +3,25 @@
 単純な世界のルール（物理・エネルギー・物質・遺伝・突然変異）だけを設定し、
 自然選択によって予想していなかった生命形態・生態・行動が**創発**することを観察するシミュレーション。
 
+**開発に参加する場合はまず [docs/次の実験計画.md](docs/次の実験計画.md) を読むこと**
+(現在地・未解決の問い・次にやるべきことがまとまっている)。
+
 - 方針: [docs/仕様書_Ver1.0_方針版.md](docs/仕様書_Ver1.0_方針版.md)
 - 実装仕様: [docs/仕様書_Ver1.1_MVP実装版.md](docs/仕様書_Ver1.1_MVP実装版.md)
 - 使い方: [docs/操作ガイド.md](docs/操作ガイド.md) — GUIの見方・キー操作・出力レポートの読み方
+- 長期計画: [docs/開発ロードマップ_リアル化方針.md](docs/開発ロードマップ_リアル化方針.md)
+- 協働規約: [AGENTS.md](AGENTS.md) — 守るべき設計原則
+
+## これまでに観察された創発
+
+| 現象 | 実験 |
+|---|---|
+| 適応度関数なしでの方向性選択 (光利用能力の上昇) | [exp01](experiments/exp01_baseline_20k/NOTES.md) |
+| 単一系統による選択的一掃 (シェア 3.7% → 96.2%) | [exp02](experiments/exp02_baseline_5seeds/NOTES.md) |
+| 突然変異率のヒッチハイク (無性生殖集団のmutator hitchhiking) | [exp02](experiments/exp02_baseline_5seeds/NOTES.md) |
+| 断続的な個体数転移 (5 seed中2 seedでのみ発生) | [exp02](experiments/exp02_baseline_5seeds/NOTES.md) |
+
+いずれも設計者が実装した挙動ではなく、世界のルールから生じた結果である。
 
 ## 設計原則
 

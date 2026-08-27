@@ -93,6 +93,9 @@ class Config:
     meta_mutation_sigma: float = 0.1   # mutation_rate 自身の変異σ
     additive_mutation_frac: float = 0.01  # 加算項 = N(0, frac*σ*scale)
     initial_jitter_sigma: float = 0.02    # 初期個体群の standing variation
+    # アブレーション実験用: ここに挙げた遺伝子は変異せず初期値のまま固定される。
+    # 空 (既定) なら通常動作。例: ["body_size"]
+    fixed_genes: list[str] = field(default_factory=list)
 
     # --- 初期個体群 ---
     initial_population: int = 100

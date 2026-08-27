@@ -61,18 +61,45 @@ GENE_SCALE = np.array([
 ])
 
 
-def initial_genome(rng: np.random.Generator, jitter_sigma: float) -> np.ndarray:
-    """共通祖先ゲノム + 微小な standing variation。"""
+def initial_genome(rng: np.random.Generator, jitter_sigma: float,
+                   fixed_mask: np.ndarray | None = None) -> np.ndarray:
+    """共通祖先ゲノム + 微小な standing variation。
+
+    fixed_mask の遺伝子は初期ばらつきも与えない。これにより固定遺伝子は
+    全個体・全世代を通じて完全に一定となり、アブレーションが曖昧にならない。
+    """
     g = INITIAL_GENOME * np.exp(rng.normal(0.0, jitter_sigma, N_GENES))
+    if fixed_mask is not None:
+        g = np.where(fixed_mask, INITIAL_GENOME, g)
     return np.clip(g, GENE_MIN, GENE_MAX)
 
 
 def mutate(parent: np.ndarray, rng: np.random.Generator,
-           meta_sigma: float, additive_frac: float) -> np.ndarray:
-    """繁殖時の突然変異。σは親の mutation_rate 遺伝子。"""
+           meta_sigma: float, additive_frac: float,
+           fixed_mask: np.ndarray | None = None) -> np.ndarray:
+    """繁殖時の突然変異。σは親の mutation_rate 遺伝子。
+
+    fixed_mask: True の遺伝子は親の値のまま据え置く (アブレーション実験用)。
+    乱数は据え置く遺伝子の分も必ず消費するため、固定した遺伝子以外の変異系列は
+    通常実行と一致する。これにより「その遺伝子だけが違う」比較が成立する。
+    """
     sigma = parent[MUTATION_RATE]
     child = parent * np.exp(rng.normal(0.0, sigma, N_GENES))
     child += rng.normal(0.0, additive_frac * sigma * GENE_SCALE)
     # mutation_rate はメタσで別途変異 (上の変異を上書き)
     child[MUTATION_RATE] = parent[MUTATION_RATE] * np.exp(rng.normal(0.0, meta_sigma))
+    if fixed_mask is not None:
+        child = np.where(fixed_mask, parent, child)
     return np.clip(child, GENE_MIN, GENE_MAX)
+
+
+def fixed_mask_from_names(names: list[str]) -> np.ndarray | None:
+    """遺伝子名のリストから固定マスクを作る。未知の名前はエラーにする。"""
+    if not names:
+        return None
+    mask = np.zeros(N_GENES, dtype=bool)
+    for n in names:
+        if n not in GENE_NAMES:
+            raise ValueError(f"未知の遺伝子名: {n} (候補: {', '.join(GENE_NAMES)})")
+        mask[GENE_NAMES.index(n)] = True
+    return mask

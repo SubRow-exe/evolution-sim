@@ -15,7 +15,8 @@ from . import behavior, physiology
 from .config import Config
 from .corpse import Corpse
 from .genome import (CHEM_ABS, CORPSE_DIG, LIGHT_ABS, MEMBRANE, NUTRIENT_ABS,
-                     PREDATION, REPRO_INVEST, initial_genome, mutate)
+                     PREDATION, REPRO_INVEST, fixed_mask_from_names,
+                     initial_genome, mutate)
 from .organism import Organism
 from .recorder import Recorder
 from .world import World
@@ -26,6 +27,7 @@ class Simulation:
         self.cfg = cfg
         self.seed = seed
         self.rng = np.random.Generator(np.random.PCG64(seed))
+        self.fixed_mask = fixed_mask_from_names(cfg.fixed_genes)
         self.world = World(cfg, self.rng)
         self.tick = 0
         self.next_id = 0
@@ -72,7 +74,7 @@ class Simulation:
     def _spawn_initial(self) -> None:
         cfg = self.cfg
         for _ in range(cfg.initial_population):
-            g = initial_genome(self.rng, cfg.initial_jitter_sigma)
+            g = initial_genome(self.rng, cfg.initial_jitter_sigma, self.fixed_mask)
             x = float(self.rng.uniform(0, cfg.world_width))
             y = float(self.rng.uniform(0, cfg.world_height))
             org = Organism(self.next_id, -1, self.next_id, 0, 0, g,
@@ -389,7 +391,8 @@ class Simulation:
         self.energy_out_cum += cfg.birth_overhead
 
         child_genome = mutate(org.genome, self.rng,
-                              cfg.meta_mutation_sigma, cfg.additive_mutation_frac)
+                              cfg.meta_mutation_sigma, cfg.additive_mutation_frac,
+                              self.fixed_mask)
 
         # 物質・エネルギーの譲渡 (親→子; 保存)
         m_child = cfg.child_matter_frac * org.matter
