@@ -5,7 +5,12 @@ stats.csv        : 一定間隔の集計統計 (全遺伝子の平均と分散�
 lineages.csv     : 系統別統計 (stats間隔ごとの上位系統の人口・出生数・代表遺伝子)
 performance.csv  : 計算性能ログ (tick時間・人口・処理速度)
 snapshots/       : 全個体スナップショット
-config.json      : 全設定 + seed (完全再現の根拠)
+config.json      : 全設定
+meta.json        : seed / git SHA / 数値実行環境 (再現条件の特定に必須)
+
+再現には seed と Config だけでは足りない。結果は数値実行環境に依存するため
+(math.sin/cos/atan2/hypot と pow がOS側の数学ライブラリ実装に依存)、
+meta.json に環境を記録して比較実験群の同一性を後から確認できるようにする。
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ import numpy as np
 from . import __version__
 from .config import Config
 from .genome import BODY_SIZE, GENE_NAMES, LIGHT_ABS, MUTATION_RATE, REPRO_INVEST
+from .runmeta import run_metadata
 
 TOP_LINEAGES = 8  # lineages.csv に記録する上位系統数
 
@@ -31,7 +37,7 @@ class Recorder:
         (self.dir / "snapshots").mkdir(exist_ok=True)
 
         cfg.to_json(self.dir / "config.json")
-        meta = {"seed": seed, "evosim_version": __version__}
+        meta = run_metadata(seed, __version__)
         (self.dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
         self._events_f = open(self.dir / "events.csv", "w", newline="", encoding="utf-8")
