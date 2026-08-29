@@ -52,7 +52,7 @@ Issue #18 の転移トリガー一次解析は**完了済み**。Exp05 / Exp06 /
 
 ```bash
 uv run python tools/golden.py                      # 記録済みの同一数値実行環境での高速チェック
-uv run python tools/verify_vs_ref.py --ref 65eed4a # 同一マシン上で旧refと現在実装を直接比較 (CIが実行)
+uv run python tools/verify_vs_ref.py --ref 18137b5 # 同一マシン上で旧refと現在実装を直接比較 (CIが実行)
 ```
 
 `tools/verify_vs_ref.py` は「WindowsとLinuxで同じ結果を出す」ツールではない。

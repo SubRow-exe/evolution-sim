@@ -48,6 +48,7 @@ jobs:
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
       count: ${{ steps.gen.outputs.count }}
+      seed_count: ${{ steps.gen.outputs.seed_count }}
     steps:
       - uses: actions/checkout@v4
       - name: matrix を生成
@@ -69,6 +70,8 @@ jobs:
           assert len(items) <= 256, f"matrix上限256を超える: {len(items)}"
           print("matrix=" + json.dumps({"include": items}))
           print("count=" + str(len(items)))
+          # 条件ごとの期待run数 = seed数 (health_check の --expect-runs)
+          print("seed_count=" + str(len(seeds)))
           PY
 
       - name: 実行計画を表示
@@ -173,10 +176,21 @@ jobs:
       - name: 数値実行環境の同一性を確認
         run: uv run python tools/check_env.py runs/exp04_* 2>&1 | tee env_check.txt
 
-      - name: 健全性チェック (run数・早期終了・遺伝子固定)
+      - name: 健全性チェック (run数・早期終了・遺伝子固定・環境・コード)
         # 実行手順書 §4。早期終了は除外せず「結果」として記録する。
+        # 前提が崩れていれば health_check.py が非ゼロ終了する。ただしここで
+        # ジョブを止めると生データの退避まで失われるため、判定だけ持ち越して
+        # 続行し、アーカイブと転送を終えた最後にジョブを失敗させる。
+        id: health
+        continue-on-error: true
+        env:
+          TICKS: ${{ inputs.ticks }}
+          EXPECT_RUNS: ${{ needs.setup.outputs.seed_count }}   # 条件ごとのseed数
         run: |
-          uv run python tools/health_check.py runs/exp04_* --ticks "${{ inputs.ticks }}" 2>&1 | tee health.txt
+          set -o pipefail
+          rc=0
+          uv run python tools/health_check.py runs/exp04_* --ticks "$TICKS" --expect-runs "$EXPECT_RUNS" 2>&1 | tee health.txt || rc=$?
+          # 失敗時も判定内容をサマリに残す
           {
             echo ""
             echo "### 健全性チェック"
@@ -184,6 +198,7 @@ jobs:
             cat health.txt
             echo '```'
           } >> $GITHUB_STEP_SUMMARY
+          exit $rc
 
       - name: 条件ごとに転移の累積発生率を解析
         run: |
@@ -290,3 +305,16 @@ jobs:
           name: exp04-rawdata
           path: archives/
           retention-days: 90
+
+      - name: 健全性チェックの結果を判定
+        # 生データの退避が終わってから落とす。異常なデータで解析へ進ませない。
+        if: ${{ steps.health.outcome == 'failure' }}
+        run: |
+          echo "::error::健全性チェックが停止条件に該当した。結果を解釈せず原因を解消すること (health.txt 参照)"
+          {
+            echo ""
+            echo "### ★ 健全性チェック不合格"
+            echo "前提が崩れているため、この結果を解釈してはいけない。"
+            echo "生データと成果物は退避済み。原因を解消して再実行すること。"
+          } >> $GITHUB_STEP_SUMMARY
+          exit 1

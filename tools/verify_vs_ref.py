@@ -7,7 +7,7 @@ Golden指紋は数値実行環境に依存するため、保存定数を別環�
 これは「WindowsとLinuxで同じ結果を保証する」ツールではない。
 WindowsではWindows上の旧版/新版、LinuxではLinux上の旧版/新版を比較する。
 
-    uv run python tools/verify_vs_ref.py --ref 65eed4a
+    uv run python tools/verify_vs_ref.py --ref 18137b5
     uv run python tools/verify_vs_ref.py --ref v1.1-baseline
 
 比較対象のrefにも evosim パッケージが必要。指紋の計算式は現在の

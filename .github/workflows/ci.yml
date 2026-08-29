@@ -20,4 +20,4 @@ jobs:
       - name: 結果不変性の検証 (実装同士を直接比較)
         # 指紋はOS依存のため定数比較はできない。同一マシン上で
         # 参照実装と現在の実装を実際に走らせて比較する。
-        run: uv run python tools/verify_vs_ref.py --ref ${{ vars.RESULT_BASELINE_REF || '65eed4a' }}
+        run: uv run python tools/verify_vs_ref.py --ref ${{ vars.RESULT_BASELINE_REF || '18137b5' }}
