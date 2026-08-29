@@ -7,6 +7,7 @@ OS側の数学ライブラリ実装に依存する)。そのため seed と Conf
 """
 from __future__ import annotations
 
+import os
 import platform
 import subprocess
 import sys
@@ -33,21 +34,33 @@ def _git_sha() -> str | None:
 
 
 def numeric_environment() -> dict:
-    """同一性を判定すべき数値実行環境。ここが違えば結果は一致し得ない。"""
-    return {
+    """同一性を判定すべき数値実行環境。ここが違えば結果は一致し得ない。
+
+    libm (C標準数学ライブラリ) の実装差が結果を変えるため、Linuxでは
+    glibc版も記録する。CI上ではランナーイメージ版も残し、実験の途中で
+    イメージが切り替わっていないか後から照合できるようにする。
+    """
+    libc_name, libc_ver = platform.libc_ver()
+    env = {
         "os": platform.system(),
         "os_release": platform.release(),
         "os_version": platform.version(),
         "machine": platform.machine(),
         "processor": platform.processor(),
+        "libc": f"{libc_name}{libc_ver}" if libc_name else None,
         "python_version": platform.python_version(),
         "python_implementation": platform.python_implementation(),
         "python_compiler": platform.python_compiler(),
         "numpy_version": np.__version__,
-        # 同一環境かの照合に使う短いキー
-        "env_key": f"{platform.system().lower()}-{platform.machine().lower()}"
-                   f"-py{platform.python_version()}-np{np.__version__}",
+        # CI実行時のみ。ランナーイメージが途中で変わっていないかの照合用
+        "ci_image_version": os.environ.get("ImageVersion"),
+        "ci_runner_os": os.environ.get("RUNNER_OS"),
     }
+    # 照合キー。libm実装が変わる単位を含める
+    libc_key = f"-{libc_name}{libc_ver}" if libc_name else ""
+    env["env_key"] = (f"{platform.system().lower()}-{platform.machine().lower()}"
+                      f"{libc_key}-py{platform.python_version()}-np{np.__version__}")
+    return env
 
 
 def run_metadata(seed: int, version: str) -> dict:

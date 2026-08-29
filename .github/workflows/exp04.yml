@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
   setup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
       count: ${{ steps.gen.outputs.count }}
@@ -82,7 +82,7 @@ jobs:
 
   run:
     needs: setup
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
       fail-fast: false        # 1 run の失敗で他を巻き込まない
@@ -134,7 +134,7 @@ jobs:
   collect:
     needs: [setup, run]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       # step の if: から参照するため job level に置く
@@ -173,6 +173,18 @@ jobs:
       - name: 数値実行環境の同一性を確認
         run: uv run python tools/check_env.py runs/exp04_* 2>&1 | tee env_check.txt
 
+      - name: 健全性チェック (run数・早期終了・遺伝子固定)
+        # 実行手順書 §4。早期終了は除外せず「結果」として記録する。
+        run: |
+          uv run python tools/health_check.py runs/exp04_* --ticks "${{ inputs.ticks }}" 2>&1 | tee health.txt
+          {
+            echo ""
+            echo "### 健全性チェック"
+            echo '```'
+            cat health.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+
       - name: 条件ごとに転移の累積発生率を解析
         run: |
           {
@@ -189,7 +201,7 @@ jobs:
           for c in runs/exp04_*; do
             name=$(basename "$c")
             echo "===== $name =====" | tee -a analysis.txt
-            uv run python tools/analyze_transitions.py "$c" 2>&1 | tee -a analysis.txt || true
+            uv run python tools/analyze_transitions.py "$c" 2>&1 | tee -a analysis.txt
           done
           {
             echo ""
