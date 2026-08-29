@@ -7,22 +7,25 @@
 現在の実装・実験判断では、長期ロードマップより以下を優先する。
 
 1. `docs/次の実験計画.md` — 今から何をするか
-2. `docs/V1.1終了とVer1.2移行方針.md` — V1.1をどこで締め、次へ進むか
-3. 必要に応じて個別Issue / 実験NOTES
-4. `docs/開発ロードマップ_リアル化方針.md` — 長期ビジョン
+2. **Exp04実行時は `docs/Exp04_実行手順.md` — 実行条件・事前チェック・解析ルールの正本**
+3. `docs/V1.1終了とVer1.2移行方針.md` — V1.1をどこで締め、次へ進むか
+4. 必要に応じて個別Issue / 実験NOTES
+5. `docs/開発ロードマップ_リアル化方針.md` — 長期ビジョン
 
 作業が終わったら `docs/次の実験計画.md` と該当Issueの状態を更新する。
 
 ### 現在の短期順序
 
 ```text
-Exp04 (#4)
-→ 転移トリガー解析 (#18、必要なら #7)
-→ V1.1 baseline解析終了
-→ Ver.1.2環境更新設計 (#19)
+Exp04 (#4) — 4条件×20 seed×40,000 tick。本番は一括設計で完遂
+→ V1.1 baseline解析終了・未解決点をBacklog化
+→ Ver.1.2 Stage 0: 資源構造監査 (#19)
+→ Ver.1.2 最小環境更新（現第一候補: 空間的エネルギーニッチ）
 ```
 
-Exp05 / Exp06 / 14遺伝子全面感度解析 (#16) は現在Deferredであり、V1.1終了の必須条件ではない。
+Issue #18 の転移トリガー一次解析は**完了済み**。Exp05 / Exp06 / 14遺伝子全面感度解析 (#16) / #7祖先追跡は現在Deferredであり、V1.1終了の必須条件ではない。
+
+**Exp04について、Issue #4の過去コメントにある「body_size 1条件を先行し、結果を見て残り3条件を決める案」は旧検討案で不採用。** Claude Codeは `docs/Exp04_実行手順.md` とIssue #4本文の最新方針を優先し、途中結果を見てseed数・tick数・閾値・固定対象を変更しないこと。
 
 ## プロジェクトの目的
 
@@ -75,7 +78,7 @@ OS側の数学ライブラリ等に依存するため、同じseedでもWindows�
 
 ```
 experiments/expNN_<名前>/
-├─ config.json / meta.json   seed・設定を保存（実行環境情報はIssue #20で追加予定）
+├─ config.json / meta.json   seed・設定を保存
 ├─ stats.csv                 集計統計
 ├─ events.csv                全出生死亡イベント (任意)
 ├─ plots/                    グラフPNG
@@ -83,7 +86,7 @@ experiments/expNN_<名前>/
 ```
 
 **再現にはseedだけでは不十分。** Config、コード版、依存関係、数値実行環境を揃えること。
-Issue #20完了後は `meta.json` 自体にOS / architecture / Python / NumPy / git SHAを保存する。
+`meta.json` にはOS / architecture / Python / NumPy / git SHA等を保存する。
 
 ## 技術スタック
 
