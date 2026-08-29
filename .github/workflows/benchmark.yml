@@ -1,0 +1,71 @@
+name: Benchmark
+
+# 手動実行のみ。push では動かさない (Private リポジトリでは Actions 分を消費するため)。
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "測定モード"
+        type: choice
+        options: ["full", "quick"]
+        default: "full"
+      scaling:
+        description: "並列スケーリングの並列数 (カンマ区切り)"
+        type: string
+        default: "1,2,4"
+      label:
+        description: "結果の識別名 (空なら runner 情報から自動生成)"
+        type: string
+        default: ""
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: ランナーのスペックを記録
+        run: |
+          echo "=== CPU ==="
+          lscpu | grep -E "Model name|^CPU\(s\)|Thread|Core|Socket|MHz" || true
+          echo "=== メモリ ==="
+          free -h || true
+          echo "=== cgroup CPU 割当 ==="
+          cat /sys/fs/cgroup/cpu.max 2>/dev/null || echo "(取得不可)"
+
+      - name: ラベルを決定
+        id: label
+        run: |
+          if [ -n "${{ inputs.label }}" ]; then
+            echo "value=${{ inputs.label }}" >> "$GITHUB_OUTPUT"
+          else
+            n=$(nproc)
+            echo "value=gh-actions-ubuntu-${n}core" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: ベンチマーク実行
+        run: |
+          mkdir -p benchmarks
+          uv run python tools/benchmark.py \
+            --${{ inputs.mode }} \
+            --scaling "${{ inputs.scaling }}" \
+            --label "${{ steps.label.outputs.value }}" \
+            --out "benchmarks/${{ steps.label.outputs.value }}.json"
+
+      - name: ローカル基準値と比較
+        run: |
+          uv run python tools/benchmark.py --compare \
+            benchmarks/local_i7-14700F.json \
+            "benchmarks/${{ steps.label.outputs.value }}.json"
+
+      - name: 結果JSONを成果物として保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ steps.label.outputs.value }}
+          path: benchmarks/${{ steps.label.outputs.value }}.json
+          retention-days: 90
