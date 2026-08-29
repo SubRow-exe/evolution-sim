@@ -1,12 +1,12 @@
-"""結果不変性の回帰テスト (プラットフォーム内)。
+"""結果不変性の回帰テスト (記録済み数値実行環境内)。
 
-高速化やリファクタリングで**結果が1ビットでも変わったら失敗**する。
+高速化やリファクタリングで**同一数値実行環境の結果が1ビットでも変わったら失敗**する。
 結果が変われば v1.1-baseline との比較が壊れ、過去の実験が無効になるため、
 実装変更と挙動変更を機械的に分離する必要がある。
 
-指紋はOS依存 (math.sin/cos/atan2/hypot と pow が各OSのlibm実装のため
-最終ビットが一致しない)。未記録のOSではスキップする。
-OSを跨いだ保証は tools/verify_vs_ref.py が担当し、CIはそちらを実行する。
+指紋は数値実行環境依存で、Windows/Linux間ではlibm差により一致しないことがある。
+Goldenは便宜上 `os-machine` キーで保存し、未記録キーではスキップする。
+実装変更の比較は tools/verify_vs_ref.py が同じマシン上で旧refと現在実装を直接実行する。
 
 意図的にモデルを変更した場合のみ:
     uv run python tools/golden.py --write
@@ -26,8 +26,8 @@ _KEY = platform_key()
 
 pytestmark = pytest.mark.skipif(
     _KEY not in _STORE,
-    reason=f"このプラットフォーム [{_KEY}] の指紋は未記録 "
-           "(指紋はlibmの差でOS依存)。OS横断の検証は tools/verify_vs_ref.py が行う",
+    reason=f"この環境キー [{_KEY}] の指紋は未記録 "
+           "(指紋は数値実行環境依存)。実装変更の比較は tools/verify_vs_ref.py が行う",
 )
 
 
