@@ -1,28 +1,17 @@
-"""転移トリガー解析 (Issue #18 / docs/V1.1_転移トリガー解析項目.md)。
+"""転移トリガー解析 (Issue #18)。
 
-## 問い
+Exp03 では、sweep予定系統がかなり前から多産である一方、死亡も多く、
+出生優位が人口増加へ直結しないことが分かった。本ツールは events.csv から
+系統別の出生・死亡・人口を復元し、sweep前後の高回転状態を解析する。
 
-同じように小型・高光利用化する複数系統のうち、なぜ一系統だけが急速に
-席巻するのか。仮説は「繁殖上の小さな優位 → 出生数増 → 変異試行回数増 →
-さらに有利な変異 → 正のフィードバック」。
-
-検証したい因果順序:
-
-    形質変化 → 1個体あたり出生率上昇 → 系統人口増加 → sweep
-
-人口が増えた後で形質が変わっているだけなら仮説は弱い。
-
-## なぜ events.csv を使うのか
-
-`lineages.csv` は上位8系統しか記録しないため、支配系統が台頭する前の
-履歴が欠ける (Exp03では13転移seed中4seedで転移5,000tick前の記録が無い)。
-これは「早くから大きかった系統しか見えない」という**選択バイアス**であり、
-まさに検証したい仮説を歪める方向に働く。
-
-events.csv は全個体の出生・死亡を lineage_id 付きで持つため、
-**すべての系統の完全な履歴を tick 0 から復元できる**。
+重要:
+- `lineages.csv` は上位8系統のみなので、台頭前の勝者を落とす選択バイアスがある。
+- `events.csv` は全個体の出生・死亡を lineage_id 付きで持つためこちらを使う。
+- 「出生比 / 死亡比」は純増率そのものではない。出生優位と死亡不利の
+  **相対バランス指標**としてのみ用い、実際のnet rateも併記する。
 
     uv run python tools/analyze_trigger.py runs/exp03_20seeds_40k/<run>
+    uv run python tools/analyze_trigger.py runs/exp03_20seeds_40k --batch
 """
 from __future__ import annotations
 
@@ -42,7 +31,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 SWEEP_THRESHOLD = 0.5
-BIN = 200  # 集計のtick幅
+BIN = 200
 
 
 def transition_info(run: Path, threshold: float):
@@ -55,7 +44,7 @@ def transition_info(run: Path, threshold: float):
 
 
 def lineage_series(run: Path, lineage_ids: set, max_tick: int):
-    """events.csv から指定系統の人口・出生数の時系列を復元する。"""
+    """events.csv から指定系統の人口・出生・死亡時系列を復元する。"""
     births = {l: defaultdict(int) for l in lineage_ids}
     deaths = {l: defaultdict(int) for l in lineage_ids}
     all_b, all_d = defaultdict(int), defaultdict(int)
@@ -87,8 +76,14 @@ def lineage_series(run: Path, lineage_ids: set, max_tick: int):
         with np.errstate(divide="ignore", invalid="ignore"):
             per_capita = np.where(pop > 0, bs / BIN / np.maximum(pop, 1e-9), np.nan)
             share = np.where(total > 0, pop / np.maximum(total, 1e-9), np.nan)
-        out[l] = {"tick": ticks, "pop": pop, "births": bs,
-                  "per_capita": per_capita, "share": share}
+        out[l] = {
+            "tick": ticks,
+            "pop": pop,
+            "births": bs,
+            "deaths": ds,
+            "per_capita": per_capita,
+            "share": share,
+        }
     return out, ticks, total
 
 
@@ -111,7 +106,7 @@ def lineage_traits(run: Path, lineage_ids: set) -> dict:
 
 
 def rates(run: Path, tt: int, top_id: str, lo: int, hi: int):
-    """窓 [tt+lo, tt+hi) の 支配系統/集団全体 の出生率・死亡率比と純増を返す。"""
+    """窓内の支配系統/集団全体の出生・死亡率とnet rateを返す。"""
     series, ticks, total = lineage_series(run, {top_id}, tt + max(hi, 0) + BIN)
     d = series[top_id]
     tb = np.zeros_like(total, dtype=float)
@@ -136,28 +131,45 @@ def rates(run: Path, tt: int, top_id: str, lo: int, hi: int):
     pt_all = float(total[i0:i1].sum()) * BIN
     if pt_top <= 0 or pt_all <= 0:
         return None
+
     nb = float(d["births"][i0:i1].sum())
-    nd = nb - (d["pop"][i1 - 1] - d["pop"][max(i0 - 1, 0)])
+    nd = float(d["deaths"][i0:i1].sum())
     b_top, d_top = nb / pt_top, nd / pt_top
     b_all = float(tb[i0:i1].sum()) / pt_all
     d_all = float(td[i0:i1].sum()) / pt_all
+    rb = b_top / b_all if b_all else float("nan")
+    rd = d_top / d_all if d_all else float("nan")
+    balance = rb / rd if rd else float("nan")
+    net_top = b_top - d_top
+    net_all = b_all - d_all
     return {
-        "birth_ratio": b_top / b_all if b_all else float("nan"),
-        "death_ratio": d_top / d_all if d_all else float("nan"),
-        "net_top": b_top - d_top, "net_all": b_all - d_all,
-        "births": nb, "pop": float(d["pop"][i0:i1].mean()),
+        "birth_ratio": rb,
+        "death_ratio": rd,
+        "balance_ratio": balance,
+        "net_top": net_top,
+        "net_all": net_all,
+        "net_diff": net_top - net_all,
+        "births": nb,
+        "deaths": nd,
+        "pop": float(d["pop"][i0:i1].mean()),
     }
 
 
 def batch_summary(batch: Path, threshold: float) -> None:
-    """全転移runについて、sweep前と直前の出生率/死亡率比を並べる。"""
+    """全転移runについて、sweep前と直前の出生/死亡バランスを並べる。"""
     print("転移seedごとの 支配系統/集団全体 比 (出生率・死亡率)")
     print("  A窓 = 転移6,000〜2,000 tick前 (sweepより十分前)")
     print("  B窓 = 転移1,000 tick前〜転移時点 (sweep開始時)")
-    print("  純増余地 = 出生比 / 死亡比。1.0なら繁殖優位が死亡で相殺されている")
-    print(f"\n{'seed':>5} {'転移tick':>9} | {'A:出生比':>9} {'A:死亡比':>9} "
-          f"{'A:純増余地':>11} | {'B:出生比':>9} {'B:死亡比':>9} {'B:純増余地':>11}")
-    agg = {"a_b": [], "a_d": [], "a_g": [], "b_b": [], "b_d": [], "b_g": []}
+    print("  相対均衡 = 出生比 / 死亡比。純増率そのものではなく、")
+    print("             出生優位と死亡不利がどの程度釣り合うかを見る補助指標")
+    print("  Δnet = (支配系統の出生率-死亡率) - (集団全体の出生率-死亡率)")
+    print(f"\n{'seed':>5} {'転移tick':>9} | {'A:出生':>7} {'A:死亡':>7} {'A:均衡':>7} {'A:Δnet':>10} | "
+          f"{'B:出生':>7} {'B:死亡':>7} {'B:均衡':>7} {'B:Δnet':>10}")
+
+    agg = {
+        "a_b": [], "a_d": [], "a_bal": [], "a_net": [],
+        "b_b": [], "b_d": [], "b_bal": [], "b_net": [],
+    }
     for run in sorted(batch.iterdir()):
         if not (run / "stats.csv").exists() or not (run / "events.csv").exists():
             continue
@@ -169,30 +181,32 @@ def batch_summary(batch: Path, threshold: float) -> None:
         b = rates(run, tt, top_id, -1000, 0)
         if a is None or b is None:
             continue
-        ag = a["birth_ratio"] / a["death_ratio"] if a["death_ratio"] else float("nan")
-        bg = b["birth_ratio"] / b["death_ratio"] if b["death_ratio"] else float("nan")
         if a["births"] >= 10:
             agg["a_b"].append(a["birth_ratio"])
             agg["a_d"].append(a["death_ratio"])
-            agg["a_g"].append(ag)
+            agg["a_bal"].append(a["balance_ratio"])
+            agg["a_net"].append(a["net_diff"])
         agg["b_b"].append(b["birth_ratio"])
         agg["b_d"].append(b["death_ratio"])
-        agg["b_g"].append(bg)
-        print(f"{seed:>5} {tt:>9,} | {a['birth_ratio']:>9.2f} {a['death_ratio']:>9.2f}"
-              f" {ag:>11.2f} | {b['birth_ratio']:>9.2f} {b['death_ratio']:>9.2f}"
-              f" {bg:>11.2f}")
+        agg["b_bal"].append(b["balance_ratio"])
+        agg["b_net"].append(b["net_diff"])
+        print(f"{seed:>5} {tt:>9,} | {a['birth_ratio']:>7.2f} {a['death_ratio']:>7.2f} "
+              f"{a['balance_ratio']:>7.2f} {a['net_diff']:>+10.6f} | "
+              f"{b['birth_ratio']:>7.2f} {b['death_ratio']:>7.2f} "
+              f"{b['balance_ratio']:>7.2f} {b['net_diff']:>+10.6f}")
 
     def med(x):
         return float(np.nanmedian(x)) if x else float("nan")
 
-    print(f"\n{'中央値':>5} {'':>9} | {med(agg['a_b']):>9.2f} {med(agg['a_d']):>9.2f}"
-          f" {med(agg['a_g']):>11.2f} | {med(agg['b_b']):>9.2f} {med(agg['b_d']):>9.2f}"
-          f" {med(agg['b_g']):>11.2f}")
-    n_gt = sum(1 for g in agg["b_g"] if g > 1.0)
-    print(f"\nA窓 (n={len(agg['a_g'])}, 出生数10以上のみ): 純増余地の中央値 "
-          f"{med(agg['a_g']):.2f}")
-    print(f"B窓 (n={len(agg['b_g'])}): 純増余地の中央値 {med(agg['b_g']):.2f}   "
-          f"1.0超のseed {n_gt}/{len(agg['b_g'])}")
+    print(f"\n{'中央値':>5} {'':>9} | {med(agg['a_b']):>7.2f} {med(agg['a_d']):>7.2f} "
+          f"{med(agg['a_bal']):>7.2f} {med(agg['a_net']):>+10.6f} | "
+          f"{med(agg['b_b']):>7.2f} {med(agg['b_d']):>7.2f} "
+          f"{med(agg['b_bal']):>7.2f} {med(agg['b_net']):>+10.6f}")
+    n_gt = sum(1 for g in agg["b_bal"] if g > 1.0)
+    print(f"\nA窓 (n={len(agg['a_bal'])}, 出生数10以上のみ): 相対均衡中央値 "
+          f"{med(agg['a_bal']):.2f}, Δnet中央値 {med(agg['a_net']):+.6f}")
+    print(f"B窓 (n={len(agg['b_bal'])}): 相対均衡中央値 {med(agg['b_bal']):.2f}, "
+          f"Δnet中央値 {med(agg['b_net']):+.6f}, 相対均衡>1 seed {n_gt}/{len(agg['b_bal'])}")
 
 
 def main() -> None:
@@ -216,7 +230,6 @@ def main() -> None:
     print(f"=== {run.name} ===")
     print(f"転移tick {tt:,}   支配系統 id={top_id}")
 
-    # 比較対象: 支配系統 + 転移直前に大きかった他系統
     rivals = {top_id}
     lin_path = run / "lineages.csv"
     if lin_path.exists():
@@ -242,12 +255,6 @@ def main() -> None:
         pc_s = f"{pc:.5f}" if np.isfinite(pc) else "-"
         print(f"{rel:>+10,} {d['pop'][i]:>7.0f} {d['share'][i]:>7.1%} {pc_s:>15}")
 
-    # --- 繁殖優位が sweep に先行するか ---
-    #
-    # 系統人口が数個体しかない時期は、200 tick binの出生数が0か1で
-    # per-capita がノイズに支配される。そこで幅の広い窓で
-    # 「窓内の総出生数 / 窓内の延べ個体数」として求め、
-    # 同じ窓の集団全体平均と比べる (優位の有無は相対値で判断する)。
     def window_rate(pop: np.ndarray, ev: np.ndarray, lo: int, hi: int):
         i0, i1 = at(tt + lo), at(tt + hi)
         if i1 <= i0:
@@ -268,33 +275,32 @@ def main() -> None:
                 break
             (total_births if ev == "birth" else total_deaths)[t // BIN] += 1
 
-    print("\n繁殖優位は sweep に先行するか")
-    print("  出生率・死亡率 = 窓内のイベント数 / 延べ個体数。比 = 支配系統 / 集団全体")
-    print(f"{'窓 (相対tick)':>18} {'出生比':>7} {'死亡比':>7} {'純増(系統)':>11} "
-          f"{'純増(全体)':>11} {'人口':>8} {'出生数':>7}")
+    print("\n出生・死亡バランスは sweep に先行するか")
+    print("  率 = 窓内イベント数 / 延べ個体数、比 = 支配系統 / 集団全体")
+    print(f"{'窓 (相対tick)':>18} {'出生比':>7} {'死亡比':>7} {'相対均衡':>8} "
+          f"{'net(系統)':>11} {'net(全体)':>11} {'Δnet':>10} {'人口':>8} {'出生数':>7}")
     windows = [(-12000, -8000), (-8000, -6000), (-6000, -4000),
                (-4000, -2000), (-2000, -1000), (-1000, 0), (0, 1000)]
     for lo, hi in windows:
         if tt + lo < 0:
             continue
         b_top, nb = window_rate(d["pop"], d["births"], lo, hi)
+        d_top, _ = window_rate(d["pop"], d["deaths"], lo, hi)
         b_all, _ = window_rate(total.astype(float), total_births, lo, hi)
-        dth = np.zeros_like(d["births"])
-        # 系統の死亡数 = 出生 - 人口増分 から復元する
-        i0, i1 = at(tt + lo), at(tt + hi)
-        d_top_n = float(d["births"][i0:i1].sum() - (d["pop"][i1 - 1] - d["pop"][max(i0 - 1, 0)]))
-        pt = float(d["pop"][i0:i1].sum()) * BIN
-        d_top = d_top_n / pt if pt > 0 else float("nan")
         d_all, _ = window_rate(total.astype(float), total_deaths, lo, hi)
         rb = b_top / b_all if (b_all and np.isfinite(b_all)) else float("nan")
         rd = d_top / d_all if (d_all and np.isfinite(d_all)) else float("nan")
+        bal = rb / rd if (rd and np.isfinite(rd)) else float("nan")
+        net_top = b_top - d_top
+        net_all = b_all - d_all
+        net_diff = net_top - net_all
+        i0, i1 = at(tt + lo), at(tt + hi)
         pop_here = d["pop"][i0:i1].mean()
-        print(f"{f'{lo:+,}〜{hi:+,}':>18} {rb:>7.2f} {rd:>7.2f} "
-              f"{b_top - d_top:>+11.5f} {b_all - d_all:>+11.5f} "
+        print(f"{f'{lo:+,}〜{hi:+,}':>18} {rb:>7.2f} {rd:>7.2f} {bal:>8.2f} "
+              f"{net_top:>+11.6f} {net_all:>+11.6f} {net_diff:>+10.6f} "
               f"{pop_here:>8.1f} {nb:>7.0f}")
-    print("  ※ 出生数10未満の窓は計数ノイズが大きく、単独では判断材料にならない")
-    print("  ※ 出生比が高くても純増が集団全体と同程度なら、"
-          "その優位は人口増加へ変換されていない")
+    print("  ※ 相対均衡=出生比/死亡比は純増率ではない。netとΔnetを主に解釈する")
+    print("  ※ 出生数10未満の窓は計数ノイズが大きく、単独では判断材料にしない")
 
     traits = lineage_traits(run, {top_id})
     tr = traits[top_id]
@@ -336,7 +342,7 @@ def main() -> None:
         ax.set_title(title)
     axes[1].set_yscale("log")
     axes[0].legend(fontsize=7)
-    fig.suptitle(f"{run.name}: does reproductive advantage precede the sweep?")
+    fig.suptitle(f"{run.name}: birth/death dynamics around the sweep")
     fig.tight_layout()
     path = out_dir / "trigger.png"
     fig.savefig(path, dpi=110)
