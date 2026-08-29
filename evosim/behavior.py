@@ -54,13 +54,21 @@ def decide_and_move(org, sim) -> float:
             field_specs.append((world.light, g[LIGHT_ABS]))
         if g[CHEM_ABS] > ABILITY_EPS:
             field_specs.append((world.chemical, g[CHEM_ABS]))
+    single_cell = (x_hi - x_lo) == 1 and (y_hi - y_lo) == 1
     for arr, ability in field_specs:
-        sub = arr[x_lo:x_hi, y_lo:y_hi]
-        flat = int(np.argmax(sub))
-        val = float(sub.flat[flat])
+        if single_cell:
+            # 感覚半径がセル1個に収まる場合 (初期個体はこれに該当)。
+            # numpy の argmax / flat イテレータは呼び出し overhead が大きいため、
+            # 走査対象が1セルのときは直接読む。結果は完全に同一。
+            flat = 0
+            val = float(arr[x_lo, y_lo])
+        else:
+            sub = arr[x_lo:x_hi, y_lo:y_hi]
+            flat = int(np.argmax(sub))
+            val = float(sub[flat // sub.shape[1], flat % sub.shape[1]])
         score = ability * val
         if score > best_score:
-            bi, bj = divmod(flat, sub.shape[1])
+            bi, bj = divmod(flat, y_hi - y_lo)
             cx, cy = world.cell_center(x_lo + bi, y_lo + bj)
             best_score = score
             if (x_lo + bi, y_lo + bj) == (ix0, iy0):

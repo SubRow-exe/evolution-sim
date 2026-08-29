@@ -15,6 +15,10 @@ class World:
     def __init__(self, cfg: Config, rng: np.random.Generator):
         self.cfg = cfg
         gw, gh = cfg.grid_w, cfg.grid_h
+        # ホットパス用のキャッシュ (Config のプロパティ参照と除算を避ける)
+        self._cell_size = cfg.cell_size
+        self._ix_max = gw - 1
+        self._iy_max = gh - 1
 
         # 光フラックス (静的な空間勾配) [E/tick/セル]
         if cfg.light_pattern == "vertical":
@@ -42,9 +46,24 @@ class World:
     # --- 座標 → セル ---
 
     def cell_index(self, x: float, y: float) -> tuple[int, int]:
-        cfg = self.cfg
-        ix = min(cfg.grid_w - 1, max(0, int(x / cfg.cell_size)))
-        iy = min(cfg.grid_h - 1, max(0, int(y / cfg.cell_size)))
+        """座標 → セル添字。1 tickあたり数千回呼ばれる最ホットパス。
+
+        cfg.grid_w / grid_h は毎回除算を行うプロパティなので __init__ で
+        属性に固定してある。除算そのものは逆数乗算に置き換えない
+        (x/20.0 と x*0.05 は浮動小数点の結果が一致せず、セル境界で
+        添字が1ずれる可能性があるため)。
+        """
+        cell = self._cell_size
+        ix = int(x / cell)
+        iy = int(y / cell)
+        if ix < 0:
+            ix = 0
+        elif ix > self._ix_max:
+            ix = self._ix_max
+        if iy < 0:
+            iy = 0
+        elif iy > self._iy_max:
+            iy = self._iy_max
         return ix, iy
 
     def cell_center(self, ix: int, iy: int) -> tuple[float, float]:

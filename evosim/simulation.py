@@ -247,17 +247,27 @@ class Simulation:
         g = org.genome
         if g[CORPSE_DIG] <= 1e-6:
             return
-        r = org.radius(cfg.radius_coef)
+        # 内側ループは1 tickあたり数万回まわるため、属性参照とメソッド呼び出しを
+        # ローカルへ引き上げてある。計算式と走査順序は元のまま (結果は同一)。
+        rc = cfg.radius_coef
+        m = org.matter
+        r = rc * math.sqrt(m if m > 1e-9 else 1e-9)
+        ox, oy = org.x, org.y
         target = None
         best_d2 = None
-        ix, iy = self.world.cell_index(org.x, org.y)
+        ix, iy = self.world.cell_index(ox, oy)
+        chash = self.corpse_hash
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
-                for c in self.corpse_hash.get((ix + dx, iy + dy), ()):
-                    if c.matter <= 0.0:
+                cell = chash.get((ix + dx, iy + dy))
+                if not cell:
+                    continue
+                for c in cell:
+                    cm = c.matter
+                    if cm <= 0.0:
                         continue
-                    cr = cfg.radius_coef * math.sqrt(max(c.matter, 1e-9))
-                    d2 = (c.x - org.x) ** 2 + (c.y - org.y) ** 2
+                    cr = rc * math.sqrt(cm if cm > 1e-9 else 1e-9)
+                    d2 = (c.x - ox) ** 2 + (c.y - oy) ** 2
                     if d2 <= (r + cr) ** 2 and (best_d2 is None or d2 < best_d2):
                         target, best_d2 = c, d2
         if target is None:
@@ -291,18 +301,28 @@ class Simulation:
         g = org.genome
         if g[PREDATION] <= 1e-6:
             return
-        r = org.radius(cfg.radius_coef)
-        ix, iy = self.world.cell_index(org.x, org.y)
+        rc = cfg.radius_coef
+        m = org.matter
+        r = rc * math.sqrt(m if m > 1e-9 else 1e-9)
+        ox, oy = org.x, org.y
+        ix, iy = self.world.cell_index(ox, oy)
         target = None
         best_d2 = None
+        ohash = self.org_hash
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
-                for other in self.org_hash.get((ix + dx, iy + dy), ()):
+                cell = ohash.get((ix + dx, iy + dy))
+                if not cell:
+                    continue
+                for other in cell:
                     if other is org or not other.alive:
                         continue
-                    d2 = (other.x - org.x) ** 2 + (other.y - org.y) ** 2
-                    if d2 <= (r + other.radius(cfg.radius_coef)) ** 2 and (
-                            best_d2 is None or d2 < best_d2):
+                    d2 = (other.x - ox) ** 2 + (other.y - oy) ** 2
+                    if best_d2 is not None and d2 >= best_d2:
+                        continue
+                    om = other.matter
+                    orad = rc * math.sqrt(om if om > 1e-9 else 1e-9)
+                    if d2 <= (r + orad) ** 2:
                         target, best_d2 = other, d2
         if target is None:
             return
