@@ -1,0 +1,31 @@
+{
+  "name": "evolution-sim",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+
+  // uv は PyPI から入れる (curl | sh を避け、依存元をPyPIに統一する)。
+  // uv sync --frozen で uv.lock どおりに再現する。
+  "postCreateCommand": "pip install --user uv && uv sync --frozen",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["tests"],
+        "files.eol": "\n"
+      }
+    }
+  },
+
+  // pygame は画面が無くても import できるが、GUI ビューア (main.py の
+  // --headless なし) は Codespaces では動かない。ヘッドレス実行・テスト・
+  // 解析はすべて動作する。描画コスト測定はダミードライバを使う。
+  "remoteEnv": {
+    "SDL_VIDEODRIVER": "dummy",
+    "MPLBACKEND": "Agg"
+  }
+}

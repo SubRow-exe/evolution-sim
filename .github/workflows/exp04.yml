@@ -1,0 +1,207 @@
+name: Exp04
+
+# Exp04 を GitHub Actions 上で run 単位に並列実行する。
+#
+# ## 重要: baseline を条件に含める理由
+#
+# 結果は数値実行環境に依存する (math.sin/cos/atan2/hypot と pow が
+# OS側の数学ライブラリ実装に依存するため、同じseedでも Windows と Linux で
+# 結果が異なる)。
+#
+# `docs/Exp04_実行手順.md` の本番手順は「Exp03と同じWindowsマシンで実行し、
+# Exp03のbaseline (13/20) と比較する」ことを前提としている。
+# Actions は Linux なので、Exp03 をそのまま比較対象にできない。
+#
+# そこで本ワークフローは **baseline (遺伝子固定なし) も同じランナー上で実行し、
+# Actions内で自己完結した5条件の比較**とする。
+# ここで得た結果を Exp03 (Windows) の数値と直接比較してはいけない。
+#
+# 手動実行のみ。Public リポジトリでは Actions 分は無料。
+
+on:
+  workflow_dispatch:
+    inputs:
+      conditions:
+        description: "条件 (カンマ区切り)。baseline は遺伝子固定なし"
+        type: string
+        default: "baseline,body_size,reproduction_investment,mutation_rate,light_absorption"
+      seeds:
+        description: "seed範囲 (例: 1-20)"
+        type: string
+        default: "1-20"
+      ticks:
+        description: "1 runのtick数"
+        type: string
+        default: "40000"
+      upload_events:
+        description: "events.csv も保存する (トリガー解析に必要。容量大)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: exp04
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      count: ${{ steps.gen.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: matrix を生成
+        id: gen
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          conds = [c.strip() for c in "${{ inputs.conditions }}".split(",") if c.strip()]
+          spec = "${{ inputs.seeds }}"
+          seeds = []
+          for part in spec.split(","):
+              part = part.strip()
+              if "-" in part:
+                  lo, hi = part.split("-")
+                  seeds += list(range(int(lo), int(hi) + 1))
+              elif part:
+                  seeds.append(int(part))
+          items = [{"condition": c, "seed": s} for c in conds for s in seeds]
+          assert len(items) <= 256, f"matrix上限256を超える: {len(items)}"
+          print("matrix=" + json.dumps({"include": items}))
+          print("count=" + str(len(items)))
+          PY
+
+      - name: 実行計画を表示
+        run: |
+          echo "### Exp04 実行計画" >> $GITHUB_STEP_SUMMARY
+          echo "- 条件: ${{ inputs.conditions }}" >> $GITHUB_STEP_SUMMARY
+          echo "- seed: ${{ inputs.seeds }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ticks: ${{ inputs.ticks }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 総run数: ${{ steps.gen.outputs.count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- コード: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+  run:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false        # 1 run の失敗で他を巻き込まない
+      max-parallel: 20        # Freeプランの同時実行上限に合わせる
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: 依存をlockfileどおりに同期
+        run: uv sync --frozen
+
+      - name: シミュレーション実行
+        run: |
+          FIX=""
+          if [ "${{ matrix.condition }}" != "baseline" ]; then
+            FIX="--fix-genes ${{ matrix.condition }}"
+          fi
+          uv run python main.py --headless \
+            --ticks "${{ inputs.ticks }}" \
+            --seed "${{ matrix.seed }}" \
+            $FIX \
+            --out "runs/exp04_${{ matrix.condition }}"
+
+      - name: 保存対象を整理
+        id: pack
+        run: |
+          SRC=$(find "runs/exp04_${{ matrix.condition }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          echo "run dir: $SRC"
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          # snapshots は容量が大きくExp04の判定には使わないため除外する
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$SRC"/lineages.csv "$DST"/
+          if [ "${{ inputs.upload_events }}" = "true" ]; then
+            cp "$SRC"/events.csv "$DST"/
+          fi
+          echo "最終tick: $(tail -1 "$SRC"/stats.csv | cut -d, -f1) / 個体数: $(tail -1 "$SRC"/stats.csv | cut -d, -f2)"
+          du -sh "$DST"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp04-${{ matrix.condition }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  collect:
+    needs: [setup, run]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: 全runの成果物を取得
+        uses: actions/download-artifact@v4
+        with:
+          pattern: exp04-*
+          path: dl
+
+      - name: 条件ごとに再構成
+        run: |
+          mkdir -p runs
+          for d in dl/exp04-*; do
+            name=$(basename "$d")
+            cond=$(echo "$name" | sed -E 's/^exp04-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp04_$cond"
+            cp -r "$d"/* "runs/exp04_$cond"/ 2>/dev/null || true
+          done
+          echo "=== 条件ごとのrun数 ==="
+          for c in runs/exp04_*; do
+            echo "$(basename $c): $(find $c -mindepth 1 -maxdepth 1 -type d | wc -l) run"
+          done
+
+      - name: 数値実行環境の同一性を確認
+        run: uv run python tools/check_env.py runs/exp04_* 2>&1 | tee env_check.txt
+
+      - name: 条件ごとに転移の累積発生率を解析
+        run: |
+          {
+            echo "## Exp04 結果 (GitHub Actions / Linux)"
+            echo ""
+            echo "> 数値実行環境が Exp03 (Windows) と異なるため、"
+            echo "> **Exp03 の baseline 13/20 とは直接比較しない。**"
+            echo "> 本ワークフロー内の baseline 条件が比較対象。"
+            echo ""
+            echo '```'
+            cat env_check.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+          for c in runs/exp04_*; do
+            name=$(basename "$c")
+            echo "===== $name =====" | tee -a analysis.txt
+            uv run python tools/analyze_transitions.py "$c" 2>&1 | tee -a analysis.txt || true
+          done
+          {
+            echo ""
+            echo "<details><summary>解析結果</summary>"
+            echo ""
+            echo '```'
+            cat analysis.txt
+            echo '```'
+            echo "</details>"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: 集計結果を保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp04-analysis
+          path: |
+            analysis.txt
+            env_check.txt
+            runs/
+          retention-days: 90

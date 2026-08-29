@@ -201,3 +201,57 @@ Exp04結果を `experiments/` にNOTESとともに保存し、Issue #4へ結論�
 
 Exp04完了をもってV1.1の必須解析を終了する。
 未解決の「高回転状態の均衡がなぜ崩れるか」はBacklogへ残し、Ver.1.2 Stage 0（資源構造監査）へ進む。
+
+---
+
+## 付録A. GitHub Actions で実行する場合 (2026-08-29 追加)
+
+本書 §2.C は「Exp03と同じWindows実行マシンを使用する」としている。
+これは Exp03 baseline (13/20) との比較が §5「同一seed対応比較」で必須だからである。
+
+一方、リポジトリを Public 化したことで Actions 分が無制限無料になり、
+run単位の並列実行が現実的になった。Actions で実行する場合の制約を以下に定める。
+
+### 制約: baseline を同じランナー上で再実行する
+
+結果は数値実行環境に依存する (`math.sin/cos/atan2/hypot` と `pow` が
+OS側の数学ライブラリ実装に依存)。Actions は Linux なので、
+**Windows で得た Exp03 の 13/20 を比較対象にできない。**
+
+そのため Actions 実行では **baseline (遺伝子固定なし) も条件に含め、
+5条件 × 20 seed = 100 run を同一ランナー環境で完結させる。**
+
+得られた結果は Actions 内で自己完結した比較として扱い、
+**Exp03 の数値と直接比較しない。** §5 の2×2表は Actions の baseline に対して作る。
+
+### 実行
+
+```bash
+gh workflow run exp04.yml \
+  -f conditions=baseline,body_size,reproduction_investment,mutation_rate,light_absorption \
+  -f seeds=1-20 -f ticks=40000
+```
+
+ワークフロー: `.github/workflows/exp04.yml`
+
+- run単位でジョブを分割 (100ジョブ)。`max-parallel: 20`
+- `fail-fast: false` — 1 runの失敗で他を巻き込まない
+- 各runは `stats.csv` / `lineages.csv` / `events.csv` / `config` / `meta` を成果物として保存
+  (`snapshots/` は容量が大きく Exp04 の判定に使わないため除外)
+- 完了後 `collect` ジョブが `check_env.py` と `analyze_transitions.py` を自動実行し、
+  結果を Job Summary に出力する
+
+見込み: 1 runあたり20〜45分、20並列で**実時間 約3時間**。
+Actions分は Public リポジトリのため無料。
+
+### どちらで実行するか
+
+| | Windows ローカル | GitHub Actions |
+|---|---|---|
+| Exp03 baseline との比較 | **そのまま可能** | **不可**。baselineの再実行が必要 |
+| 実行 run 数 | 80 | 100 (baseline込み) |
+| 実時間 | 3〜6時間 (PC占有) | 約3時間 (PCを占有しない) |
+| 費用 | 電気代のみ | 無料 |
+
+**Exp03との連続性を重視するならローカル、PCを占有したくないなら Actions。**
+どちらを選んでも、選んだ環境内で全条件を完結させること。混在させない。
