@@ -62,6 +62,8 @@ R = リセット (新seed)   ESC = 終了
 セットアップと運用方針は [docs/オンライン実行環境.md](docs/オンライン実行環境.md)。
 
 ```bash
+# 生データ転送経路の疎通確認 (数KB、約30秒)
+gh workflow run drive_check.yml
 # Exp04 本番 (100 run、約3時間)
 gh workflow run exp04.yml -f seeds=1-20 -f ticks=40000
 ```
