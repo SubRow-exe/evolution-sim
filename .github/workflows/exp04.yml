@@ -138,7 +138,10 @@ jobs:
     needs: [setup, run]
     if: always()
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # 200 run 規模では成果物ダウンロードだけで5〜15分かかる。
+    # 集計処理全体の見積は15〜30分だが、6時間かけた実験の集計だけが
+    # タイムアウトで失われる事態を避けるため余裕を持たせる。
+    timeout-minutes: 120
     env:
       # step の if: から参照するため job level に置く
       # (secrets context は step の if: で直接参照できない)

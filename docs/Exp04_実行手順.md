@@ -5,7 +5,7 @@
 > **この文書を Exp04 実行時の正本とする。**
 >
 > **正式な実行環境は GitHub Actions (ubuntu-24.04 / Linux) とする。**
-> 本番は **baseline を含む5条件 × seed 1〜20 × 40,000 tick = 100 run** を
+> 本番は **baseline を含む5条件 × seed 1〜40 × 40,000 tick = 200 run** を
 > 同一ランナー環境で、結果を途中で見て設計変更せず完遂する。
 >
 > Windows ローカル実行は**代替手段**として付録Aに残す。
@@ -47,12 +47,31 @@ Windows で得た Exp03 の baseline をそのまま比較対象にはできな�
 | `light_absorption` | `light_absorption` | 0.3 |
 
 各条件:
-- seed: 1〜20
+- seed: 1〜40
 - ticks: 40,000
-- 総run数: **5条件 × 20 seed = 100 run**
+- 総run数: **5条件 × 40 seed = 200 run**
 - sweep主判定: `top_lineage_frac >= 0.5`
 - 感度解析: 0.3 / 0.5 / 0.7
 - **baseline: 本実験内の `baseline` 条件 (Actions / Linux)**
+
+### seed数を20から40へ拡大した理由 (2026-08-29 決定)
+
+**この変更は結果を一切見る前に決定した事前登録である。**
+1〜20を実行して結果を見てから21〜40を追加したのではない。
+200 runを1回の起動で投入し、40 seedをプールして解析する。
+
+理由は**「不明」判定に落ちる範囲を狭めるため**。
+
+§5の判定基準は「20 seedで差が曖昧なら**不明**」としている。
+baselineの転移率を仮に65%とすると、固定条件で30%へ低下した場合の検出力は
+n=20 で約50%、n=40 で約80%程度になる。
+つまり n=20 では「中程度の効果」を検出できず不明判定になりやすい。
+
+実行環境をActionsへ移し、PCを占有せず並列実行できるようになったため、
+標本数を倍にするコストが実質的に無くなったことによる。
+
+**途中で結果を見て打ち切らない。** 40 seed全てを完遂してから解析する
+(optional stopping を避けるため)。
 
 ### Exp03 (Windows) の 13/20 の扱い
 
@@ -87,7 +106,7 @@ Exp03 は Windows 上で得た結果であり、**40,000 tick までに 13/20 se
 1. `AGENTS.md`、本書、`docs/次の実験計画.md`、Issue #4 を読む。
 2. 最新 `main` を取得する。
 3. `git status --short` が空であることを確認する。未コミット変更がある状態で本番を開始しない。
-4. `git rev-parse HEAD` を記録する。本番100 runの途中でコードを変更しない。
+4. `git rev-parse HEAD` を記録する。本番200 runの途中でコードを変更しない。
    (Actions はディスパッチ時のSHAでチェックアウトするため走行中のジョブには影響しないが、
    再実行時にズレるため触らない)
 
@@ -136,18 +155,19 @@ Actions では run ごとに成果物が分離されるため、ローカルの�
 ## 3. 本番実行
 
 ```bash
-gh workflow run exp04.yml -f conditions=baseline,body_size,reproduction_investment,mutation_rate,light_absorption -f seeds=1-20 -f ticks=40000 -f upload_events=true
+gh workflow run exp04.yml -f conditions=baseline,body_size,reproduction_investment,mutation_rate,light_absorption -f seeds=1-40 -f ticks=40000 -f upload_events=true
 ```
 
 ワークフロー: `.github/workflows/exp04.yml`
 
-- run単位でジョブを分割 (100ジョブ)。`max-parallel: 20`
+- run単位でジョブを分割 (200ジョブ)。`max-parallel: 20`
 - `fail-fast: false` — 1 runの失敗で他を巻き込まない
 - 各runは `stats.csv` / `lineages.csv` / `events.csv` / `config.json` / `meta.json` を保存
   (`snapshots/` は容量が大きく Exp04 の判定に使わないため除外)
 - `events.csv` はトリガー解析 (§5副解析) に必要。容量と引き換えに既定で保存する
 
-見込み: 1 runあたり20〜45分、20並列で**実時間 約3時間**。
+見込み: 1 runあたり20〜45分、20並列で**実時間 約6時間**。
+PCを起動し続ける必要はない (投入後はGitHub側で実行される)。
 Public リポジトリのため Actions 分は無料。
 
 ### 実行中のルール
@@ -172,14 +192,14 @@ uv run python tools/check_env.py runs/exp04_*
 ```
 
 ```bash
-uv run python tools/health_check.py runs/exp04_* --ticks 40000 --expect-runs 20
+uv run python tools/health_check.py runs/exp04_* --ticks 40000 --expect-runs 40
 ```
 
 `tools/health_check.py` は前提が崩れていれば**非ゼロ終了する**。
 
 **停止する (結果を解釈してはいけない):**
 
-1. 条件ごとの run 数が20に満たない (`--expect-runs 20`)
+1. 条件ごとの run 数が40に満たない (`--expect-runs 40`)
 2. `meta.json` の欠損 (再現条件を特定できない)
 3. 固定対象遺伝子の分散が全期間0でない (遺伝子固定が効いていない)
 4. 数値実行環境が2種類以上 (条件間比較の前提が崩れる)
@@ -214,7 +234,7 @@ uv run python tools/analyze_transitions.py runs/exp04_<条件>
 
 ### 同一seed対応比較
 
-各固定条件について**同一実験内の baseline** と seed 1〜20 を対応させ、必ず2×2表を作る。
+各固定条件について**同一実験内の baseline** と seed 1〜40 を対応させ、必ず2×2表を作る。
 
 | baseline (Actions) | fixed |
 |---|---|
@@ -231,10 +251,10 @@ seedは条件間で対応している (同じseedは同じ初期条件) ため�
 同一実験内の baseline との比較で:
 
 - 固定条件で1 seedでもsweep → その形質の進化は**厳密な必要条件ではない**
-- 0/20 → **40k以内のsweepに強く必要な候補**。絶対的必要条件とは言わない
+- 0/40 → **40k以内のsweepに強く必要な候補**。絶対的必要条件とは言わない
 - 非ゼロだが明瞭に減少/遅延 → **促進因子候補**
 - baselineと同程度/増加 → **主要な必要条件ではない**
-- 20 seedで差が曖昧 → **不明**
+- 40 seedで差が曖昧 → **不明**
 
 ### 副解析
 
@@ -305,7 +325,7 @@ uv run pytest tests
 ```
 
 ```bash
-for G in body_size reproduction_investment mutation_rate light_absorption; do uv run python tools/run_batch.py --seeds 1-20 --ticks 40000 --workers 14 --fix-genes $G --out runs/exp04_20seeds_40k_fix_$G; done
+for G in body_size reproduction_investment mutation_rate light_absorption; do uv run python tools/run_batch.py --seeds 1-40 --ticks 40000 --workers 14 --fix-genes $G --out runs/exp04_40seeds_40k_fix_$G; done
 ```
 
 ### baseline の扱い
