@@ -1,8 +1,11 @@
 """実装変更が結果を変えていないことを、任意のgit refと直接比較して検証する。
 
-tools/golden.py の指紋はOS依存 (libmの差) のため、記録したOSでしか照合できない。
-本ツールは **同じマシン上で2つの実装を実際に走らせて比較する** ため、
-どのOS・どのCIでも成立する。保存された定数に依存しない。
+Golden指紋は数値実行環境に依存するため、保存定数を別環境へ持ち込んで比較できない。
+本ツールは **同じマシン上で旧refと現在実装を実際に走らせて比較する** ことで、
+そのマシンの数値環境差を両実装へ共通化し、実装変更そのものの影響を検出する。
+
+これは「WindowsとLinuxで同じ結果を保証する」ツールではない。
+WindowsではWindows上の旧版/新版、LinuxではLinux上の旧版/新版を比較する。
 
     uv run python tools/verify_vs_ref.py --ref 65eed4a
     uv run python tools/verify_vs_ref.py --ref v1.1-baseline
@@ -43,7 +46,7 @@ def fingerprints_at(ref: str) -> dict[str, str]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="実装同士を直接比較して結果不変性を検証")
+    ap = argparse.ArgumentParser(description="同一マシン上で実装同士を直接比較して結果不変性を検証")
     ap.add_argument("--ref", required=True, help="比較対象のgit ref (タグ・コミット)")
     args = ap.parse_args()
 
@@ -62,7 +65,7 @@ def main() -> None:
         raise SystemExit(
             f"\n結果が {args.ref} と異なります: {', '.join(ng)}\n"
             "実装変更が挙動を変えました。意図した変更でなければ修正してください。")
-    print(f"\n全ケース一致。{args.ref} と結果は同一です。")
+    print(f"\n全ケース一致。この数値実行環境では {args.ref} と結果は同一です。")
 
 
 if __name__ == "__main__":
