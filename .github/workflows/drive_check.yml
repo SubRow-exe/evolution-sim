@@ -1,0 +1,98 @@
+name: Drive転送確認
+
+# Google Drive への転送経路 (rclone) だけを最小構成で確認する。
+#
+# Exp04 の collect ジョブと同じ認証情報・同じ remote を使い、
+#   数KBのテストファイル生成 → アップロード → 再取得 → SHA256一致
+# までを確認する。シミュレーションは一切実行しない。
+#
+# 本番 Exp04 を回す前の疎通チェック用。手動実行のみ。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      # secrets context は step の if: から直接参照できないため job level に置く
+      RCLONE_CONF: ${{ secrets.RCLONE_CONFIG_BASE64 }}
+      REMOTE_BASE: ${{ vars.RCLONE_REMOTE_BASE }}
+    steps:
+      - name: 認証情報の有無を確認
+        run: |
+          set -euo pipefail
+          MISSING=""
+          [ -n "${RCLONE_CONF:-}" ] || MISSING="$MISSING secrets.RCLONE_CONFIG_BASE64"
+          [ -n "${REMOTE_BASE:-}" ] || MISSING="$MISSING vars.RCLONE_REMOTE_BASE"
+          if [ -n "$MISSING" ]; then
+            echo "::error::未設定:$MISSING (設定方法は docs/オンライン実行環境.md)"
+            exit 1
+          fi
+          # purge するのは run 固有のディレクトリのみに限定する
+          echo "REMOTE_DIR=${REMOTE_BASE}/_selftest/run_${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+          echo "転送先ベース: ${REMOTE_BASE}"
+
+      - name: rclone を用意
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          rclone version | head -1
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" | base64 -d > ~/.config/rclone/rclone.conf
+          chmod 600 ~/.config/rclone/rclone.conf
+
+      - name: テストファイルを生成し SHA256 を記録
+        run: |
+          set -euo pipefail
+          mkdir -p up dl
+          head -c 4096 /dev/urandom > up/drive_check.bin
+          printf 'run_id=%s\nsha_target=drive_check.bin\n' "$GITHUB_RUN_ID" > up/drive_check.txt
+          (cd up && sha256sum drive_check.bin drive_check.txt > ../expected.sha256)
+          ls -l up/
+          cat expected.sha256
+
+      - name: アップロード
+        run: |
+          set -euo pipefail
+          rclone copy up/ "$REMOTE_DIR/" --stats-one-line
+          echo "=== リモート上のファイル ==="
+          rclone lsl "$REMOTE_DIR/"
+
+      - name: 再取得
+        run: |
+          set -euo pipefail
+          rclone copy "$REMOTE_DIR/" dl/ --stats-one-line
+          ls -l dl/
+
+      - name: SHA256 の一致を検証
+        run: |
+          set -euo pipefail
+          cd dl && sha256sum -c ../expected.sha256
+          echo "SHA256 一致"
+
+      - name: テストデータをリモートから削除
+        if: always()
+        run: |
+          if [ -n "${REMOTE_DIR:-}" ]; then
+            rclone purge "$REMOTE_DIR" && echo "削除: $REMOTE_DIR" || echo "::warning::削除に失敗: $REMOTE_DIR (手動で確認)"
+          fi
+
+      - name: 認証情報を破棄
+        if: always()
+        run: rm -f ~/.config/rclone/rclone.conf
+
+      - name: 結果を要約
+        if: always()
+        run: |
+          {
+            echo "## Google Drive 転送確認"
+            echo ""
+            echo "- 転送先: \`${REMOTE_BASE:-未設定}/_selftest/run_${GITHUB_RUN_ID}\` (確認後に削除)"
+            echo "- 内容: 4KBのバイナリ + テキスト → アップロード → 再取得 → SHA256照合"
+            echo "- 結果: **${{ job.status }}**"
+          } >> "$GITHUB_STEP_SUMMARY"
