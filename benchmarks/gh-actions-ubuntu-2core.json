@@ -1,0 +1,208 @@
+{
+  "schema": 1,
+  "label": "gh-actions-ubuntu-2core",
+  "timestamp": "2026-08-29T09:57:47",
+  "environment": {
+    "os": "Linux",
+    "os_release": "6.17.0-1022-azure",
+    "machine": "x86_64",
+    "cpu_model": "x86_64",
+    "python_version": "3.12.3",
+    "python_implementation": "CPython",
+    "numpy_version": "2.5.2",
+    "logical_cpus": 2,
+    "physical_cpus": 1,
+    "cpu_freq_mhz": 2800.0,
+    "total_ram_gb": 7.75,
+    "cgroup_cpu_limit": null,
+    "psutil_available": true,
+    "usable_cpus": 2
+  },
+  "scenarios": [
+    {
+      "scenario": "light",
+      "seed": 1,
+      "config_overrides": {},
+      "warmup_ticks": 300,
+      "measured_ticks": 1500,
+      "population_start": 207,
+      "population_end": 298,
+      "corpses_end": 36,
+      "recording": false,
+      "total_seconds": 11.9377,
+      "ms_per_step_mean": 7.9578,
+      "ms_per_step_median": 7.9443,
+      "ms_per_step_p95": 9.31,
+      "steps_per_second": 125.65,
+      "cpu_seconds": 11.96,
+      "cpu_utilization_cores": 1.002,
+      "peak_rss_mb": 43.0
+    },
+    {
+      "scenario": "standard",
+      "seed": 1,
+      "config_overrides": {},
+      "warmup_ticks": 5000,
+      "measured_ticks": 2000,
+      "population_start": 364,
+      "population_end": 421,
+      "corpses_end": 63,
+      "recording": false,
+      "total_seconds": 26.0034,
+      "ms_per_step_mean": 13.0008,
+      "ms_per_step_median": 13.1675,
+      "ms_per_step_p95": 14.1686,
+      "steps_per_second": 76.91,
+      "cpu_seconds": 26.03,
+      "cpu_utilization_cores": 1.001,
+      "peak_rss_mb": 51.1
+    },
+    {
+      "scenario": "dense",
+      "seed": 11,
+      "config_overrides": {
+        "initial_population": 3000
+      },
+      "warmup_ticks": 200,
+      "measured_ticks": 300,
+      "population_start": 1869,
+      "population_end": 2088,
+      "corpses_end": 1396,
+      "recording": false,
+      "total_seconds": 22.5997,
+      "ms_per_step_mean": 75.331,
+      "ms_per_step_median": 74.2214,
+      "ms_per_step_p95": 81.5642,
+      "steps_per_second": 13.27,
+      "cpu_seconds": 22.63,
+      "cpu_utilization_cores": 1.001,
+      "peak_rss_mb": 52.0
+    }
+  ],
+  "phase_profile": {
+    "note": "cProfile計測。オーバーヘッドを含むため比率のみ参照する",
+    "population": 1852,
+    "measured_ticks": 120,
+    "phases": {
+      "行動判断 (AI) と移動": {
+        "seconds": 4.0768,
+        "share": 0.2553
+      },
+      "捕食 (接触判定)": {
+        "seconds": 3.2406,
+        "share": 0.203
+      },
+      "死骸摂取 (接触判定)": {
+        "seconds": 2.6723,
+        "share": 0.1674
+      },
+      "資源吸収": {
+        "seconds": 1.5815,
+        "share": 0.099
+      },
+      "その他 (ループ制御・属性参照など)": {
+        "seconds": 1.1364,
+        "share": 0.0712
+      },
+      "生理 (修復)": {
+        "seconds": 0.827,
+        "share": 0.0518
+      },
+      "生理 (代謝・移動コスト)": {
+        "seconds": 0.8241,
+        "share": 0.0516
+      },
+      "空間インデックス構築": {
+        "seconds": 0.6323,
+        "share": 0.0396
+      },
+      "光の分配計算": {
+        "seconds": 0.3935,
+        "share": 0.0246
+      },
+      "死骸分解": {
+        "seconds": 0.387,
+        "share": 0.0242
+      },
+      "繁殖・突然変異": {
+        "seconds": 0.1703,
+        "share": 0.0107
+      },
+      "環境更新": {
+        "seconds": 0.0247,
+        "share": 0.0015
+      },
+      "死亡処理": {
+        "seconds": 0.0009,
+        "share": 0.0001
+      }
+    }
+  },
+  "io_overhead": {
+    "scenario": "standard+recording",
+    "seed": 1,
+    "config_overrides": {},
+    "warmup_ticks": 5000,
+    "measured_ticks": 2000,
+    "population_start": 364,
+    "population_end": 421,
+    "corpses_end": 63,
+    "recording": true,
+    "total_seconds": 26.2154,
+    "ms_per_step_mean": 13.1069,
+    "ms_per_step_median": 13.2174,
+    "ms_per_step_p95": 14.3171,
+    "steps_per_second": 76.29,
+    "cpu_seconds": 26.25,
+    "cpu_utilization_cores": 1.001,
+    "peak_rss_mb": 52.2
+  },
+  "render": {
+    "available": true,
+    "population": 251,
+    "frames": 60,
+    "ms_per_frame": 1.918,
+    "max_fps_draw_only": 521.3
+  },
+  "scaling": {
+    "ticks_per_worker": 1200,
+    "results": [
+      {
+        "workers": 1,
+        "wall_seconds": 7.99,
+        "sim_seconds_max": 7.865,
+        "sim_seconds_min": 7.865,
+        "aggregate_steps_per_second": 150.2,
+        "aggregate_steps_per_second_simonly": 152.6,
+        "speedup_vs_1": 1.0,
+        "speedup_vs_1_simonly": 1.0,
+        "efficiency": 1.0,
+        "efficiency_simonly": 1.0
+      },
+      {
+        "workers": 2,
+        "wall_seconds": 15.708,
+        "sim_seconds_max": 15.513,
+        "sim_seconds_min": 15.409,
+        "aggregate_steps_per_second": 152.8,
+        "aggregate_steps_per_second_simonly": 154.7,
+        "speedup_vs_1": 1.017,
+        "speedup_vs_1_simonly": 1.014,
+        "efficiency": 0.509,
+        "efficiency_simonly": 0.507
+      },
+      {
+        "workers": 4,
+        "wall_seconds": 32.977,
+        "sim_seconds_max": 32.582,
+        "sim_seconds_min": 31.266,
+        "aggregate_steps_per_second": 145.6,
+        "aggregate_steps_per_second_simonly": 147.3,
+        "speedup_vs_1": 0.969,
+        "speedup_vs_1_simonly": 0.966,
+        "efficiency": 0.242,
+        "efficiency_simonly": 0.241
+      }
+    ]
+  }
+}

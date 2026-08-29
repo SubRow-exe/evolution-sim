@@ -85,15 +85,20 @@ PHASE_MAP = {
 # ---------------------------------------------------------------- 環境情報
 
 def _cpu_model() -> str:
-    """CPU型番。platform.processor() は Linux で空になることが多い。"""
+    """CPU型番。
+
+    platform.processor() は Linux では "x86_64" のようなアーキテクチャ名しか
+    返さず型番が分からない。クラウド環境の比較では型番が重要なので
+    /proc/cpuinfo から取り直す。
+    """
     p = platform.processor()
-    if p and not p.isdigit():
+    uninformative = {"", "x86_64", "aarch64", "arm64", "amd64", "i386", "i686"}
+    if p.lower() not in uninformative and not p.isdigit():
         return p
     try:
-        if platform.system() == "Linux":
-            for line in Path("/proc/cpuinfo").read_text().splitlines():
-                if line.startswith("model name"):
-                    return line.split(":", 1)[1].strip()
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.split(":")[0].strip() in ("model name", "Model"):
+                return line.split(":", 1)[1].strip()
     except OSError:
         pass
     return p or "unknown"
