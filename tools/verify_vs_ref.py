@@ -1,0 +1,69 @@
+"""実装変更が結果を変えていないことを、任意のgit refと直接比較して検証する。
+
+tools/golden.py の指紋はOS依存 (libmの差) のため、記録したOSでしか照合できない。
+本ツールは **同じマシン上で2つの実装を実際に走らせて比較する** ため、
+どのOS・どのCIでも成立する。保存された定数に依存しない。
+
+    uv run python tools/verify_vs_ref.py --ref 65eed4a
+    uv run python tools/verify_vs_ref.py --ref v1.1-baseline
+
+比較対象のrefにも evosim パッケージが必要。指紋の計算式は現在の
+tools/golden.py を両者に適用するため、計算方法の差は入り込まない。
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def fingerprints_at(ref: str) -> dict[str, str]:
+    """指定refのコードで指紋を計算する (git worktreeを一時作成)。"""
+    tmp = Path(tempfile.mkdtemp(prefix="evosim_ref_"))
+    wt = tmp / "wt"
+    try:
+        subprocess.run(["git", "worktree", "add", "--detach", str(wt), ref],
+                       cwd=ROOT, check=True, capture_output=True, text=True)
+        # 指紋の計算式は現在版で統一する (計算方法の差を排除)
+        (wt / "tools").mkdir(exist_ok=True)
+        shutil.copy2(ROOT / "tools" / "golden.py", wt / "tools" / "golden.py")
+        proc = subprocess.run([sys.executable, str(wt / "tools" / "golden.py"), "--print"],
+                              cwd=wt, check=True, capture_output=True, text=True)
+        return json.loads(proc.stdout)
+    finally:
+        subprocess.run(["git", "worktree", "remove", "--force", str(wt)],
+                       cwd=ROOT, capture_output=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="実装同士を直接比較して結果不変性を検証")
+    ap.add_argument("--ref", required=True, help="比較対象のgit ref (タグ・コミット)")
+    args = ap.parse_args()
+
+    sys.path.insert(0, str(ROOT))
+    from tools.golden import compute_all
+
+    print(f"比較対象: {args.ref}")
+    ref_fp = fingerprints_at(args.ref)
+    print("現在の実装を実行中...")
+    cur_fp = compute_all()
+
+    ng = [k for k in cur_fp if ref_fp.get(k) != cur_fp[k]]
+    for name in cur_fp:
+        print(f"  [{'NG' if name in ng else 'OK'}] {name:24s} {cur_fp[name]}")
+    if ng:
+        raise SystemExit(
+            f"\n結果が {args.ref} と異なります: {', '.join(ng)}\n"
+            "実装変更が挙動を変えました。意図した変更でなければ修正してください。")
+    print(f"\n全ケース一致。{args.ref} と結果は同一です。")
+
+
+if __name__ == "__main__":
+    main()

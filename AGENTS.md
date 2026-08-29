@@ -21,6 +21,23 @@
 6. **決定性を壊さない。** 乱数は `Simulation.rng`（単一のnumpy Generator）のみ。`random`モジュール・set/dict順序依存・壁時計依存・並列化は禁止。`tests/test_determinism.py` が門番
 7. **想定外の戦略を許容する。** 「この遺伝子はこう使われるはず」という想定で挙動を制限しない
 
+## 結果を変えない変更と、変える変更を区別する
+
+高速化・リファクタリングは **結果を1ビットも変えてはならない**。
+結果が変われば `v1.1-baseline` との比較が壊れ、過去の実験がすべて無効になる。
+
+```bash
+uv run python tools/golden.py                      # 同一OS内の高速チェック
+uv run python tools/verify_vs_ref.py --ref 65eed4a # OS非依存の等価性検証 (CIが実行)
+```
+
+意図的にモデルを変更する場合のみ `tools/golden.py --write` で指紋を更新し、
+**理由をコミットメッセージに残すこと**。
+
+**注意: 結果はOS依存である。** `math.sin/cos/atan2/hypot` と `pow` が各OSのlibm実装のため、
+同じseedでもWindowsとLinuxで結果が異なる。実験は同一マシンで行い、
+異なるOSの結果を直接比較しないこと。
+
 ## 開発フロー
 
 - ブランチを切って作業し、PRで提出する。mainへの直接pushはしない

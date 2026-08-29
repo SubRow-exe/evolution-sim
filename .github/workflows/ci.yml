@@ -10,8 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # verify_vs_ref が過去のrefを参照するため全履歴が必要
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
       - name: Run tests (決定性・保存則・スモーク)
         run: uv run pytest tests -q
+      - name: 結果不変性の検証 (実装同士を直接比較)
+        # 指紋はOS依存のため定数比較はできない。同一マシン上で
+        # 参照実装と現在の実装を実際に走らせて比較する。
+        run: uv run python tools/verify_vs_ref.py --ref ${{ vars.RESULT_BASELINE_REF || '65eed4a' }}
