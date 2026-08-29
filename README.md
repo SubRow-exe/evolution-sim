@@ -56,6 +56,20 @@ R = リセット (新seed)   ESC = 終了
 
 個体の色は栄養戦略を表す: **赤=捕食、緑=光合成、青=死骸分解**。
 
+## 計算性能ベンチマーク
+
+クラウド環境選定のため、ローカル / Codespaces / クラウドで同一条件の性能を比較できる。
+
+```bash
+uv run python tools/benchmark.py --quick                    # 疎通確認 (約40秒)
+# 比較用の完全版
+uv run python tools/benchmark.py --full --scaling 1,2,4,8 --label <環境名> --out benchmarks/<環境名>.json
+uv run python tools/benchmark.py --compare benchmarks/*.json
+```
+
+詳細は [docs/ベンチマーク.md](docs/ベンチマーク.md)、
+分析は [docs/計算特性と並列化方針.md](docs/計算特性と並列化方針.md)。
+
 ## テスト
 
 ```bash

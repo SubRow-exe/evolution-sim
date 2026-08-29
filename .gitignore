@@ -15,3 +15,6 @@ wheels/
 # 日常のシミュレーション実行データは除外。
 # 残す価値のある実験は experiments/ へ厳選してコピーする (seedで完全再現可能)。
 runs/
+
+# ベンチマークの一時出力 (benchmarks/ 配下の正式な結果は残す)
+bench_local.json
