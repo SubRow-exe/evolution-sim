@@ -46,13 +46,18 @@ def parse_seeds(spec: str) -> list[int]:
     return seeds
 
 
-def run_one(args: tuple[int, int, str, str | None]) -> tuple[int, bool, str]:
+def run_one(args: tuple[int, int, str, str | None, str | None, str | None]
+            ) -> tuple[int, bool, str]:
     """1 seed をサブプロセスで実行する。戻り値: (seed, 成功, メッセージ)。"""
-    seed, ticks, out_dir, config = args
+    seed, ticks, out_dir, config, fix_genes, disaster_at = args
     cmd = [sys.executable, str(ROOT / "main.py"), "--headless",
            "--ticks", str(ticks), "--seed", str(seed), "--out", out_dir]
     if config:
         cmd += ["--config", config]
+    if fix_genes:
+        cmd += ["--fix-genes", fix_genes]
+    if disaster_at:
+        cmd += ["--disaster-at", disaster_at]
     t0 = time.perf_counter()
     proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT))
     el = time.perf_counter() - t0
@@ -136,6 +141,10 @@ def main() -> None:
     ap.add_argument("--ticks", type=int, default=30000)
     ap.add_argument("--workers", type=int, default=1, help="並列実行数 (run間のみ)")
     ap.add_argument("--config", default=None)
+    ap.add_argument("--fix-genes", default=None,
+                    help="変異を止める遺伝子 (カンマ区切り)。アブレーション実験用 (Exp04)")
+    ap.add_argument("--disaster-at", default=None,
+                    help="災害を起こすtick (カンマ区切り)。Exp06用")
     ap.add_argument("--out", default=None, help="バッチ出力先 (省略時 runs/batch_<日時>)")
     ap.add_argument("--aggregate", default=None, help="既存バッチの集計のみ実行")
     args = ap.parse_args()
@@ -150,7 +159,12 @@ def main() -> None:
     batch.mkdir(parents=True, exist_ok=True)
     print(f"batch: {batch}\nseeds: {seeds}  ticks: {args.ticks}  workers: {args.workers}\n")
 
-    jobs = [(s, args.ticks, str(batch), args.config) for s in seeds]
+    if args.fix_genes:
+        print(f"固定遺伝子 (全run共通): {args.fix_genes}")
+    if args.disaster_at:
+        print(f"災害tick (全run共通): {args.disaster_at}")
+    jobs = [(s, args.ticks, str(batch), args.config, args.fix_genes, args.disaster_at)
+            for s in seeds]
     t0 = time.perf_counter()
     if args.workers > 1:
         with ProcessPoolExecutor(max_workers=args.workers) as ex:
