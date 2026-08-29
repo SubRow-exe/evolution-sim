@@ -136,6 +136,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # step の if: から参照するため job level に置く
+      # (secrets context は step の if: で直接参照できない)
+      RCLONE_CONF: ${{ secrets.RCLONE_CONFIG_BASE64 }}
+      REMOTE_BASE: ${{ vars.RCLONE_REMOTE_BASE }}
     steps:
       - uses: actions/checkout@v4
 
@@ -196,12 +201,80 @@ jobs:
             echo "</details>"
           } >> $GITHUB_STEP_SUMMARY
 
-      - name: 集計結果を保存
+      # --- 生データのアーカイブとマニフェスト (方針 §5-6) ---
+      # 生データは巨大なため GitHub には置かない。
+      # 外部ストレージへ送り、GitHub には要約とチェックサムだけを残す。
+
+      - name: 生データを圧縮しマニフェストを生成
+        id: pack
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%d_%H%M%S)"
+          EXP="exp04_actions_${STAMP}"
+          echo "exp=$EXP" >> "$GITHUB_OUTPUT"
+          mkdir -p archives "experiments/$EXP"
+
+          for c in runs/exp04_*; do
+            name=$(basename "$c")
+            tar -czf "archives/${name}.tar.gz" -C runs "$name"
+            REMOTE=""
+            if [ -n "${REMOTE_BASE:-}" ]; then
+              REMOTE="${REMOTE_BASE}/${EXP}/${name}.tar.gz"
+            fi
+            uv run python tools/make_manifest.py "$c" \
+              --out "experiments/$EXP/$name" \
+              --archive "archives/${name}.tar.gz" \
+              ${REMOTE:+--remote "$REMOTE"}
+          done
+
+          cp analysis.txt env_check.txt "experiments/$EXP/"
+          echo "=== アーカイブ ==="
+          ls -lh archives/
+
+      - name: Google Drive へ生データを転送
+        id: upload
+        # 認証情報が未設定なら skip する (Exp04 自体は完走させる)。
+        # 設定方法は docs/オンライン実行環境.md を参照。
+        if: env.RCLONE_CONF != '' && env.REMOTE_BASE != ''
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" | base64 -d > ~/.config/rclone/rclone.conf
+          rclone copy archives/ "${REMOTE_BASE}/${EXP}/" --progress --stats-one-line
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          rm -f ~/.config/rclone/rclone.conf
+
+      - name: 転送状況を記録
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          if [ "${{ steps.upload.outputs.uploaded }}" = "true" ]; then
+            MSG="生データを外部ストレージへ転送済み"
+          else
+            MSG="外部ストレージ未設定のため、生データは Actions 成果物のみ (90日保持)"
+          fi
+          echo "$MSG"
+          {
+            echo ""
+            echo "### 生データ"
+            echo "- $MSG"
+            echo "- マニフェスト: \`experiments/$EXP/*/MANIFEST.md\`"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: 要約とチェックサムを成果物として保存
         uses: actions/upload-artifact@v4
         with:
-          name: exp04-analysis
-          path: |
-            analysis.txt
-            env_check.txt
-            runs/
+          name: exp04-summary
+          path: experiments/
+          retention-days: 90
+
+      - name: 生データアーカイブを成果物として保存 (転送未設定時の保険)
+        if: ${{ steps.upload.outputs.uploaded != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp04-rawdata
+          path: archives/
           retention-days: 90
