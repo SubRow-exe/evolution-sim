@@ -5,24 +5,26 @@
 ## 現在の作業方針の参照順
 
 1. `docs/次の実験計画.md` — 今から何をするか
-2. `docs/V1.2_実装順序.md` — V1.2 → V1.2.1 → Exp05の順序
-3. `docs/Exp05_実験計画.md` — Exp05の条件・評価項目の正本
-4. `docs/バージョニング方針.md` — 世界ルール変更と機能追加の版管理
-5. 個別Issue: #19 / #23 / #24
-6. `docs/V1.1_総括.md` — V1.1の確定知見
-7. `docs/開発ロードマップ_リアル化方針.md` — 長期ビジョン
+2. **`docs/V1.2_V1.2.1_詳細実装仕様.md` — V1.2/V1.2.1実装の正本**
+3. `docs/V1.2_実装順序.md` — V1.2 → V1.2.1 → Exp05の順序
+4. **`docs/Exp05_実験計画.md` — Exp05条件・評価項目の正本**
+5. `docs/バージョニング方針.md`
+6. 個別Issue: #19 / #23 / #24
+7. `docs/V1.1_総括.md`
+8. `docs/開発ロードマップ_リアル化方針.md`
 
+古いExp03/Exp04コメント・旧V1.2候補より上記正本を優先する。
 作業完了後は `docs/次の実験計画.md` と該当Issueを更新する。
 
 ## 現在の短期順序
 
 ```text
 V1.1 クローズ / v1.1-final 保存済み
-→ #19 V1.2: 高コントラスト静的光環境
-→ #23 V1.2.1: 空間分布・行動範囲・PNG/GIF
+→ #19 V1.2: high_contrast_vertical
+→ #23 V1.2.1: environment snapshot + 空間/行動指標 + PNG/GIF
 → 観測ON/OFF結果不変テスト + CI Green
-→ 少数seed健全性確認
-→ #24 Exp05: vertical vs high_contrast_vertical, 20 seed × 40,000 tick
+→ pilot: seed 1,2,3 × 2条件 × 5,000 tick
+→ #24 Exp05: seed 1-20 × 2条件 × 40,000 tick
 → 数値 + 空間指標 + GIFレビュー
 → V1.3の世界ルール変更を決定
 ```
@@ -31,10 +33,24 @@ V1.1 クローズ / v1.1-final 保存済み
 
 最初の世界ルール変更は**光場1軸のみ**。
 
-- `high_contrast_vertical` 光場を追加
-- 明所〜ほぼ無光までの高コントラスト
-- 総光供給規模はV1.1と大きく変えない
-- `vertical` はControlとして残す
+Treatment `high_contrast_vertical` の既定仕様:
+
+```text
+北50%: light_max
+中30%: light_max → 0 の線形遷移
+南20%: 0
+```
+
+Config:
+
+```text
+light_hc_bright_frac = 0.50
+light_hc_transition_frac = 0.30
+light_hc_dark_floor = 0.0
+```
+
+40×40 / `light_max=1.2` ではControl `vertical` とTreatmentの総光供給量を**双方1,248 E/tick**にする。
+光場生成では乱数を消費しない。`chem_mask`等の確率生成物を同一seedで変えない。
 
 ### V1.2で変更しないもの
 
@@ -50,12 +66,15 @@ V1.1 クローズ / v1.1-final 保存済み
 
 世界ルールを変えない観測機能。
 
-- 空間PNG
-- 環境ヒートマップ
-- PNG→GIF
-- lineage占有セル数 / 重心 / 移動量 / 分布幅
+Exp05では:
+- `snapshot_interval=1000`
+- 個体snapshot CSV
+- `environment/static.npz`: light / chem_mask
+- `environment/env_XXXXXXXX.npz`: chemical / nutrients
+- lineage占有セル数 / 重心 / 分布幅 / 平均移動距離 / mean local light / vent滞在割合
+- `tools/render_spatial.py` でPNG/GIF
 
-**観測ON/OFFで乱数系列・シミュレーション結果を変えてはならない。**
+**観測ON/OFFで乱数系列・科学状態を完全一致させる。**
 
 ### Exp05
 
@@ -66,11 +85,14 @@ V1.1 クローズ / v1.1-final 保存済み
 - seed 1–20
 - 40,000 tick
 - 2条件 × 20 seed = 40 run
+- stats_interval=20
+- snapshot_interval=1000
 - 同一seed対応比較
 - 主sweep判定 `top_lineage_frac >= 0.5`
 
-少数seedパイロットはクラッシュ・即時全滅・光場・可視化の健全性確認に限定し、本番条件や評価項目を途中結果で変更しない。
-多様性増加を成功条件にしない。
+Pilotは `seed 1,2,3 × 2条件 × 5,000 tick` と固定。
+クラッシュ・光場総量・zone境界・出力・観測不変性の確認だけに使う。
+生物学的な結果を見て都合よくExp05条件を変更しない。
 
 ## バージョニング
 
@@ -96,6 +118,9 @@ V1.1 クローズ / v1.1-final 保存済み
 9. **環境拡張は原則1軸ずつ。** 複数ルールを同時追加して因果を読めなくしない
 
 ## 結果を変えない変更と、変える変更を区別する
+
+V1.2光場は意図的な世界ルール変更。
+V1.2.1可視化・観測は結果不変変更。
 
 高速化・リファクタリング・観測機能追加は、同一数値実行環境で科学結果を変えてはならない。
 
@@ -125,6 +150,9 @@ experiments/expNN_<名前>/
 ├─ config.json / meta.json
 ├─ stats.csv
 ├─ events.csv
+├─ snapshots/
+├─ environment/
+├─ spatial/
 ├─ plots/
 └─ NOTES.md
 ```
