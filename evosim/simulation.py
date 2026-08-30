@@ -15,8 +15,8 @@ from . import behavior, physiology
 from .config import Config
 from .corpse import Corpse
 from .genome import (CHEM_ABS, CORPSE_DIG, LIGHT_ABS, MEMBRANE, NUTRIENT_ABS,
-                     PREDATION, REPRO_INVEST, fixed_mask_from_names,
-                     initial_genome, mutate)
+                     PREDATION, REPRO_INVEST, diagnostic_overrides,
+                     fixed_mask_from_names, initial_genome, mutate)
 from .organism import Organism
 from .recorder import Recorder
 from .world import World
@@ -78,12 +78,42 @@ class Simulation:
     # ------------------------------------------------------------------
     # 初期個体群
 
+    def _vent_cells(self) -> list[tuple[int, int]]:
+        """化学噴出口セルの一覧 (添字順で決定的)。乱数を消費しない。"""
+        cells = [(int(ix), int(iy))
+                 for ix, iy in np.argwhere(self.world.chem_mask)]
+        if not cells:
+            raise ValueError(
+                "diagnostic_placement='vent' だが chem_mask が空 "
+                "(n_vents / vent_radius_cells を確認すること)")
+        return cells
+
     def _spawn_initial(self) -> None:
         cfg = self.cfg
+        # Exp06診断ハーネス (docs/Exp06_実験計画.md §5)。
+        # 既定 (placement="random" / overrides無し) では下の分岐に入らず、
+        # 乱数消費も含めて通常実行と完全に同一の経路を通る。
+        if cfg.diagnostic_placement not in ("random", "vent"):
+            raise ValueError(
+                f"未知の diagnostic_placement: {cfg.diagnostic_placement!r} "
+                "(random | vent)")
+        overrides = diagnostic_overrides(cfg)
+        vent_cells = (self._vent_cells() if cfg.diagnostic_placement == "vent"
+                      else None)
+
         for _ in range(cfg.initial_population):
             g = initial_genome(self.rng, cfg.initial_jitter_sigma, self.fixed_mask)
-            x = float(self.rng.uniform(0, cfg.world_width))
-            y = float(self.rng.uniform(0, cfg.world_height))
+            if overrides is not None:
+                # 上書きは乱数を消費しない (同一seedで配置・変異系列を変えない)
+                for idx, value in overrides:
+                    g[idx] = value
+            if vent_cells is None:
+                x = float(self.rng.uniform(0, cfg.world_width))
+                y = float(self.rng.uniform(0, cfg.world_height))
+            else:
+                ix, iy = vent_cells[int(self.rng.integers(0, len(vent_cells)))]
+                x = float((ix + self.rng.random()) * cfg.cell_size)
+                y = float((iy + self.rng.random()) * cfg.cell_size)
             org = Organism(self.next_id, -1, self.next_id, 0, 0, g,
                            x, y, float(self.rng.uniform(-math.pi, math.pi)),
                            cfg.initial_energy, cfg.initial_matter)
