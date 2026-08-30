@@ -1,8 +1,10 @@
-"""環境フィールド (光・無機栄養・化学エネルギー)。仕様書 Ver.1.1 §2。
+"""環境フィールド (光・無機栄養・化学エネルギー)。仕様書 Ver.1.1 §2 / V1.3。
 
 - 光: フロー型。毎tick供給され、使われなければ消える (熱散逸)。
 - 無機栄養: 物質。再生せず、拡散と生体との交換のみ。世界全体で厳密保存。
-- 化学: ストック型エネルギー。噴出口セルのみロジスティック回復 (外部流入)。
+- 化学 (V1.3): 地質sourceから一定fluxで供給され、局所stockとして滞留し、
+  混合・流出・希釈・酸化等で失われる。詳細は
+  docs/V1.3_化学資源モデル仕様.md。
 """
 from __future__ import annotations
 
@@ -95,17 +97,28 @@ class World:
         # 無機栄養 (閉じた物質循環の無機物プール)
         self.nutrients = np.full((gw, gh), cfg.nutrient_initial)
 
-        # 化学エネルギー: 噴出口マスクとストック
-        self.chem_mask = np.zeros((gw, gh), dtype=bool)
+        # 化学エネルギー (V1.3): 地質source field と局所stock。
+        # vent中心の抽選はV1.2と同じ乱数消費 (1 ventにつき整数2つ) を保つ。
+        self.chem_source_flux = np.zeros((gw, gh))
+        r = cfg.vent_radius_cells
         for _ in range(cfg.n_vents):
             vx = int(rng.integers(0, gw))
             vy = int(rng.integers(0, gh))
-            r = cfg.vent_radius_cells
-            for ix in range(max(0, vx - r), min(gw, vx + r + 1)):
-                for iy in range(max(0, vy - r), min(gh, vy + r + 1)):
-                    if (ix - vx) ** 2 + (iy - vy) ** 2 <= r * r:
-                        self.chem_mask[ix, iy] = True
-        self.chemical = np.where(self.chem_mask, cfg.chem_capacity * 0.5, 0.0)
+            cells = [(ix, iy)
+                     for ix in range(max(0, vx - r), min(gw, vx + r + 1))
+                     for iy in range(max(0, vy - r), min(gh, vy + r + 1))
+                     if (ix - vx) ** 2 + (iy - vy) ** 2 <= r * r]
+            # そのventの総fluxは、端で円盤が欠けても常に chem_vent_flux。
+            # 欠けた分は残りのセルへ寄せる (世界総sourceをseedに依存させない)
+            share = cfg.chem_vent_flux / len(cells)
+            for ix, iy in cells:
+                self.chem_source_flux[ix, iy] += share
+        self.chem_mask = self.chem_source_flux > 0.0
+        # 世界全体の外部chemical供給量/tick (不変)。台帳と検証用
+        self.chem_source_total = float(self.chem_source_flux.sum())
+        # 初期stockは生物不在の平衡値 = 更新式の不動点。
+        # 「開始時だけ大量のstockが置かれている」人工的パルスを避ける
+        self.chemical = self.chem_source_flux / cfg.chem_loss_frac
 
     # --- 座標 → セル ---
 
@@ -136,16 +149,27 @@ class World:
 
     # --- 毎tick更新 ---
 
-    def update(self) -> float:
-        """化学回復と栄養拡散。戻り値: 化学エネルギー流入量 (台帳用)。"""
+    def update(self) -> tuple[float, float]:
+        """化学の環境損失+source供給と栄養拡散。
+
+        戻り値: (chemical_influx, chemical_environment_loss) — Energy台帳用。
+
+        V1.3の1 tick (docs/V1.3_化学資源モデル仕様.md §3):
+
+            L  = chem_loss_frac * C      環境損失 (混合/流出/希釈/酸化)
+            C1 = C - L
+            C2 = C1 + S                  地質source。全量が入る (上限なし)
+
+        `S` は生物の消費にも現在stockにも依存しない。stockが発散しないのは
+        損失項があるためで、生物不在なら C* = S / chem_loss_frac へ収束する。
+        """
         cfg = self.cfg
-        # 化学: ロジスティック回復 (噴出口セルのみ)。下限から回復可能にする。
+        # 化学: 環境損失 → 地質sourceの供給
         c = self.chemical
-        base = np.where(self.chem_mask, np.maximum(c, cfg.chem_min_stock), 0.0)
-        growth = cfg.chem_regen * base * (1.0 - base / cfg.chem_capacity)
-        growth = np.where(self.chem_mask, np.maximum(growth, 0.0), 0.0)
-        chem_influx = float(growth.sum())
-        self.chemical = c + growth
+        loss = cfg.chem_loss_frac * c
+        chem_loss = float(loss.sum())
+        self.chemical = c - loss + self.chem_source_flux
+        chem_influx = self.chem_source_total
 
         # 栄養: ラプラシアン拡散 (境界は反射 → 総量保存)
         n = self.nutrients
@@ -155,7 +179,7 @@ class World:
                + padded[1:-1, :-2] + padded[1:-1, 2:] - 4.0 * n)
         # edgeパディングにより境界セルの「外側隣接」は自分自身 → 流出ゼロで保存
         self.nutrients = n + d * lap
-        return chem_influx
+        return chem_influx, chem_loss
 
     # --- 集計 (保存則検証・統計用) ---
 

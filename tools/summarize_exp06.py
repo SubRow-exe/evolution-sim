@@ -138,7 +138,7 @@ def main() -> int:
     print(f"  生存run数: A={a} B={b} C={c} D={d}")
     if c == 0:
         print("  → ケース1候補: Cも全滅。chemical生態自体が現行資源・生理では"
-              "成立しにくい (chem_capacity / chem_regen / vent面積・生理収支を再検討)")
+              "成立しにくい (source flux / vent面積・生理収支を再検討)")
     elif c and not b:
         print("  → ケース2候補: C生存・B全滅。祖先0.3からの到達に進化上の谷"
               " (初期chemical_absorption / 変異幅 / 収支曲線を再検討)")

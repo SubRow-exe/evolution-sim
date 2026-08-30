@@ -1,0 +1,8 @@
+{
+  "windows-amd64": {
+    "default_s1_2000": "b1cec27aca6ff711a03171c94c7de3b2",
+    "default_s4_2000": "7085f76984e606861ac2e8423471771f",
+    "dense_s7_1500": "7e8296976ae446d957528526375c2c09",
+    "fixed_body_s4_1200": "df02f8692ebc7cce7d89f2fd1d2107cb"
+  }
+}

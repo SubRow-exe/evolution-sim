@@ -33,12 +33,14 @@ class Config:
     light_hc_dark_floor: float = 0.0         # 暗部の相対光量 (0 = 完全暗部)
     light_hc_total_scale: float = 1.0        # Control総光量に対する倍率
 
-    # --- 化学エネルギー (ストック型) ---
+    # --- 化学エネルギー (V1.3: 地質source + 局所stock + 環境損失) ---
+    # docs/V1.3_化学資源モデル仕様.md。
+    # source は生物の消費にも現在stockにも依存しない一定flux。stockに上限は
+    # 置かず、一次の環境損失だけで有限化する (生物不在の平衡は S/loss)。
     n_vents: int = 4
     vent_radius_cells: int = 2
-    chem_capacity: float = 50.0      # K_chem [E/セル]
-    chem_regen: float = 0.05         # ロジスティック回復率
-    chem_min_stock: float = 0.5      # 0からの回復を可能にする下限
+    chem_vent_flux: float = 8.0      # 1 ventの総外部供給 [E/tick/vent]
+    chem_loss_frac: float = 0.10     # stockの環境損失割合 [1/tick]
     chem_uptake: float = 0.5         # 吸収レート係数
 
     # --- 無機栄養 (物質・厳密保存・再生なし) ---

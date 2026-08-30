@@ -43,7 +43,7 @@ class Simulation:
                                 ("starvation", "damage", "predation", "disaster")}
 
         # エネルギー台帳 (保存則検証用)
-        self.energy_in_cum = 0.0        # 光吸収 + 化学湧出
+        self.energy_in_cum = 0.0        # 光吸収 + 化学source
         self.energy_out_cum = 0.0       # 全散逸 (熱)
 
         # 資源利用率 (改善方針 Ver.1.2 §5): 経路別の累積獲得量。進化には不使用
@@ -148,7 +148,9 @@ class Simulation:
         self.tick += 1
 
         # 1. 環境更新 (化学湧出はエネルギー流入)
-        self.energy_in_cum += self.world.update()
+        chem_influx, chem_loss = self.world.update()
+        self.energy_in_cum += chem_influx
+        self.energy_out_cum += chem_loss
 
         # 2. 空間ハッシュと光分配重みの構築 (tick開始時の位置スナップショット)
         self._build_hashes()
