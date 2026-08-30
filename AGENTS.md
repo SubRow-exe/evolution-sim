@@ -25,7 +25,7 @@ V1.1保存済み
 → Exp06完了: 4条件すべて0/10生存
 → chemical source式のモデル不整合を確認
 → PR #36でExp06結果とV1.3/Exp07方針を確定
-→ V1.2最終状態を v1.2-final として保存
+→ V1.2最終状態を v1.2-final (branch + tag) として保存
 → V1.3 chemical sourceモデル実装  ← 次
 → unit / Energy conservation tests
 → Exp07 Pilot 9 run
@@ -81,25 +81,29 @@ regen = r * stock * (1-stock/K)
 ```text
 L = chem_loss_frac * C
 C1 = C - L
-C2_raw = C1 + chem_source_flux
-Overflow = max(C2_raw - chem_capacity, 0)
-C2 = min(C2_raw, chem_capacity)
+C2 = C1 + chem_source_flux
 ```
 
 その後、生物がC2から吸収する。
+
+stockに上限 (capacity) は置かない。source全量が流入し、一次損失だけで
+有限化する。生物不在の平衡は `S / chem_loss_frac`。
+capacityでクリップすると欠けvent/重複セルで実効sourceがseed依存に
+最大10.8%失われるため廃止した。
 
 sourceはstock=0でも毎tick一定量供給される。生物は局所stockを低下させられるが地質source自体を枯渇させられない。
 
 ## V1.3 Config
 
 ```text
-chem_capacity = 50.0
 chem_vent_flux = 8.0      # 暫定default。旧モデル最大供給規模≈32.5 E/tickに近い世界総32を基準化
 chem_loss_frac = 0.10
 chem_uptake = 0.5
 n_vents = 4
 vent_radius_cells = 2
 ```
+
+旧 `chem_regen` / `chem_min_stock` / `chem_capacity` はConfigから削除する。
 
 `chem_vent_flux`は1 ventの総source。各ventの円盤セル数に関係なく、そのventの総sourceは常に設定値とする。
 
@@ -111,10 +115,10 @@ sum(chem_source_flux) == n_vents * chem_vent_flux
 
 を保証する。
 
-初期stock:
+初期stock (更新式の不動点):
 
 ```text
-min(chem_capacity, chem_source_flux / chem_loss_frac)
+chem_source_flux / chem_loss_frac
 ```
 
 旧`chem_regen`/`chem_min_stock`は通常V1.3経路で使わない。
@@ -123,9 +127,8 @@ min(chem_capacity, chem_source_flux / chem_loss_frac)
 
 chemical external sourceは`energy_in_cum`。
 
-以下は`energy_out_cum`:
-- `chem_loss_frac * stock`
-- capacity overflow
+`chem_loss_frac * stock` は`energy_out_cum`。
+capacity clippingを廃止したのでoverflow項は無い。
 
 保存則を必ずテストする。
 
@@ -149,7 +152,7 @@ D chem2.0固定 / random
 
 ```text
 8 flux × 3条件 × 10 seed = 240 run
-60,000 tick
+120,000 tick
 ```
 
 Pilotはflux 4/16/64 × C/B/D × seed1 = 9 run / 5k。
@@ -159,6 +162,10 @@ Pilotはflux 4/16/64 × C/B/D × seed1 = 9 run / 5k。
 1. Cでchemical生態のecological viability境界
 2. C成立域でBを見て祖先からの進化bootstrap
 3. C成立域でDを見てvent探索/空間access
+
+Bは生存/絶滅の二値で読まない。祖先の収支上、chemical吸収だけで黒字化するには
+`chemical_absorption ≈ 0.9` (実効1.0前後) が必要で、初期値0.3の約3倍である。
+`>= 0.5 / 0.9 / 1.2 / 1.5 / 2.0` の到達seed数と初回tickを見る。
 
 高fluxで`max_population_halt`へ達した場合はscientific resultとして記録する。
 

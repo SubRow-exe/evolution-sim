@@ -48,7 +48,6 @@ light_pattern = uniform
 light_max = 0.0
 n_vents = 4
 vent_radius_cells = 2
-chem_capacity = 50.0
 chem_loss_frac = 0.10
 chem_uptake = 0.5
 initial_population = 100
@@ -56,6 +55,12 @@ stats_interval = 20
 snapshot_interval = 1000
 max_population_halt = 20000
 ```
+
+chemical stockに上限 (capacity) は無い。stockは損失項だけで有限化され、
+生物不在の平衡は `chem_source_flux / chem_loss_frac` になる
+(`docs/V1.3_化学資源モデル仕様.md` §3.2)。
+これによりsource fluxを振っても、実際に届くsourceは常に
+`n_vents * chem_vent_flux` に一致し、seed間で変わらない。
 
 その他の生理・繁殖・mutation・nutrient・移動等はV1.2から変更しない。
 
@@ -128,16 +133,22 @@ A（Ancestor / Random）は今回省略する。Bの進化bootstrapとDの空間
 × seed 1-10
 = 240 run
 
-ticks = 60,000
+ticks = 120,000
 GitHub Actions / 同一数値実行環境
 ```
 
 matrix 240でGitHub Actions上限256以内。
 
-60kまで走らせる理由:
+120kまで走らせる理由:
 - Exp06では初期Energy/stockで一時的に人口増加してから200 tick以内に崩壊した
 - 一過性の繁殖ではなくsource flowのみで多数世代が継続することを確認したい
 - 長期population・stock・birth/deathが準定常になるかを見る
+- Exp03-05の40kでもsweepは20k-38kに分布していた。chemical世界の世代時間は
+  未知であり、40k-60kで「まだ崩れていないだけ」を持続と誤認しないため、
+  V1.1系列の3倍の時間窓を取る
+- B条件の進化bootstrapは chemical_absorption を数倍にする必要があり
+  (§8参照)、短い窓では「谷を越えられない」と「まだ越えていない」を
+  区別できない
 
 高fluxで `max_population_halt=20000` に到達した場合は実験失敗ではなく、**supercritical / carrying capacityが安全上限を超えた科学的結果**として扱う。
 
@@ -165,28 +176,53 @@ Pilotの生物学的結果を見てflux範囲を変更しない。
 ## 8. 主評価
 
 ### 生態成立性
-- 60k生存率
+- 120k生存率
 - extinction tick
 - `max_population_halt`到達率/tick
 - population時系列
-- 50k→60k population傾向
+- 60k→120k population傾向 (後半半分で維持/増加/減少のどれか)
 - births / deaths
 - biomass
 
 ### chemical収支
-- external chemical source累積
+- external chemical source累積 (毎tick `n_vents * chem_vent_flux` で一定)
 - chemical environmental loss累積
-- overflow累積
 - biological chemical uptake累積
 - total chemical stock
 - source利用率 = uptake / external source
 - stockの時間平均/変動
+- 実効source == 公称source の確認 (capacity clipping廃止の検証)
 
 ### 進化bootstrap
 B条件:
 - mean/median chemical_absorption
-- `chemical_absorption >= 0.5 / 1.0 / 1.5` 到達seed数と初回tick
+- `chemical_absorption >= 0.5 / 0.9 / 1.2 / 1.5 / 2.0` 到達seed数と初回tick
 - lineage population
+
+#### なぜ0.9を境界に置くか
+
+祖先ゲノム・matter 0.8・静止・stock潤沢という条件で収支を書くと:
+
+```text
+維持費   = 0.320 + 0.04 * chemical_absorption   [E/tick]
+chemical吸収 = 0.40 * chemical_absorption        [E/tick]
+```
+
+釣り合うのは `chemical_absorption ≈ 0.89`。修復・移動・繁殖overheadを
+含めれば実効的な黒字化ラインは 1.0 前後になる。
+
+祖先の初期値は0.3なので、**B条件はどのfluxであっても、chemical_absorptionが
+約3倍になるまで1個体すら単独で黒字化しない**。
+
+したがって:
+
+- Bの絶滅は「source flux不足」の証拠にならない。Cが成立するfluxでBが絶滅した
+  場合は、初期chemical_absorption / standing variation / 変異幅 / 死骸等の
+  補助Energyで谷を渡れるか、を次に診断する
+- Bで意味を持つ観測は生存/絶滅の二値ではなく、**絶滅までに mean
+  chemical_absorption がどこまで上がったか、0.9 を越えた系統が出たか**である
+
+0.9はモデルから導いた収支境界であり、Exp07の結果を見てから決めた値ではない。
 
 ### 空間access
 D条件:
@@ -241,7 +277,7 @@ Cが成立するfluxでDが:
 Exp07結果後、`chem_vent_flux`を「光と同程度になるように」決めない。
 
 候補条件:
-1. Cが10/10または高率で60k持続
+1. Cが10/10または高率で120k持続
 2. population haltを常態化させない
 3. chemical stockが常時capacity張り付きでも常時0でもなく、消費と環境損失が両方観測できる
 4. 可能ならB/Dの診断にも意味がある範囲
