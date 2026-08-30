@@ -1,7 +1,7 @@
 # Exp05 実験計画 — V1.1互換光場 vs V1.2高コントラスト光場
 
 更新: 2026-08-30
-状態: **事前登録済み / 未実行**
+状態: **事前登録済み / pilot完了・本番未実行**
 
 詳細実装仕様: `docs/V1.2_V1.2.1_詳細実装仕様.md`
 
@@ -105,13 +105,17 @@ top_lineage_frac >= 0.5
 
 0.3 / 0.7は感度解析。
 
-## 5. Pilot
+## 5. Pilot — 完了 (2026-08-30)
 
 ```text
 seed: 1,2,3
 ticks: 5,000
 2条件 × 3 seed = 6 run
 ```
+
+結果: **全項目Green。本番条件は変更しない。**
+記録: `experiments/exp05_pilot/NOTES.md`
+判定ツール: `uv run python tools/check_pilot.py runs/exp05_pilot --ticks 5000`
 
 Pilotは実装健全性だけ確認する。
 
@@ -123,6 +127,21 @@ Pilotは実装健全性だけ確認する。
 - PNG/GIF生成
 - Control互換
 - 観測ON/OFF不変性Green
+
+確認済み (pilot実測):
+
+| 項目 | 結果 |
+|---|---|
+| 6 run の 5,000 tick 到達・絶滅なし | OK |
+| 総光供給量 Control = Treatment | 双方 1,248.000000 E/tick |
+| Treatment 帯構造 | 北8行plateau / 中20行単調減少 / 南12行完全暗部 |
+| Treatment 実効ピーク | 1.733333 (= 1.2 × 13/9) |
+| Control が V1.1 と同一結果 | `verify_vs_ref.py --ref origin/v1.1-final` 全ケース一致 |
+| snapshot / env NPZ / 空間指標 / PNG / GIF | OK |
+| 観測ON/OFF不変性・全テスト | 42 passed / 4 skipped |
+
+pilotは `linux-x86_64-glibc2.39-py3.12.3-np2.5.2` で実行した。
+本番はActions (ubuntu-24.04) で環境キーが変わるため、pilotの数値と本番結果を直接比較しない。
 
 暗部無人化、大量死、進化方向等の生物学的結果を理由に条件を変更しない。
 仕様を変えるならpilotを破棄し再事前登録する。

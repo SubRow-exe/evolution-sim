@@ -1,0 +1,8 @@
+比較対象: origin/v1.1-final
+現在の実装を実行中...
+  [OK] default_s1_2000          eecf3c546dcdad017e70b64ca230d3bc
+  [OK] default_s4_2000          7a3acd747f52dca4ae823cb4ffe8495c
+  [OK] fixed_body_s4_1200       0ba145cc5f4a439ce9510d032aa5452a
+  [OK] dense_s7_1500            c75284cb16573cb155ec9a170a80fb4a
+
+全ケース一致。この数値実行環境では origin/v1.1-final と結果は同一です。

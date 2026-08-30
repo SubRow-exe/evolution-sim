@@ -1,0 +1,121 @@
+
+=== control (3 run) ===
+  OK  control: seed [1, 2, 3]   期待 [1, 2, 3]
+  OK  20260830_040325_seed1: 最終tick=5000   期待 5000
+  OK  20260830_040325_seed1: 最終個体数=364   絶滅していない
+  OK  20260830_040325_seed1: stats行数=250   期待 250 (stats_interval=20)
+  OK  20260830_040325_seed1: stats.csv の空間指標列   欠損 []
+  OK  20260830_040325_seed1: 3帯人口の合計 == population
+  OK  20260830_040325_seed1: mean_local_light が全行で埋まっている
+  OK  20260830_040325_seed1: snapshot 5枚   期待 5 (snapshot_interval=1000)
+  OK  20260830_040325_seed1: snapshot の tick 列
+  OK  20260830_040325_seed1: environment NPZ 5個   期待 5
+  OK  20260830_040325_seed1: environment/static.npz
+  OK  20260830_040325_seed1: env NPZ のキー   ['chemical', 'nutrients']
+  OK  20260830_040325_seed1: lineages.csv の空間指標列   欠損 []
+  OK  20260830_040325_seed1: meta.json
+  OK  20260830_040325_seed2: 最終tick=5000   期待 5000
+  OK  20260830_040325_seed2: 最終個体数=336   絶滅していない
+  OK  20260830_040325_seed2: stats行数=250   期待 250 (stats_interval=20)
+  OK  20260830_040325_seed2: stats.csv の空間指標列   欠損 []
+  OK  20260830_040325_seed2: 3帯人口の合計 == population
+  OK  20260830_040325_seed2: mean_local_light が全行で埋まっている
+  OK  20260830_040325_seed2: snapshot 5枚   期待 5 (snapshot_interval=1000)
+  OK  20260830_040325_seed2: snapshot の tick 列
+  OK  20260830_040325_seed2: environment NPZ 5個   期待 5
+  OK  20260830_040325_seed2: environment/static.npz
+  OK  20260830_040325_seed2: env NPZ のキー   ['chemical', 'nutrients']
+  OK  20260830_040325_seed2: lineages.csv の空間指標列   欠損 []
+  OK  20260830_040325_seed2: meta.json
+  OK  20260830_040325_seed3: 最終tick=5000   期待 5000
+  OK  20260830_040325_seed3: 最終個体数=376   絶滅していない
+  OK  20260830_040325_seed3: stats行数=250   期待 250 (stats_interval=20)
+  OK  20260830_040325_seed3: stats.csv の空間指標列   欠損 []
+  OK  20260830_040325_seed3: 3帯人口の合計 == population
+  OK  20260830_040325_seed3: mean_local_light が全行で埋まっている
+  OK  20260830_040325_seed3: snapshot 5枚   期待 5 (snapshot_interval=1000)
+  OK  20260830_040325_seed3: snapshot の tick 列
+  OK  20260830_040325_seed3: environment NPZ 5個   期待 5
+  OK  20260830_040325_seed3: environment/static.npz
+  OK  20260830_040325_seed3: env NPZ のキー   ['chemical', 'nutrients']
+  OK  20260830_040325_seed3: lineages.csv の空間指標列   欠損 []
+  OK  20260830_040325_seed3: meta.json
+
+=== treatment (3 run) ===
+  OK  treatment: seed [1, 2, 3]   期待 [1, 2, 3]
+  OK  20260830_040438_seed1: 最終tick=5000   期待 5000
+  OK  20260830_040438_seed1: 最終個体数=490   絶滅していない
+  OK  20260830_040438_seed1: stats行数=250   期待 250 (stats_interval=20)
+  OK  20260830_040438_seed1: stats.csv の空間指標列   欠損 []
+  OK  20260830_040438_seed1: 3帯人口の合計 == population
+  OK  20260830_040438_seed1: mean_local_light が全行で埋まっている
+  OK  20260830_040438_seed1: snapshot 5枚   期待 5 (snapshot_interval=1000)
+  OK  20260830_040438_seed1: snapshot の tick 列
+  OK  20260830_040438_seed1: environment NPZ 5個   期待 5
+  OK  20260830_040438_seed1: environment/static.npz
+  OK  20260830_040438_seed1: env NPZ のキー   ['chemical', 'nutrients']
+  OK  20260830_040438_seed1: lineages.csv の空間指標列   欠損 []
+  OK  20260830_040438_seed1: meta.json
+  OK  20260830_040438_seed2: 最終tick=5000   期待 5000
+  OK  20260830_040438_seed2: 最終個体数=480   絶滅していない
+  OK  20260830_040438_seed2: stats行数=250   期待 250 (stats_interval=20)
+  OK  20260830_040438_seed2: stats.csv の空間指標列   欠損 []
+  OK  20260830_040438_seed2: 3帯人口の合計 == population
+  OK  20260830_040438_seed2: mean_local_light が全行で埋まっている
+  OK  20260830_040438_seed2: snapshot 5枚   期待 5 (snapshot_interval=1000)
+  OK  20260830_040438_seed2: snapshot の tick 列
+  OK  20260830_040438_seed2: environment NPZ 5個   期待 5
+  OK  20260830_040438_seed2: environment/static.npz
+  OK  20260830_040438_seed2: env NPZ のキー   ['chemical', 'nutrients']
+  OK  20260830_040438_seed2: lineages.csv の空間指標列   欠損 []
+  OK  20260830_040438_seed2: meta.json
+  OK  20260830_040438_seed3: 最終tick=5000   期待 5000
+  OK  20260830_040438_seed3: 最終個体数=443   絶滅していない
+  OK  20260830_040438_seed3: stats行数=250   期待 250 (stats_interval=20)
+  OK  20260830_040438_seed3: stats.csv の空間指標列   欠損 []
+  OK  20260830_040438_seed3: 3帯人口の合計 == population
+  OK  20260830_040438_seed3: mean_local_light が全行で埋まっている
+  OK  20260830_040438_seed3: snapshot 5枚   期待 5 (snapshot_interval=1000)
+  OK  20260830_040438_seed3: snapshot の tick 列
+  OK  20260830_040438_seed3: environment NPZ 5個   期待 5
+  OK  20260830_040438_seed3: environment/static.npz
+  OK  20260830_040438_seed3: env NPZ のキー   ['chemical', 'nutrients']
+  OK  20260830_040438_seed3: lineages.csv の空間指標列   欠損 []
+  OK  20260830_040438_seed3: meta.json
+
+=== 光場 ===
+  OK  Control: V1.1 の vertical 式と一致
+  OK  Control: 総光量=1248.000000   期待 1248.0
+  OK  Treatment: 東西方向は一様
+  OK  Treatment: 北8行が明部plateau (1.733333)
+  OK  Treatment: 中20行が単調減少の遷移帯
+  OK  Treatment: 南12行が完全暗部
+  OK  Treatment: 負の光量なし
+  OK  Treatment: 実効ピーク=1.733333   期待 1.733333
+  OK  光場が seed に依存しない (静的光場)
+  OK  総光供給量の一致: control=1248.000000 / treatment=1248.000000   total_scale=1.0
+
+=== 光以外の世界が同一か (同一seed) ===
+  OK  seed 1: chem_mask 一致
+  OK  seed 1: tick 0 の初期個体群・栄養場が一致
+  OK  seed 2: chem_mask 一致
+  OK  seed 2: tick 0 の初期個体群・栄養場が一致
+  OK  seed 3: chem_mask 一致
+  OK  seed 3: tick 0 の初期個体群・栄養場が一致
+
+=== PNG / GIF ===
+  OK  control seed 1: PNG 5枚
+  OK  control seed 1: light.gif
+  OK  control seed 2: PNG 5枚
+  OK  control seed 2: light.gif
+  OK  control seed 3: PNG 5枚
+  OK  control seed 3: light.gif
+  OK  treatment seed 1: PNG 5枚
+  OK  treatment seed 1: light.gif
+  OK  treatment seed 2: PNG 5枚
+  OK  treatment seed 2: light.gif
+  OK  treatment seed 3: PNG 5枚
+  OK  treatment seed 3: light.gif
+
+============================================================
+判定: OK — pilot の実装健全性チェックは全て通過

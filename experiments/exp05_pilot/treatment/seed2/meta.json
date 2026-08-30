@@ -1,0 +1,21 @@
+{
+  "seed": 2,
+  "evosim_version": "0.1.0",
+  "git_sha": "7b8415456bfb18e8d5cd8e6567c475a70f6a6d9a",
+  "command": "/home/user/evolution-sim/main.py --headless --ticks 5000 --seed 2 --out runs/exp05_pilot/treatment --config configs/exp05_treatment.json",
+  "numeric_environment": {
+    "os": "Linux",
+    "os_release": "6.18.44-fc-v22",
+    "os_version": "#1 SMP PREEMPT_DYNAMIC @0",
+    "machine": "x86_64",
+    "processor": "x86_64",
+    "libc": "glibc2.39",
+    "python_version": "3.12.3",
+    "python_implementation": "CPython",
+    "python_compiler": "GCC 13.3.0",
+    "numpy_version": "2.5.2",
+    "ci_image_version": null,
+    "ci_runner_os": null,
+    "env_key": "linux-x86_64-glibc2.39-py3.12.3-np2.5.2"
+  }
+}
