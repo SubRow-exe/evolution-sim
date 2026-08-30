@@ -1,16 +1,16 @@
-"""転移の発生率と時期を解析する (Exp03)。
+"""転移（selective sweep）の発生率と時期を解析する汎用ツール。
 
-`docs/次の実験計画.md` Exp03 の設計に従い、**単一の「転移率◯%」ではなく
-累積発生率曲線** として報告する。40,000 tickで測れるのは
-「その時点までに転移した割合」であり、未転移seedが後で転移する可能性を
-排除できない (打ち切りデータ) ため。
+単一の「転移率◯%」ではなく累積発生率曲線として報告する。
+観測終了tickまでに閾値へ未到達のrunは打ち切りデータとして扱い、
+「転移しない」とは断定しない。
 
-    uv run python tools/analyze_transitions.py runs/exp03_20seeds_40k
+例:
+    uv run python tools/analyze_transitions.py runs/exp05/control
 
 ## 転移の定義
 
-転移の実体は exp02 で単一系統による選択的一掃と判明している。
-そこで **最大系統シェアが閾値を超えた最初のtick** を転移時期とする。
+転移の実体は単一系統による選択的一掃として扱い、
+**最大系統シェアが閾値を超えた最初のtick** を転移時期とする。
 
 閾値依存の結論にならないよう、複数閾値での感度も併せて出力する。
 """
@@ -53,7 +53,7 @@ def transition_tick(s: dict, threshold: float) -> float | None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="転移の発生率と時期の解析 (Exp03)")
+    ap = argparse.ArgumentParser(description="転移（selective sweep）の発生率と時期を解析")
     ap.add_argument("batch_dir")
     ap.add_argument("--threshold", type=float, default=SWEEP_THRESHOLD)
     args = ap.parse_args()
@@ -84,7 +84,7 @@ def main() -> None:
     trans = [r for r in rows if r["t"] is not None]
     non = [r for r in rows if r["t"] is None]
 
-    print(f"=== Exp03: {n} seed / {int(max_tick):,} tick / 閾値 share>={args.threshold} ===\n")
+    print(f"=== Sweep analysis: {n} seed / {int(max_tick):,} tick / 閾値 share>={args.threshold} ===\n")
     print(f"{int(max_tick):,} tickまでに転移: {len(trans)}/{n} "
           f"({len(trans) / n:.0%})   未転移: {len(non)}/{n}")
     print("※ これは『転移率』ではなく『この時点までの累積発生率』である\n")
@@ -166,7 +166,7 @@ def main() -> None:
     ax.set_ylabel("mean light_absorption")
     ax.set_title("Light absorption (gray = not yet transitioned)")
 
-    fig.suptitle("Exp03: transition incidence across seeds")
+    fig.suptitle(f"Sweep incidence across seeds: {batch.name}")
     fig.tight_layout()
     fig.savefig(out / "transitions.png", dpi=110)
     plt.close(fig)
