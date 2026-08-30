@@ -179,17 +179,24 @@ def check_treatment_light(light: np.ndarray, rep: Report) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Exp05 pilot の健全性チェック")
-    ap.add_argument("pilot_dir", help="control/ と treatment/ を含むディレクトリ")
+    ap.add_argument("pilot_dir", help="条件ディレクトリ (既定 control/ treatment/) を含むディレクトリ")
     ap.add_argument("--ticks", type=int, default=5000)
     ap.add_argument("--seeds", default="1,2,3")
+    ap.add_argument("--conditions", default="control,treatment",
+                    help="比較する2条件のディレクトリ名 (Control,Treatment の順)")
     args = ap.parse_args()
 
     base = Path(args.pilot_dir)
     want_seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
     rep = Report()
 
+    names = [c.strip() for c in args.conditions.split(",") if c.strip()]
+    if len(names) != 2:
+        raise SystemExit(f"--conditions は Control,Treatment の2つ: {names}")
+    control_name, treatment_name = names
+
     conds = {}
-    for name in ("control", "treatment"):
+    for name in names:
         d = base / name
         if not d.is_dir():
             print(f"NG  {name}/ がない: {d}")
@@ -209,8 +216,8 @@ def main() -> int:
             check_run_outputs(runs[seed], args.ticks, rep)
 
     print("\n=== 光場 ===")
-    c_lights = {s: light_of(r) for s, r in conds["control"].items()}
-    t_lights = {s: light_of(r) for s, r in conds["treatment"].items()}
+    c_lights = {s: light_of(r) for s, r in conds[control_name].items()}
+    t_lights = {s: light_of(r) for s, r in conds[treatment_name].items()}
     check_control_light(next(iter(c_lights.values())), rep)
     check_treatment_light(next(iter(t_lights.values())), rep)
     rep.check(all(np.array_equal(l, next(iter(c_lights.values()))) for l in c_lights.values())
@@ -219,12 +226,12 @@ def main() -> int:
     ct = float(next(iter(c_lights.values())).sum())
     tt = float(next(iter(t_lights.values())).sum())
     rep.check(abs(ct - tt) < 1e-9,
-              f"総光供給量の一致: control={ct:.6f} / treatment={tt:.6f}",
+              f"総光供給量の一致: {control_name}={ct:.6f} / {treatment_name}={tt:.6f}",
               "total_scale=1.0")
 
     print("\n=== 光以外の世界が同一か (同一seed) ===")
-    for seed in sorted(set(conds["control"]) & set(conds["treatment"])):
-        c, t = conds["control"][seed], conds["treatment"][seed]
+    for seed in sorted(set(conds[control_name]) & set(conds[treatment_name])):
+        c, t = conds[control_name][seed], conds[treatment_name][seed]
         with np.load(c / "environment" / "static.npz") as d:
             cm_c = d["chem_mask"]
         with np.load(t / "environment" / "static.npz") as d:

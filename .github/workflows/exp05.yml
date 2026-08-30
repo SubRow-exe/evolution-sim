@@ -1,0 +1,381 @@
+name: Exp05
+
+# Exp05 (V1.1互換光場 vs V1.2高コントラスト光場) を run 単位に並列実行する。
+#
+# 正本:
+#   docs/Exp05_実験計画.md          条件・評価項目
+#   docs/Exp05_実行手順.md          本ワークフローの実行手順
+#   docs/V1.2_V1.2.1_詳細実装仕様.md 実装仕様
+#
+# ## 条件の与え方
+#
+# Exp04 は遺伝子固定 (--fix-genes) で条件を切り替えたが、Exp05 は**光場**を変える。
+# 光場パラメータはコマンドラインではなく config で与えるため、条件名を
+# configs/exp05_<条件>.json に対応させる。conditions に渡せるのは
+# configs/exp05_<name>.json が存在する name だけ。
+#
+# ## pilot との関係
+#
+# 実装健全性は pilot (seed 1,2,3 × 5,000 tick) で確認済み
+# (experiments/exp05_pilot/NOTES.md)。本番は結果を途中で見て設計変更せず完遂する。
+#
+# pilot はローカルLinuxで実行したため数値実行環境キーが本番と異なる。
+# **pilot の数値と本番結果を直接比較しない。**
+#
+# 手動実行のみ。
+
+on:
+  workflow_dispatch:
+    inputs:
+      conditions:
+        description: "条件 (カンマ区切り)。configs/exp05_<条件>.json が必要"
+        type: string
+        default: "control,treatment"
+      seeds:
+        description: "seed範囲 (例: 1-20)"
+        type: string
+        default: "1-20"
+      ticks:
+        description: "1 runのtick数"
+        type: string
+        default: "40000"
+      upload_events:
+        description: "events.csv も保存する (容量大。主解析には不要)"
+        type: boolean
+        default: false
+      render_spatial:
+        description: "light背景のPNG/GIFを生成する (実験計画の標準成果物)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: exp05
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      count: ${{ steps.gen.outputs.count }}
+      seed_count: ${{ steps.gen.outputs.seed_count }}
+      seed_list: ${{ steps.gen.outputs.seed_list }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 条件Configの存在を確認
+        # 存在しない条件名で40 runを走らせてから気づくのを防ぐ
+        run: |
+          set -e
+          IFS=',' read -ra CONDS <<< "${{ inputs.conditions }}"
+          for c in "${CONDS[@]}"; do
+            c="$(echo "$c" | xargs)"
+            f="configs/exp05_${c}.json"
+            test -f "$f" || { echo "::error::$f がない (条件名とConfigが対応していない)"; exit 1; }
+            echo "$c -> $f"
+          done
+
+      - name: matrix を生成
+        id: gen
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          conds = [c.strip() for c in "${{ inputs.conditions }}".split(",") if c.strip()]
+          spec = "${{ inputs.seeds }}"
+          seeds = []
+          for part in spec.split(","):
+              part = part.strip()
+              if "-" in part:
+                  lo, hi = part.split("-")
+                  seeds += list(range(int(lo), int(hi) + 1))
+              elif part:
+                  seeds.append(int(part))
+          items = [{"condition": c, "seed": s} for c in conds for s in seeds]
+          assert len(items) <= 256, f"matrix上限256を超える: {len(items)}"
+          print("matrix=" + json.dumps({"include": items}))
+          print("count=" + str(len(items)))
+          print("seed_count=" + str(len(seeds)))
+          print("seed_list=" + ",".join(str(s) for s in seeds))
+          PY
+
+      - name: 実行計画を表示
+        run: |
+          echo "### Exp05 実行計画" >> $GITHUB_STEP_SUMMARY
+          echo "- 条件: ${{ inputs.conditions }}" >> $GITHUB_STEP_SUMMARY
+          echo "- seed: ${{ inputs.seeds }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ticks: ${{ inputs.ticks }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 総run数: ${{ steps.gen.outputs.count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- コード: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+  run:
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false        # 1 run の失敗で他を巻き込まない
+      max-parallel: 20        # Freeプランの同時実行上限に合わせる
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: 依存をlockfileどおりに同期
+        run: uv sync --frozen
+
+      - name: シミュレーション実行
+        # stats_interval / snapshot_interval は config 側に入っている
+        run: |
+          uv run python main.py --headless \
+            --ticks "${{ inputs.ticks }}" \
+            --seed "${{ matrix.seed }}" \
+            --config "configs/exp05_${{ matrix.condition }}.json" \
+            --out "runs/exp05_${{ matrix.condition }}"
+
+      - name: 空間PNG/GIFを生成
+        if: ${{ inputs.render_spatial }}
+        # 後処理なので失敗しても科学runは無効にならない。
+        # ここで止めると生データの退避まで失われるため continue-on-error。
+        continue-on-error: true
+        run: |
+          SRC=$(find "runs/exp05_${{ matrix.condition }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          uv run python tools/render_spatial.py "$SRC" --background light --gif --fps 6
+
+      - name: 保存対象を整理
+        run: |
+          set -euo pipefail
+          SRC=$(find "runs/exp05_${{ matrix.condition }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          echo "run dir: $SRC"
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$SRC"/lineages.csv "$DST"/
+          # 空間解析と目視のため、Exp05では snapshots と environment を保存する
+          # (Exp04では除外していた。実験計画 §6「全runでraw snapshot + environment」)
+          cp -r "$SRC"/snapshots "$SRC"/environment "$DST"/
+          if [ -d "$SRC/spatial" ]; then cp -r "$SRC"/spatial "$DST"/; fi
+          if [ "${{ inputs.upload_events }}" = "true" ]; then cp "$SRC"/events.csv "$DST"/; fi
+          echo "最終tick: $(tail -1 "$SRC"/stats.csv | cut -d, -f1) / 個体数: $(tail -1 "$SRC"/stats.csv | cut -d, -f2)"
+          du -sh "$DST"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp05-${{ matrix.condition }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  collect:
+    needs: [setup, run]
+    if: always()
+    runs-on: ubuntu-24.04
+    # 40 run分の成果物 (snapshots/environment を含むため Exp04 より重い) の
+    # ダウンロードと集計。6時間かけた実験の集計だけを失わないよう余裕を持たせる。
+    timeout-minutes: 120
+    env:
+      # step の if: から参照するため job level に置く
+      RCLONE_CONF: ${{ secrets.RCLONE_CONFIG_BASE64 }}
+      REMOTE_BASE: ${{ vars.RCLONE_REMOTE_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: 全runの成果物を取得
+        uses: actions/download-artifact@v4
+        with:
+          pattern: exp05-*
+          path: dl
+
+      - name: 条件ごとに再構成
+        # tools/check_pilot.py が使えるよう runs/exp05/<条件>/<run> の形にする
+        run: |
+          mkdir -p runs/exp05
+          for d in dl/exp05-*; do
+            name=$(basename "$d")
+            cond=$(echo "$name" | sed -E 's/^exp05-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp05/$cond"
+            cp -r "$d"/* "runs/exp05/$cond"/ 2>/dev/null || true
+          done
+          echo "=== 条件ごとのrun数 ==="
+          for c in runs/exp05/*; do
+            echo "$(basename $c): $(find $c -mindepth 1 -maxdepth 1 -type d | wc -l) run"
+          done
+          du -sh runs/exp05
+
+      - name: 数値実行環境の同一性を確認
+        run: uv run python tools/check_env.py runs/exp05/* 2>&1 | tee env_check.txt
+
+      - name: 健全性チェック (run数・早期終了・環境・コード)
+        # 前提が崩れていれば非ゼロ終了する。ただしここでジョブを止めると
+        # 生データの退避まで失われるため、判定だけ持ち越して最後に落とす。
+        id: health
+        continue-on-error: true
+        env:
+          TICKS: ${{ inputs.ticks }}
+          EXPECT_RUNS: ${{ needs.setup.outputs.seed_count }}
+        run: |
+          set -o pipefail
+          rc=0
+          uv run python tools/health_check.py runs/exp05/* --ticks "$TICKS" --expect-runs "$EXPECT_RUNS" 2>&1 | tee health.txt || rc=$?
+          {
+            echo ""
+            echo "### 健全性チェック"
+            echo '```'
+            cat health.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+          exit $rc
+
+      - name: 光場と出力構造のチェック
+        # pilot と同じ構造チェックを本番データにも当てる。
+        # 早期終了runがあると tick数・snapshot数の項目はNGになるが、それは
+        # health_check 側が「結果」として扱う事象なので、ここでは止めない。
+        continue-on-error: true
+        env:
+          TICKS: ${{ inputs.ticks }}
+          SEEDS: ${{ needs.setup.outputs.seed_list }}
+          CONDS: ${{ inputs.conditions }}
+        run: |
+          set -o pipefail
+          uv run python tools/check_pilot.py runs/exp05 \
+            --ticks "$TICKS" --seeds "$SEEDS" --conditions "$CONDS" 2>&1 | tee structure.txt || true
+          {
+            echo ""
+            echo "<details><summary>光場・出力構造チェック</summary>"
+            echo ""
+            echo '```'
+            tail -40 structure.txt
+            echo '```'
+            echo "</details>"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: 条件ごとにsweepの累積発生率を解析
+        run: |
+          {
+            echo "## Exp05 結果 (GitHub Actions / Linux)"
+            echo ""
+            echo "> pilot はローカルLinuxで実行したため数値実行環境が異なる。"
+            echo "> **pilot の数値と本結果を直接比較しない。**"
+            echo ""
+            echo '```'
+            cat env_check.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+          for c in runs/exp05/*; do
+            name=$(basename "$c")
+            echo "===== $name =====" | tee -a analysis.txt
+            uv run python tools/analyze_transitions.py "$c" 2>&1 | tee -a analysis.txt
+          done
+          {
+            echo ""
+            echo "<details><summary>sweep解析 (主判定 top_lineage_frac >= 0.5)</summary>"
+            echo ""
+            echo '```'
+            cat analysis.txt
+            echo '```'
+            echo "</details>"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: 条件ごとのseed間集計
+        continue-on-error: true
+        run: |
+          for c in runs/exp05/*; do
+            uv run python tools/run_batch.py --aggregate "$c" 2>&1 | tail -12
+          done
+
+      # --- 生データのアーカイブとマニフェスト ---
+      # 生データは巨大なため GitHub には置かない。
+      # 外部ストレージへ送り、GitHub には要約とチェックサムだけを残す。
+
+      - name: 生データを圧縮しマニフェストを生成
+        id: pack
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%d_%H%M%S)"
+          EXP="exp05_actions_${STAMP}"
+          echo "exp=$EXP" >> "$GITHUB_OUTPUT"
+          mkdir -p archives "experiments/$EXP"
+
+          for c in runs/exp05/*; do
+            name="exp05_$(basename "$c")"
+            tar -czf "archives/${name}.tar.gz" -C "$(dirname "$c")" "$(basename "$c")"
+            REMOTE=""
+            if [ -n "${REMOTE_BASE:-}" ]; then
+              REMOTE="${REMOTE_BASE}/${EXP}/${name}.tar.gz"
+            fi
+            uv run python tools/make_manifest.py "$c" \
+              --out "experiments/$EXP/$name" \
+              --archive "archives/${name}.tar.gz" \
+              ${REMOTE:+--remote "$REMOTE"}
+          done
+
+          cp analysis.txt env_check.txt "experiments/$EXP/"
+          if [ -f structure.txt ]; then cp structure.txt "experiments/$EXP/"; fi
+          echo "=== アーカイブ ==="
+          ls -lh archives/
+
+      - name: Google Drive へ生データを転送
+        id: upload
+        # 認証情報が未設定なら skip する (Exp05 自体は完走させる)。
+        # 設定方法は docs/オンライン実行環境.md を参照。
+        if: env.RCLONE_CONF != '' && env.REMOTE_BASE != ''
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" | base64 -d > ~/.config/rclone/rclone.conf
+          rclone copy archives/ "${REMOTE_BASE}/${EXP}/" --progress --stats-one-line
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          rm -f ~/.config/rclone/rclone.conf
+
+      - name: 転送状況を記録
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          if [ "${{ steps.upload.outputs.uploaded }}" = "true" ]; then
+            MSG="生データを外部ストレージへ転送済み"
+          else
+            MSG="外部ストレージ未設定のため、生データは Actions 成果物のみ (90日保持)"
+          fi
+          echo "$MSG"
+          {
+            echo ""
+            echo "### 生データ"
+            echo "- $MSG"
+            echo "- マニフェスト: \`experiments/$EXP/*/MANIFEST.md\`"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: 要約とチェックサムを成果物として保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp05-summary
+          path: experiments/
+          retention-days: 90
+
+      - name: 生データアーカイブを成果物として保存 (転送未設定時の保険)
+        if: ${{ steps.upload.outputs.uploaded != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp05-rawdata
+          path: archives/
+          retention-days: 90
+
+      - name: 健全性チェックの結果を判定
+        # 生データの退避が終わってから落とす。異常なデータで解析へ進ませない。
+        if: ${{ steps.health.outcome == 'failure' }}
+        run: |
+          echo "::error::健全性チェックが停止条件に該当した。結果を解釈せず原因を解消すること (health.txt 参照)"
+          {
+            echo ""
+            echo "### ★ 健全性チェック不合格"
+            echo "前提が崩れているため、この結果を解釈してはいけない。"
+            echo "生データと成果物は退避済み。原因を解消して再実行すること。"
+          } >> $GITHUB_STEP_SUMMARY
+          exit 1

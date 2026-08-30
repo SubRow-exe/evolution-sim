@@ -8,10 +8,11 @@
 2. **`docs/V1.2_V1.2.1_詳細実装仕様.md` — V1.2/V1.2.1実装の正本**
 3. `docs/V1.2_実装順序.md` — V1.2 → V1.2.1 → Exp05の順序
 4. **`docs/Exp05_実験計画.md` — Exp05条件・評価項目の正本**
-5. `docs/バージョニング方針.md`
-6. 個別Issue: #19 / #23 / #24
-7. `docs/V1.1_総括.md`
-8. `docs/開発ロードマップ_リアル化方針.md`
+5. `docs/Exp05_実行手順.md` — Exp05本番の実行手順
+6. `docs/バージョニング方針.md`
+7. 個別Issue: #19 / #23 / #24
+8. `docs/V1.1_総括.md`
+9. `docs/開発ロードマップ_リアル化方針.md`
 
 古いExp03/Exp04コメント・旧V1.2候補より上記正本を優先する。
 作業完了後は `docs/次の実験計画.md` と該当Issueを更新する。
@@ -24,8 +25,8 @@ V1.1 クローズ / v1.1-final 保存済み
 → #23 V1.2.1: environment snapshot + 空間/行動指標 + PNG/GIF
 → 観測ON/OFF結果不変テスト + CI Green (済)
 → pilot: seed 1,2,3 × 2条件 × 5,000 tick (済 / experiments/exp05_pilot)
-→ Exp05用Actionsワークフロー整備  ← 現在地
-→ #24 Exp05: seed 1-20 × 2条件 × 40,000 tick
+→ Exp05用Actionsワークフロー整備 (済 / .github/workflows/exp05.yml)
+→ #24 Exp05: seed 1-20 × 2条件 × 40,000 tick  ← 現在地
 → 数値 + 空間指標 + GIFレビュー
 → 次の光環境変更を決定
 ```
