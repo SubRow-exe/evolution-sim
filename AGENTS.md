@@ -26,9 +26,10 @@ V1.1保存済み
 → chemical source式のモデル不整合を確認
 → PR #36でExp06結果とV1.3/Exp07方針を確定
 → V1.2最終状態を v1.2-final (branch + tag) として保存
-→ V1.3 chemical sourceモデル実装  ← 次
-→ unit / Energy conservation tests
-→ Exp07 Pilot 9 run
+→ V1.3 chemical sourceモデル実装 (済)
+→ unit / Energy conservation tests (済)
+→ Exp07 config/workflow/checker実装 (済)
+→ Exp07 Pilot 9 run  ← 次 (未実行)
 → Exp07 240 run × 60k
 → chemical成立/到達/探索の順に判定
 → 成立後に光+chemical同居実験
@@ -214,7 +215,7 @@ V1.3はchemicalを人工的にbuffするためではなく、Exp06で見つか�
 
 ## 開発フロー
 
-- V1.3実装前に`v1.2-final`を保存
+- V1.3実装前に`v1.2-final`を保存 (branch済み。tagは要手動作成)
 - 原則branch + PR
 - `uv run pytest tests`
 - Energy conservation test

@@ -1,0 +1,362 @@
+name: Exp07
+
+# Exp07 (V1.3 chemical source成立範囲の探索) を run 単位に並列実行する。
+#
+# 正本:
+#   docs/V1.3_化学資源モデル仕様.md  モデル
+#   docs/Exp07_実験計画.md            条件・判定
+#   docs/Exp07_実行手順.md            本ワークフローの実行手順
+#   Issue #37
+#
+# 振る世界パラメータは chem_vent_flux のみ。24 Config は
+# tools/make_exp07_configs.py が決定的に生成したものをコミットしてある。
+#
+# 絶滅は測定結果なので止めない。max_population_halt 到達も供給過多側の
+# 科学的結果として扱う。一方「診断条件が意図どおりだったか」(光0・実効source・
+# 配置・chem固定2.0) が崩れていたら結果を解釈できないため停止条件にする。
+#
+# 手動実行のみ。
+
+on:
+  workflow_dispatch:
+    inputs:
+      fluxes:
+        description: "chem_vent_flux (カンマ区切り)"
+        type: string
+        default: "4,8,12,16,24,32,48,64"
+      conditions:
+        description: "条件 (カンマ区切り)"
+        type: string
+        default: "c_chem_vent,b_ancestor_vent,d_chem_random"
+      seeds:
+        description: "seed範囲 (例: 1-10。Pilotは 1)"
+        type: string
+        default: "1-10"
+      ticks:
+        description: "1 runのtick数 (本番 120000 / Pilot 5000)"
+        type: string
+        default: "120000"
+      upload_events:
+        description: "events.csv も保存する (死因の内訳を追える。容量大)"
+        type: boolean
+        default: false
+      render_spatial:
+        description: "chemical背景のPNG/GIFを生成する (光0なのでlight背景は使わない)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: exp07
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      count: ${{ steps.gen.outputs.count }}
+      seed_count: ${{ steps.gen.outputs.seed_count }}
+      seeds: ${{ steps.gen.outputs.seeds }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: 条件Configが生成物と一致するか確認
+        # 手で編集された/生成し忘れたConfigで240 runを走らせない
+        run: uv run python tools/make_exp07_configs.py --check
+
+      - name: matrix を生成
+        id: gen
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, pathlib
+          fluxes = [int(x.strip()) for x in "${{ inputs.fluxes }}".split(",") if x.strip()]
+          conds = [c.strip() for c in "${{ inputs.conditions }}".split(",") if c.strip()]
+          seeds = []
+          for part in "${{ inputs.seeds }}".split(","):
+              part = part.strip()
+              if "-" in part:
+                  lo, hi = part.split("-")
+                  seeds += list(range(int(lo), int(hi) + 1))
+              elif part:
+                  seeds.append(int(part))
+          items = []
+          for f in fluxes:
+              for c in conds:
+                  cfg = f"configs/exp07/exp07_flux{f:02d}_{c}.json"
+                  assert pathlib.Path(cfg).exists(), f"{cfg} が無い"
+                  for s in seeds:
+                      items.append({"flux": f"{f:02d}", "condition": c, "seed": s})
+          assert len(items) <= 256, f"matrix上限256を超える: {len(items)}"
+          print("matrix=" + json.dumps({"include": items}))
+          print("count=" + str(len(items)))
+          print("seed_count=" + str(len(seeds)))
+          print("seeds=" + "${{ inputs.seeds }}")
+          PY
+
+      - name: 実行計画を表示
+        run: |
+          {
+            echo "### Exp07 実行計画 (V1.3 chemical source成立範囲)"
+            echo "- flux: ${{ inputs.fluxes }}"
+            echo "- 条件: ${{ inputs.conditions }}"
+            echo "- seed: ${{ inputs.seeds }}"
+            echo "- ticks: ${{ inputs.ticks }}"
+            echo "- 総run数: ${{ steps.gen.outputs.count }}"
+            echo "- コード: \`${{ github.sha }}\`"
+            echo "- 全条件 light_max=0。絶滅・halt はいずれも測定結果"
+          } >> $GITHUB_STEP_SUMMARY
+
+  run:
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: シミュレーション実行
+        run: |
+          uv run python main.py --headless \
+            --ticks "${{ inputs.ticks }}" \
+            --seed "${{ matrix.seed }}" \
+            --config "configs/exp07/exp07_flux${{ matrix.flux }}_${{ matrix.condition }}.json" \
+            --out "runs/exp07_flux${{ matrix.flux }}_${{ matrix.condition }}"
+
+      - name: 空間PNG/GIFを生成
+        if: ${{ inputs.render_spatial }}
+        continue-on-error: true
+        run: |
+          SRC=$(find "runs/exp07_flux${{ matrix.flux }}_${{ matrix.condition }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          uv run python tools/render_spatial.py "$SRC" --background chemical --gif --fps 6
+
+      - name: 保存対象を整理
+        run: |
+          set -euo pipefail
+          SRC=$(find "runs/exp07_flux${{ matrix.flux }}_${{ matrix.condition }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$SRC"/lineages.csv "$DST"/
+          cp -r "$SRC"/snapshots "$SRC"/environment "$DST"/
+          if [ -d "$SRC/spatial" ]; then cp -r "$SRC"/spatial "$DST"/; fi
+          if [ "${{ inputs.upload_events }}" = "true" ]; then cp "$SRC"/events.csv "$DST"/; fi
+          echo "最終tick: $(tail -1 "$SRC"/stats.csv | cut -d, -f1) / 個体数: $(tail -1 "$SRC"/stats.csv | cut -d, -f2)"
+          du -sh "$DST"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp07-flux${{ matrix.flux }}-${{ matrix.condition }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  collect:
+    needs: [setup, run]
+    if: always()
+    runs-on: ubuntu-24.04
+    # 240 run 分の成果物 (snapshot 120枚/run) を扱うため Exp05/06 より余裕を取る
+    timeout-minutes: 180
+    env:
+      RCLONE_CONF: ${{ secrets.RCLONE_CONFIG_BASE64 }}
+      REMOTE_BASE: ${{ vars.RCLONE_REMOTE_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: 全runの成果物を取得
+        uses: actions/download-artifact@v4
+        with:
+          pattern: exp07-*
+          path: dl
+
+      - name: flux×条件ごとに再構成
+        run: |
+          mkdir -p runs/exp07
+          for d in dl/exp07-*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/^exp07-flux([0-9]+)-(.+)-seed[0-9]+$/flux\1_\2/')
+            mkdir -p "runs/exp07/$key"
+            cp -r "$d"/* "runs/exp07/$key"/ 2>/dev/null || true
+          done
+          echo "=== flux×条件ごとのrun数 ==="
+          for c in runs/exp07/*; do
+            echo "$(basename $c): $(find $c -mindepth 1 -maxdepth 1 -type d | wc -l) run"
+          done
+          du -sh runs/exp07
+
+      - name: 数値実行環境の同一性を確認
+        run: uv run python tools/check_env.py runs/exp07/* 2>&1 | tee env_check.txt
+
+      - name: 健全性チェック (run数・環境・コード)
+        # 絶滅・halt による早期終了は測定結果であり、health_check も警告に留める
+        id: health
+        continue-on-error: true
+        env:
+          TICKS: ${{ inputs.ticks }}
+          EXPECT_RUNS: ${{ needs.setup.outputs.seed_count }}
+        run: |
+          set -o pipefail
+          rc=0
+          uv run python tools/health_check.py runs/exp07/* --ticks "$TICKS" --expect-runs "$EXPECT_RUNS" 2>&1 | tee health.txt || rc=$?
+          {
+            echo ""
+            echo "### 健全性チェック"
+            echo "> Exp07では早期終了 (絶滅 / max_population_halt) は測定結果であり異常ではない。"
+            echo '```'
+            tail -60 health.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+          exit $rc
+
+      - name: 診断条件の成立チェック (光0・実効source・配置・chem固定)
+        id: conditions
+        continue-on-error: true
+        env:
+          SEEDS: ${{ needs.setup.outputs.seeds }}
+        run: |
+          set -o pipefail
+          rc=0
+          uv run python tools/check_exp07.py runs/exp07 --seeds "$SEEDS" 2>&1 | tee conditions.txt || rc=$?
+          {
+            echo ""
+            echo "<details><summary>診断条件チェック</summary>"
+            echo ""
+            echo '```'
+            tail -40 conditions.txt
+            echo '```'
+            echo "</details>"
+          } >> $GITHUB_STEP_SUMMARY
+          exit $rc
+
+      - name: 診断結果を要約
+        env:
+          TICKS: ${{ inputs.ticks }}
+        run: |
+          set -o pipefail
+          uv run python tools/summarize_exp07.py runs/exp07 --ticks "$TICKS" 2>&1 | tee summary.txt
+          {
+            echo ""
+            echo "## Exp07 診断結果 (GitHub Actions / Linux)"
+            echo ""
+            echo "> 成立性が主判定。lineage sweepや最終最適形質の強い結論は出さない。"
+            echo "> §9の切り分けは候補であり、結論と次の1軸は人が決める。"
+            echo ""
+            echo '```'
+            cat env_check.txt
+            echo '```'
+            echo ""
+            echo '```'
+            cat summary.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: flux×条件ごとのseed間集計
+        continue-on-error: true
+        run: |
+          for c in runs/exp07/*; do
+            uv run python tools/run_batch.py --aggregate "$c" 2>&1 | tail -8
+          done
+
+      # --- 生データのアーカイブとマニフェスト ---
+
+      - name: 生データを圧縮しマニフェストを生成
+        id: pack
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%d_%H%M%S)"
+          EXP="exp07_actions_${STAMP}"
+          echo "exp=$EXP" >> "$GITHUB_OUTPUT"
+          mkdir -p archives "experiments/$EXP"
+          for c in runs/exp07/*; do
+            name="exp07_$(basename "$c")"
+            tar -czf "archives/${name}.tar.gz" -C "$(dirname "$c")" "$(basename "$c")"
+            REMOTE=""
+            if [ -n "${REMOTE_BASE:-}" ]; then
+              REMOTE="${REMOTE_BASE}/${EXP}/${name}.tar.gz"
+            fi
+            uv run python tools/make_manifest.py "$c" \
+              --out "experiments/$EXP/$name" \
+              --archive "archives/${name}.tar.gz" \
+              ${REMOTE:+--remote "$REMOTE"}
+          done
+          cp summary.txt env_check.txt "experiments/$EXP/"
+          if [ -f conditions.txt ]; then cp conditions.txt "experiments/$EXP/"; fi
+          if [ -f health.txt ]; then cp health.txt "experiments/$EXP/"; fi
+          echo "=== アーカイブ ==="
+          du -sh archives/
+
+      - name: Google Drive へ生データを転送
+        id: upload
+        if: env.RCLONE_CONF != '' && env.REMOTE_BASE != ''
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" | base64 -d > ~/.config/rclone/rclone.conf
+          rclone copy archives/ "${REMOTE_BASE}/${EXP}/" --progress --stats-one-line
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          rm -f ~/.config/rclone/rclone.conf
+
+      - name: 転送状況を記録
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          if [ "${{ steps.upload.outputs.uploaded }}" = "true" ]; then
+            MSG="生データを外部ストレージへ転送済み"
+          else
+            MSG="外部ストレージ未設定のため、生データは Actions 成果物のみ (90日保持)"
+          fi
+          echo "$MSG"
+          {
+            echo ""
+            echo "### 生データ"
+            echo "- $MSG"
+            echo "- マニフェスト: \`experiments/$EXP/*/MANIFEST.md\`"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: 要約とチェックサムを成果物として保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp07-summary
+          path: experiments/
+          retention-days: 90
+
+      - name: 生データアーカイブを成果物として保存 (転送未設定時の保険)
+        if: ${{ steps.upload.outputs.uploaded != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp07-rawdata
+          path: archives/
+          retention-days: 90
+
+      - name: 停止条件の判定
+        if: ${{ steps.health.outcome == 'failure' || steps.conditions.outcome == 'failure' }}
+        run: |
+          echo "::error::健全性チェックまたは診断条件チェックが停止条件に該当した (health.txt / conditions.txt 参照)"
+          {
+            echo ""
+            echo "### ★ 停止条件に該当"
+            echo "診断の前提が崩れているため、この結果を解釈してはいけない。"
+            echo "生データと成果物は退避済み。原因を解消して再実行すること。"
+          } >> $GITHUB_STEP_SUMMARY
+          exit 1
