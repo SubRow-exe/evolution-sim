@@ -5,201 +5,145 @@
 ## 現在の作業方針の参照順
 
 1. `docs/次の実験計画.md` — 今から何をするか
-2. **`docs/V1.2_V1.2.1_詳細実装仕様.md` — V1.2/V1.2.1実装の正本**
-3. `docs/V1.2_実装順序.md` — V1.2 → V1.2.1 → Exp05の順序
-4. **`docs/Exp05_実験計画.md` — Exp05条件・評価項目の正本**
-5. `docs/Exp05_実行手順.md` — Exp05本番の実行手順
+2. **`docs/Exp06_実験計画.md` — 現在の最優先実験・診断条件の正本**
+3. `docs/Exp05_結果考察.md` — Exp06を必要とした根拠
+4. `docs/Exp05_実験計画.md` — Exp05の事前登録条件
+5. `docs/V1.1_総括.md`
 6. `docs/バージョニング方針.md`
-7. 個別Issue: #19 / #23 / #24
-8. `docs/V1.1_総括.md`
-9. `docs/開発ロードマップ_リアル化方針.md`
+7. `docs/V1.2_V1.2.1_詳細実装仕様.md`
+8. `docs/開発ロードマップ_リアル化方針.md`
 
-古いExp03/Exp04コメント・旧V1.2候補より上記正本を優先する。
+古いExp03/Exp04コメント・旧「次は光総量を振る」案より上記正本を優先する。
 作業完了後は `docs/次の実験計画.md` と該当Issueを更新する。
 
 ## 現在の短期順序
 
 ```text
-V1.1 クローズ / v1.1-final 保存済み
-→ #19 V1.2: high_contrast_vertical
-→ #23 V1.2.1: environment snapshot + 空間/行動指標 + PNG/GIF
-→ 観測ON/OFF結果不変テスト + CI Green (済)
-→ pilot: seed 1,2,3 × 2条件 × 5,000 tick (済 / experiments/exp05_pilot)
-→ Exp05用Actionsワークフロー整備 (済 / .github/workflows/exp05.yml)
-→ #24 Exp05: seed 1-20 × 2条件 × 40,000 tick  ← 現在地
-→ 数値 + 空間指標 + GIFレビュー
-→ 次の光環境変更を決定
+V1.1保存済み
+→ V1.2高コントラスト光場 実装済み
+→ V1.2.1空間観測 実装済み
+→ Exp05 40 run 完了・レビュー済み
+→ V1.2.2軽量結果preview 実装済み
+→ chemical利用経路の成立性に重大な懸念を発見
+→ Exp06診断初期化/runnerを実装  ← 現在地
+→ Exp06: 4条件 × seed 1-10 × 10,000 tick
+→ 結果次第で初期パラメータ / chemical資源 / 探索能力を1軸ずつ見直す
+→ 光総量0.75/0.50系列はそれまで保留
 ```
 
-### V1.2で変更するもの
+## Exp06の目的
 
-最初の世界ルール変更は**光場1軸のみ**。
+Exp05では完全暗部にchemical ventとnutrientが存在したにもかかわらず、暗部が早期に無人化しchemical利用型が成立しなかった。
 
-V1.1終盤のsweep群では光利用率が約90%に達していたため、Exp05では総光量を減らさない。世界全体のエネルギー不足と空間偏在を分離する。
+現在の最重要問い:
 
-Treatment `high_contrast_vertical` の既定仕様:
+> 現行モデルは複数Energy戦略が実際に進化可能なのか。それとも通常祖先からは実質的に光利用経路しか開通していないのか。
+
+後者なら「光利用型が競争に勝った」という解釈ではなく、モデル設計上の到達可能性の問題として修正する。
+
+### Exp06 4条件
+
+全条件 `light=0`、その他の世界ルールは現行V1.2のまま。
 
 ```text
-北20%: 最大光量plateau
-中50%: 最大光量 → 0 の線形遷移
-南30%: 完全暗部
+A Ancestor / Random
+B Ancestor / Vent
+C Chem-adapted / Vent   chemical_absorption=2.0固定
+D Chem-adapted / Random chemical_absorption=2.0固定
 ```
 
-Config:
+`2.0`は診断用positive controlであり、新しい初期値候補ではない。
 
 ```text
-light_hc_bright_frac = 0.20
-light_hc_transition_frac = 0.50
-light_hc_dark_floor = 0.0
-light_hc_total_scale = 1.0
+seed 1-10
+10,000 tick
+4条件 × 10 = 40 run
 ```
 
-40×40では:
+結果が混在し診断不能な条件だけseed 11-20を追加することを事前規定する。
 
-```text
-北 8行: 明部
-中20行: 遷移
-南12行: 完全暗部
-```
+### Exp06実装時の重要事項
 
-Control `vertical` とTreatmentの総光供給量は**双方1,248 E/tick**にする。
-Treatmentはshape生成後にControl総光量へ正規化し、実効ピークは約1.733333 E/cell/tick。
+- default `INITIAL_GENOME` を変更しない
+- default初期配置を変更しない
+- Exp06専用の初期条件注入/runnerとして実装する
+- 通常実行の乱数系列・科学結果を変えない
+- 既存CI + 結果不変性テストを通す
+- chemical_absorption=2.0を一般Configの推奨値として扱わない
+- Exp06結果を見る前にchemical資源量や感覚能力を同時調整しない
 
-`light_hc_total_scale` はshapeと総量を分離して将来比較するためのパラメータ。Exp05では必ず1.0固定。
-光場生成では乱数を消費せず、同一seedで`chem_mask`等の確率生成物を変えない。
+## Exp05から分かったこと
 
-### V1.2で変更しないもの
+- 総光量を同じにして空間偏在だけ変えても進化史は大きく変化
+- 高light_absorptionは維持
+- 小型化は弱まり、局所強光では大型化が許容
+- 完全暗部30%は早期に無人化
+- 明部ほどmatter/body_sizeが大きい傾向
+- 暗部のchemical stockが未利用で残るケースを確認
 
-- INITIAL_GENOME
-- 無性生殖
-- 成熟年齢なし / 繁殖クールダウンなし
-- 化学資源量・vent仕様
-- 無機栄養構造
-- 生理コスト式
-- 突然変異仕様
+したがって、光総量をさらに振る前にchemical利用経路の成立性を診断する。
 
-### V1.2.1
+## 過去実験の解釈上の注意
 
-世界ルールを変えない観測機能。
+Exp03〜05で観測された数値・sweep・形質変化は保持する。
 
-Exp05では:
-- `snapshot_interval=1000`
-- 個体snapshot CSV
-- `environment/static.npz`: light / chem_mask
-- `environment/env_XXXXXXXX.npz`: chemical / nutrients
-- lineage占有セル数 / 重心 / 分布幅 / 平均移動距離 / mean local light / vent滞在割合
-- `tools/render_spatial.py` でPNG/GIF
+ただしExp06完了まで以下は保留:
 
-地理帯はTreatment設計に合わせてControl/Treatment共通で:
+> 「複数Energy戦略が十分に進化可能な世界で、光利用型が競争に勝った」
 
-```text
-North:  y/H < 0.20
-Middle: 0.20 <= y/H < 0.70
-South:  y/H >= 0.70
-```
-
-**観測ON/OFFで乱数系列・科学状態を完全一致させる。**
-
-### Exp05
-
-`docs/Exp05_実験計画.md` を正本とする。
-
-- Control: `light_pattern=vertical`
-- V1.2: `light_pattern=high_contrast_vertical`（20/50/30, total_scale=1.0）
-- seed 1–20
-- 40,000 tick
-- 2条件 × 20 seed = 40 run
-- stats_interval=20
-- snapshot_interval=1000
-- 同一seed対応比較
-- 主sweep判定 `top_lineage_frac >= 0.5`
-
-Pilotは `seed 1,2,3 × 2条件 × 5,000 tick` と固定。
-クラッシュ・総光量・zone境界・ピーク光量・出力・観測不変性の確認だけに使う。
-生物学的な結果を見て都合よくExp05条件を変更しない。
-
-### Exp05後
-
-V1.2以降しばらくは光環境を小刻みに振る。
-
-次は一度に1軸だけ変更する。
-1. `light_hc_total_scale=1.0`を維持してさらに空間偏在を強くする
-2. 20/50/30 shapeを固定し、`light_hc_total_scale`だけ増減する
-
-shapeと総量は同時に変更しない。
+Exp04のsweep促進因子解析など、同じ進化経路内の比較は引き続き有効。
 
 ## バージョニング
 
-- `V1.1 → V1.2 → V1.3`: 世界ルールを変え、進化結果を変え得る変更
-- `V1.2 → V1.2.1 → V1.2.2`: 世界ルールを変えない機能・観測・解析・実行基盤追加
+- `V1.1 → V1.2 → V1.3`: 世界ルールや初期パラメータを変え、科学結果を変え得る変更
+- `V1.2 → V1.2.1 → V1.2.2`: 世界を変えない観測・解析・GUI・実行基盤等
 
-詳細: `docs/バージョニング方針.md`。
+Exp06用の診断支援はdefault世界を変えない実験ハーネスとして実装する。Exp06後に初期ゲノムやchemical資源そのものを恒久変更する場合は次の世界バージョンとして扱う。
 
 ## プロジェクトの目的
 
-単純な世界のルール（物理・エネルギー・物質・遺伝・突然変異）だけを設定し、自然選択によって**予想していなかった生命形態・生態・行動が創発する**ことを観察するシミュレーション。「賢い生物を作る」のではなく「生物が生まれ得る世界を作る」。
+単純な世界のルール（物理・エネルギー・物質・遺伝・突然変異）だけを設定し、自然選択によって予想していなかった生命形態・生態・行動が創発することを観察するシミュレーション。「賢い生物を作る」のではなく「生物が生まれ得る世界を作る」。
 
 ## 絶対に守る設計原則
 
-1. **適応度を直接計算しない。** `fitness = ...` や `if speed > 70: survive()` 型の実装は禁止。生存と繁殖はエネルギー・物質・損傷の帰結としてのみ発生させる
-2. **種クラスを作らない。** `species = "plant"` / `"predator"` は禁止。役割は栄養獲得遺伝子の組み合わせから創発する
-3. **寿命値を作らない。** `if age > lifespan: die()` は禁止。老化は損傷蓄積と修復のバランスから創発する
-4. **コストは物理・生理則から導く。** 人工的なペナルティ定数ではなく、意味のあるスケーリングや収支で表現する
-5. **物質は厳密保存。** 物質の増減を伴う変更は保存則テストを通し、エネルギー授受は台帳へ漏れなく計上する
-6. **決定性を壊さない。** 乱数は `Simulation.rng` のみ。壁時計・別乱数源・順序依存を入れない。同一数値実行環境内で再現性を要求する
-7. **想定外の戦略を許容する。** 想定した生態型を出すために挙動を直接制限しない
-8. **環境負荷は具体的な環境量へ分解する。** 抽象ペナルティではなく光・温度・資源等から作用を導く
-9. **環境拡張は原則1軸ずつ。** 複数ルールを同時追加して因果を読めなくしない
+1. **適応度を直接計算しない。** `fitness = ...` や特定形質への直接ボーナスは禁止
+2. **種クラスを作らない。** 役割は遺伝子と資源利用から創発させる
+3. **寿命値を作らない。** 死亡はEnergy・Matter・損傷等の帰結
+4. **コストは物理・生理則から導く。** 恣意的な勝敗調整を避ける
+5. **物質は厳密保存。** Energy授受は台帳へ漏れなく計上
+6. **決定性を壊さない。** 乱数は `Simulation.rng` のみ
+7. **想定外の戦略を許容する。** 欲しい生態型を直接出さない
+8. **環境負荷は具体的な環境量へ分解する**
+9. **環境拡張・パラメータ見直しは原則1軸ずつ**
+10. **「パラメータが存在する」ことと「進化的に到達可能」なことを区別する。** 複数戦略を比較する前に各経路の成立性を確認する
 
 ## 結果を変えない変更と、変える変更を区別する
 
-V1.2光場は意図的な世界ルール変更。
-V1.2.1可視化・観測は結果不変変更。
-
-高速化・リファクタリング・観測機能追加は、同一数値実行環境で科学結果を変えてはならない。
+高速化・リファクタリング・観測機能・Exp06診断ハーネスのdefault無効状態は、同一数値実行環境で通常科学結果を変えてはならない。
 
 ```bash
+uv run pytest tests
 uv run python tools/golden.py
-uv run python tools/verify_vs_ref.py --ref 18137b5
+uv run python tools/verify_vs_ref.py --ref <reference>
 ```
 
-`tools/verify_vs_ref.py` は異OS間の一致を保証するものではない。同一数値実行環境内で旧実装と新実装を比較する。
-
-意図的に世界モデルを変更する場合は、バージョン境界として理由を記録し、必要なgolden指紋更新を明示する。
+意図的に世界モデル・初期値を変更する場合は、バージョン境界として理由を記録する。
 
 ## 開発フロー
 
-- 原則ブランチを切り、PRで提出する
-- 変更後は `uv run pytest tests` を全通しする
+- 原則ブランチを切り、PRで提出
+- 変更後は `uv run pytest tests` を全通し
 - 結果不変変更では結果不変性確認も通す
 - パラメータ調整の根拠をPR説明に残す
-- 意味のある実験結果は `experiments/` に保存する
+- 意味のある実験結果は `experiments/` とdocsへ保存
 
 ## 実験結果の残し方
 
-`runs/` は日常実行用。残す価値のある実験は:
+生データはActions artifact / 外部ストレージを正本とする。
+GitHubにはConfig・結果要約・主要plot・代表GIF previewを保存する。
 
-```text
-experiments/expNN_<名前>/
-├─ config.json / meta.json
-├─ stats.csv
-├─ events.csv
-├─ snapshots/
-├─ environment/
-├─ spatial/
-├─ plots/
-└─ NOTES.md
-```
-
-再現にはseedだけでなくConfig、コード版、依存関係、数値実行環境が必要。`meta.json` にOS / architecture / Python / NumPy / git SHA等を保存する。
+再現にはseed、Config、コード版、依存関係、数値実行環境が必要。`meta.json` にOS / architecture / Python / NumPy / git SHA等を保存する。
 
 ## 技術スタック
 
 Python 3.12 / uv / numpy / pygame-ce / matplotlib / pytest。
-
-```bash
-python -m uv run pytest tests
-python -m uv run python main.py --seed 42
-python -m uv run python main.py --headless --ticks 20000 --seed 42
-python -m uv run python tools/plot_run.py runs/<run_id>
-```
