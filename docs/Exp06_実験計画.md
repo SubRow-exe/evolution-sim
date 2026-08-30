@@ -57,10 +57,13 @@ chem_uptake * chemical_absorption * matter * phi
 全条件で:
 
 ```text
-light = 0
+light_pattern = uniform
+light_max = 0.0
 世界サイズ・chemical資源・nutrient・生理・繁殖・突然変異 = 現行V1.2と同じ
 initial_population = 100
 ```
+
+health checkで毎tickの総light供給=0、累積light flow=0を確認する。
 
 ### A. Ancestor / Random
 
@@ -109,9 +112,15 @@ Exp06の診断用初期条件は**通常の世界ルール/デフォルト初期
 - mainの `INITIAL_GENOME` を2.0へ書き換えない
 - 通常の初期配置をvent配置へ変更しない
 - Exp06専用の実験初期化/runnerで注入する
+- 初期条件はtick 0のbirth記録より前に適用し、events/snapshotに正しい初期ゲノム・位置を残す
+- chemical=2.0への上書き自体は乱数を消費しない
+- B/Cは同一seedなら同じvent配置になること
+- A/Dは同一seedなら同じランダム配置になること
+- vent配置では `world.chem_mask=True` のセルだけを使用し、セル内位置は決定的に `Simulation.rng` から生成する
+- C/Dではchemical_absorptionを2.0へ上書き後、以後の世代でも2.0に固定する
 - 通常Config・既存seedの科学結果不変をCIで確認する
 
-診断支援コードは結果不変の通常実行を維持すること。恒久的な初期パラメータ変更はExp06結果後に別バージョン/別実験として判断する。
+診断支援コードはdefault通常実行を完全に不変に保つこと。恒久的な初期パラメータ変更はExp06結果後に別バージョン/別実験として判断する。
 
 ## 6. 実行条件
 
