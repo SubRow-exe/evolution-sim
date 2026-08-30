@@ -93,6 +93,39 @@ def mutate(parent: np.ndarray, rng: np.random.Generator,
     return np.clip(child, GENE_MIN, GENE_MAX)
 
 
+def diagnostic_overrides(cfg) -> list[tuple[int, float]] | None:
+    """Exp06診断用の初期ゲノム上書き指定を (添字, 値) の一覧へ変換する。
+
+    docs/Exp06_実験計画.md §5。上書きした遺伝子は「以後の世代でも固定」する
+    必要があるため、fixed_genes に入っていなければここで弾く。入れ忘れると
+    positive control が世代とともに崩れ、診断が成立しなくなるため。
+
+    上書き自体は乱数を消費しない。指定が空なら None を返し、呼び出し側は
+    通常実行と同じ経路を通る。
+    """
+    spec = getattr(cfg, "diagnostic_gene_overrides", None)
+    if not spec:
+        return None
+    fixed = set(getattr(cfg, "fixed_genes", []) or [])
+    out: list[tuple[int, float]] = []
+    for name, value in spec.items():
+        if name not in GENE_NAMES:
+            raise ValueError(
+                f"未知の遺伝子名: {name} (候補: {', '.join(GENE_NAMES)})")
+        idx = GENE_NAMES.index(name)
+        v = float(value)
+        if not GENE_MIN[idx] <= v <= GENE_MAX[idx]:
+            raise ValueError(
+                f"{name} の上書き値 {v} が範囲外 "
+                f"[{GENE_MIN[idx]}, {GENE_MAX[idx]}]")
+        if name not in fixed:
+            raise ValueError(
+                f"diagnostic_gene_overrides の {name} は fixed_genes にも "
+                "指定すること (上書きした遺伝子は全世代で固定する)")
+        out.append((idx, v))
+    return out
+
+
 def fixed_mask_from_names(names: list[str]) -> np.ndarray | None:
     """遺伝子名のリストから固定マスクを作る。未知の名前はエラーにする。"""
     if not names:

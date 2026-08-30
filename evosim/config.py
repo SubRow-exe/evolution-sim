@@ -112,6 +112,22 @@ class Config:
     initial_energy: float = 50.0
     initial_matter: float = 0.8      # 初期身体物質 (body_size=1.0 に対し)
 
+    # --- Exp06 診断ハーネス (docs/Exp06_実験計画.md §5) ---
+    # 「パラメータが存在すること」と「進化的に到達可能なこと」を分離して
+    # 診断するための初期条件注入。**既定値では通常実行と完全に同一**であり、
+    # 世界ルール・default INITIAL_GENOME・default初期配置は一切変更しない。
+    #
+    # diagnostic_placement:
+    #   "random" (既定) — 通常のランダム配置。乱数消費も通常どおり
+    #   "vent"          — 初期個体を化学噴出口セル (chem_mask=True) 上へ配置
+    # diagnostic_gene_overrides:
+    #   初期個体のゲノムを生成した後で上書きする遺伝子。乱数を消費しない。
+    #   例: {"chemical_absorption": 2.0}
+    #   上書きした遺伝子は全世代で固定する必要があるため、同じ名前を
+    #   fixed_genes にも入れること (入れ忘れは ValueError で弾く)。
+    diagnostic_placement: str = "random"
+    diagnostic_gene_overrides: dict[str, float] = field(default_factory=dict)
+
     # --- 災害 ---
     disaster_kill_frac: float = 0.9
 
