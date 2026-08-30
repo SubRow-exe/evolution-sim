@@ -22,8 +22,9 @@
 V1.1 クローズ / v1.1-final 保存済み
 → #19 V1.2: high_contrast_vertical
 → #23 V1.2.1: environment snapshot + 空間/行動指標 + PNG/GIF
-→ 観測ON/OFF結果不変テスト + CI Green
-→ pilot: seed 1,2,3 × 2条件 × 5,000 tick
+→ 観測ON/OFF結果不変テスト + CI Green (済)
+→ pilot: seed 1,2,3 × 2条件 × 5,000 tick (済 / experiments/exp05_pilot)
+→ Exp05用Actionsワークフロー整備  ← 現在地
 → #24 Exp05: seed 1-20 × 2条件 × 40,000 tick
 → 数値 + 空間指標 + GIFレビュー
 → 次の光環境変更を決定
