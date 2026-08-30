@@ -26,31 +26,45 @@ V1.1 クローズ / v1.1-final 保存済み
 → pilot: seed 1,2,3 × 2条件 × 5,000 tick
 → #24 Exp05: seed 1-20 × 2条件 × 40,000 tick
 → 数値 + 空間指標 + GIFレビュー
-→ V1.3の世界ルール変更を決定
+→ 次の光環境変更を決定
 ```
 
 ### V1.2で変更するもの
 
 最初の世界ルール変更は**光場1軸のみ**。
 
+V1.1終盤のsweep群では光利用率が約90%に達していたため、Exp05では総光量を減らさない。世界全体のエネルギー不足と空間偏在を分離する。
+
 Treatment `high_contrast_vertical` の既定仕様:
 
 ```text
-北50%: light_max
-中30%: light_max → 0 の線形遷移
-南20%: 0
+北20%: 最大光量plateau
+中50%: 最大光量 → 0 の線形遷移
+南30%: 完全暗部
 ```
 
 Config:
 
 ```text
-light_hc_bright_frac = 0.50
-light_hc_transition_frac = 0.30
+light_hc_bright_frac = 0.20
+light_hc_transition_frac = 0.50
 light_hc_dark_floor = 0.0
+light_hc_total_scale = 1.0
 ```
 
-40×40 / `light_max=1.2` ではControl `vertical` とTreatmentの総光供給量を**双方1,248 E/tick**にする。
-光場生成では乱数を消費しない。`chem_mask`等の確率生成物を同一seedで変えない。
+40×40では:
+
+```text
+北 8行: 明部
+中20行: 遷移
+南12行: 完全暗部
+```
+
+Control `vertical` とTreatmentの総光供給量は**双方1,248 E/tick**にする。
+Treatmentはshape生成後にControl総光量へ正規化し、実効ピークは約1.733333 E/cell/tick。
+
+`light_hc_total_scale` はshapeと総量を分離して将来比較するためのパラメータ。Exp05では必ず1.0固定。
+光場生成では乱数を消費せず、同一seedで`chem_mask`等の確率生成物を変えない。
 
 ### V1.2で変更しないもの
 
@@ -74,6 +88,14 @@ Exp05では:
 - lineage占有セル数 / 重心 / 分布幅 / 平均移動距離 / mean local light / vent滞在割合
 - `tools/render_spatial.py` でPNG/GIF
 
+地理帯はTreatment設計に合わせてControl/Treatment共通で:
+
+```text
+North:  y/H < 0.20
+Middle: 0.20 <= y/H < 0.70
+South:  y/H >= 0.70
+```
+
 **観測ON/OFFで乱数系列・科学状態を完全一致させる。**
 
 ### Exp05
@@ -81,7 +103,7 @@ Exp05では:
 `docs/Exp05_実験計画.md` を正本とする。
 
 - Control: `light_pattern=vertical`
-- V1.2: `light_pattern=high_contrast_vertical`
+- V1.2: `light_pattern=high_contrast_vertical`（20/50/30, total_scale=1.0）
 - seed 1–20
 - 40,000 tick
 - 2条件 × 20 seed = 40 run
@@ -91,8 +113,18 @@ Exp05では:
 - 主sweep判定 `top_lineage_frac >= 0.5`
 
 Pilotは `seed 1,2,3 × 2条件 × 5,000 tick` と固定。
-クラッシュ・光場総量・zone境界・出力・観測不変性の確認だけに使う。
+クラッシュ・総光量・zone境界・ピーク光量・出力・観測不変性の確認だけに使う。
 生物学的な結果を見て都合よくExp05条件を変更しない。
+
+### Exp05後
+
+V1.2以降しばらくは光環境を小刻みに振る。
+
+次は一度に1軸だけ変更する。
+1. `light_hc_total_scale=1.0`を維持してさらに空間偏在を強くする
+2. 20/50/30 shapeを固定し、`light_hc_total_scale`だけ増減する
+
+shapeと総量は同時に変更しない。
 
 ## バージョニング
 
