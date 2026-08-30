@@ -21,10 +21,9 @@ jobs:
         # 指紋はOS依存のため定数比較はできない。同一マシン上で
         # 参照実装と現在の実装を実際に走らせて比較する。
         #
-        # 既定refは**世界バージョン境界ごとに更新する**。世界ルールを
-        # 変えた版と旧版を比較すれば必ず不一致になるため、基準点は
-        # 現行バージョンの最初のコミットに置く。
-        #   V1.1-V1.2: 18137b5
-        #   V1.3-    : ea78125 (chemicalを地質sourceモデルへ変更)
-        # V1.2以前の再現は v1.2-final を使う。
-        run: uv run python tools/verify_vs_ref.py --ref ${{ vars.RESULT_BASELINE_REF || 'ea78125' }}
+        # V1.3は世界ルール変更境界なので、V1.2以前とは意図的に結果が異なる。
+        # V1.3内の結果不変変更は、最初のV1.3実装コミット ea78125 を基準にする。
+        # Repository variable が古い値のまま残っていても基準を上書きしないよう、
+        # このworkflowではrefを明示的に固定する。
+        # V1.2以前の再現は v1.2-final を使用する。
+        run: uv run python tools/verify_vs_ref.py --ref ea78125
