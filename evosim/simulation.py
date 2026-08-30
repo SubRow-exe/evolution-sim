@@ -61,6 +61,13 @@ class Simulation:
         # 系統別の累積出生数 (系統別統計用)
         self.births_by_lineage: dict[int, int] = {}
 
+        # 移動量の集計 (V1.2.1 観測)。stats記録ごとにリセットされる区間統計。
+        # 読み取り専用であり進化ロジックには一切使わない。
+        self._move_sum = 0.0
+        self._move_count = 0
+        self._move_by_lineage: dict[int, float] = {}
+        self._movecnt_by_lineage: dict[int, int] = {}
+
         self.recorder: Recorder | None = (
             Recorder(run_dir, cfg, seed) if run_dir is not None else None)
 
@@ -128,6 +135,14 @@ class Simulation:
 
             # 行動 + 移動
             v = behavior.decide_and_move(org, self)
+            # 移動量の集計 (V1.2.1 観測)。読み取り専用で、RNGにも
+            # 個体状態にも一切フィードバックしない。
+            self._move_sum += v
+            self._move_count += 1
+            self._move_by_lineage[org.lineage_id] = (
+                self._move_by_lineage.get(org.lineage_id, 0.0) + v)
+            self._movecnt_by_lineage[org.lineage_id] = (
+                self._movecnt_by_lineage.get(org.lineage_id, 0) + 1)
 
             # 栄養獲得
             self._absorb(org, cell0, photo_w)

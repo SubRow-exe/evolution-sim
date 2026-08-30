@@ -24,6 +24,8 @@ from . import __version__
 from .config import Config
 from .genome import BODY_SIZE, GENE_NAMES, LIGHT_ABS, MUTATION_RATE, REPRO_INVEST
 from .runmeta import run_metadata
+from .spatial import (BAND_NAMES, lineage_spatial, population_spatial,
+                      save_environment_snapshot, save_static_environment)
 
 TOP_LINEAGES = 8  # lineages.csv に記録する上位系統数
 
@@ -35,6 +37,8 @@ class Recorder:
         self.dir = Path(run_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
         (self.dir / "snapshots").mkdir(exist_ok=True)
+        (self.dir / "environment").mkdir(exist_ok=True)
+        self._static_saved = False
 
         cfg.to_json(self.dir / "config.json")
         meta = run_metadata(seed, __version__)
@@ -59,6 +63,11 @@ class Recorder:
             "flow_predation_energy_cum", "flow_predation_matter_cum",
             # 系統支配度
             "top_lineage_id", "top_lineage_frac",
+            # 空間指標 (V1.2.1)。地理帯は Control/Treatment 共通の固定定義
+            *[f"pop_{b}_band" for b in BAND_NAMES],
+            *[f"frac_{b}_band" for b in BAND_NAMES],
+            "mean_local_light", "vent_cell_population", "vent_cell_frac",
+            "mean_move_per_org_tick",
             *[f"mean_{n}" for n in GENE_NAMES],
             *[f"var_{n}" for n in GENE_NAMES],
         ]
@@ -70,6 +79,10 @@ class Recorder:
             "tick", "lineage_id", "population", "frac", "births_cum",
             "mean_body_size", "mean_light_absorption",
             "mean_reproduction_investment", "mean_mutation_rate",
+            # 空間・行動指標 (V1.2.1)
+            "occupied_cells", "centroid_x", "centroid_y",
+            "mean_radius_from_centroid", "mean_move_per_org_tick",
+            "mean_local_light", "vent_cell_frac", "mean_chemical_absorption",
         ])
 
         self._perf_f = open(self.dir / "performance.csv", "w", newline="", encoding="utf-8")
@@ -127,6 +140,11 @@ class Recorder:
             mean_age = max_age = max_gen = n_lin = 0
             tot_e = tot_m = 0.0
 
+        # 空間指標 (V1.2.1)。読み取り専用でRNG・個体状態に触れない
+        sp_pop = population_spatial(sim)
+        mean_move = (round(sim._move_sum / sim._move_count, 6)
+                     if sim._move_count else "")
+
         # 系統別集計 (改善方針 Ver.1.2 §4)
         by_lineage: dict[int, list] = {}
         for o in orgs:
@@ -139,6 +157,7 @@ class Recorder:
             top_id, top_frac = -1, 0.0
         for lid, members in ranked[:TOP_LINEAGES]:
             g = np.stack([o.genome for o in members])
+            sp = lineage_spatial(sim, members)
             self._lineage.writerow([
                 sim.tick, lid, len(members), round(len(members) / n, 6),
                 sim.births_by_lineage.get(lid, 0),
@@ -146,6 +165,10 @@ class Recorder:
                 round(float(g[:, LIGHT_ABS].mean()), 6),
                 round(float(g[:, REPRO_INVEST].mean()), 6),
                 round(float(g[:, MUTATION_RATE].mean()), 6),
+                sp["occupied_cells"], sp["centroid_x"], sp["centroid_y"],
+                sp["mean_radius_from_centroid"], sp["mean_move_per_org_tick"],
+                sp["mean_local_light"], sp["vent_cell_frac"],
+                sp["mean_chemical_absorption"],
             ])
         self._lineage_f.flush()
 
@@ -164,6 +187,10 @@ class Recorder:
               ("light", "chemical", "nutrient", "corpse_matter",
                "corpse_energy", "predation_energy", "predation_matter")],
             top_id, round(top_frac, 6),
+            *[sp_pop[f"pop_{b}_band"] for b in BAND_NAMES],
+            *[sp_pop[f"frac_{b}_band"] for b in BAND_NAMES],
+            sp_pop["mean_local_light"], sp_pop["vent_cell_population"],
+            sp_pop["vent_cell_frac"], mean_move,
             *[round(float(v), 6) for v in gmean],
             *[round(float(v), 6) for v in gvar],
         ]
@@ -171,11 +198,25 @@ class Recorder:
         self._stats_f.flush()
         self._events_f.flush()  # 中断時にイベントログの末尾が欠けないように
         self._last_stats_tick = sim.tick
+        # 移動量は stats 区間ごとの平均にする
+        sim._move_sum = 0.0
+        sim._move_count = 0
+        sim._move_by_lineage.clear()
+        sim._movecnt_by_lineage.clear()
 
     # --- スナップショット ---
 
     def snapshot(self, sim) -> None:
         self._last_snap_tick = sim.tick
+
+        # 環境スナップショット (V1.2.1)。光場と噴出口配置は不変なので1度だけ、
+        # 化学ストックと無機栄養は時間変化するので毎回保存する。
+        env = self.dir / "environment"
+        if not self._static_saved:
+            save_static_environment(env / "static.npz", sim)
+            self._static_saved = True
+        save_environment_snapshot(env / f"env_{sim.tick:08d}.npz", sim)
+
         path = self.dir / "snapshots" / f"snap_{sim.tick:08d}.csv"
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
