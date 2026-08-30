@@ -1,31 +1,83 @@
 # AI協働開発ガイドライン (AGENTS.md)
 
-本リポジトリは複数のAIアシスタントと人間が共同開発する。**どのAIも、コードを変更する前に必ず本書と `docs/仕様書_Ver1.1_MVP実装版.md` を読むこと。**
+本リポジトリは複数のAIアシスタントと人間が共同開発する。コードを変更する前に、本書と現在の司令塔ドキュメントを必ず読むこと。
 
 ## 現在の作業方針の参照順
 
-現在の実装・実験判断では、長期ロードマップより以下を優先する。
-
 1. `docs/次の実験計画.md` — 今から何をするか
-2. **Exp04実行時は `docs/Exp04_実行手順.md` — 実行条件・事前チェック・解析ルールの正本**
-3. `docs/V1.1終了とVer1.2移行方針.md` — V1.1をどこで締め、次へ進むか
-4. 必要に応じて個別Issue / 実験NOTES
-5. `docs/開発ロードマップ_リアル化方針.md` — 長期ビジョン
+2. `docs/V1.2_実装順序.md` — V1.2 → V1.2.1 → Exp05の順序
+3. `docs/Exp05_実験計画.md` — Exp05の条件・評価項目の正本
+4. `docs/バージョニング方針.md` — 世界ルール変更と機能追加の版管理
+5. 個別Issue: #19 / #23 / #24
+6. `docs/V1.1_総括.md` — V1.1の確定知見
+7. `docs/開発ロードマップ_リアル化方針.md` — 長期ビジョン
 
-作業が終わったら `docs/次の実験計画.md` と該当Issueの状態を更新する。
+作業完了後は `docs/次の実験計画.md` と該当Issueを更新する。
 
-### 現在の短期順序
+## 現在の短期順序
 
 ```text
-Exp04 (#4) — 4条件×20 seed×40,000 tick。本番は一括設計で完遂
-→ V1.1 baseline解析終了・未解決点をBacklog化
-→ Ver.1.2 Stage 0: 資源構造監査 (#19)
-→ Ver.1.2 最小環境更新（現第一候補: 空間的エネルギーニッチ）
+V1.1 クローズ / v1.1-final 保存済み
+→ #19 V1.2: 高コントラスト静的光環境
+→ #23 V1.2.1: 空間分布・行動範囲・PNG/GIF
+→ 観測ON/OFF結果不変テスト + CI Green
+→ 少数seed健全性確認
+→ #24 Exp05: vertical vs high_contrast_vertical, 20 seed × 40,000 tick
+→ 数値 + 空間指標 + GIFレビュー
+→ V1.3の世界ルール変更を決定
 ```
 
-Issue #18 の転移トリガー一次解析は**完了済み**。Exp05 / Exp06 / 14遺伝子全面感度解析 (#16) / #7祖先追跡は現在Deferredであり、V1.1終了の必須条件ではない。
+### V1.2で変更するもの
 
-**Exp04について、Issue #4の過去コメントにある「body_size 1条件を先行し、結果を見て残り3条件を決める案」は旧検討案で不採用。** Claude Codeは `docs/Exp04_実行手順.md` とIssue #4本文の最新方針を優先し、途中結果を見てseed数・tick数・閾値・固定対象を変更しないこと。
+最初の世界ルール変更は**光場1軸のみ**。
+
+- `high_contrast_vertical` 光場を追加
+- 明所〜ほぼ無光までの高コントラスト
+- 総光供給規模はV1.1と大きく変えない
+- `vertical` はControlとして残す
+
+### V1.2で変更しないもの
+
+- INITIAL_GENOME
+- 無性生殖
+- 成熟年齢なし / 繁殖クールダウンなし
+- 化学資源量・vent仕様
+- 無機栄養構造
+- 生理コスト式
+- 突然変異仕様
+
+### V1.2.1
+
+世界ルールを変えない観測機能。
+
+- 空間PNG
+- 環境ヒートマップ
+- PNG→GIF
+- lineage占有セル数 / 重心 / 移動量 / 分布幅
+
+**観測ON/OFFで乱数系列・シミュレーション結果を変えてはならない。**
+
+### Exp05
+
+`docs/Exp05_実験計画.md` を正本とする。
+
+- Control: `light_pattern=vertical`
+- V1.2: `light_pattern=high_contrast_vertical`
+- seed 1–20
+- 40,000 tick
+- 2条件 × 20 seed = 40 run
+- 同一seed対応比較
+- 主sweep判定 `top_lineage_frac >= 0.5`
+
+少数seedパイロットはクラッシュ・即時全滅・光場・可視化の健全性確認に限定し、本番条件や評価項目を途中結果で変更しない。
+多様性増加を成功条件にしない。
+
+## バージョニング
+
+- `V1.1 → V1.2 → V1.3`: 世界ルールを変え、進化結果を変え得る変更
+- `V1.2 → V1.2.1 → V1.2.2`: 世界ルールを変えない機能・観測・解析・実行基盤追加
+
+詳細: `docs/バージョニング方針.md`。
 
 ## プロジェクトの目的
 
@@ -33,69 +85,59 @@ Issue #18 の転移トリガー一次解析は**完了済み**。Exp05 / Exp06 /
 
 ## 絶対に守る設計原則
 
-変更をコミットする前に、以下をすべて自問すること。
-
 1. **適応度を直接計算しない。** `fitness = ...` や `if speed > 70: survive()` 型の実装は禁止。生存と繁殖はエネルギー・物質・損傷の帰結としてのみ発生させる
-2. **種クラスを作らない。** `species = "plant"` / "predator" は禁止。役割は栄養獲得遺伝子の組み合わせから創発する
+2. **種クラスを作らない。** `species = "plant"` / `"predator"` は禁止。役割は栄養獲得遺伝子の組み合わせから創発する
 3. **寿命値を作らない。** `if age > lifespan: die()` は禁止。老化は損傷蓄積と修復のバランスから創発する
-4. **コストは物理・生理則から導く。** 人工的なペナルティ定数ではなく、スケーリング則（例: 代謝∝size^0.75、移動∝mv²）で表現する
-5. **物質は厳密保存。** 物質の増減を伴う変更は必ず保存則テスト（`tests/test_conservation.py`）を通すこと。エネルギーの授受は `energy_in_cum` / `energy_out_cum` 台帳に漏れなく計上する
-6. **決定性を壊さない。** 乱数は `Simulation.rng`（単一のnumpy Generator）のみ。`random`モジュール・set/dict順序依存・壁時計依存・並列化は禁止。`tests/test_determinism.py` が門番。ただし完全なビット再現は同一数値実行環境内で要求する
-7. **想定外の戦略を許容する。** 「この遺伝子はこう使われるはず」という想定で挙動を制限しない
-8. **環境負荷は具体的な環境量へ分解する。** 多様性を作るための抽象ペナルティではなく、温度・光・資源など意味のある環境条件から作用を導く
-9. **環境拡張は原則1軸ずつ。** 複数ルールを同時に追加して因果を読めなくしない
+4. **コストは物理・生理則から導く。** 人工的なペナルティ定数ではなく、意味のあるスケーリングや収支で表現する
+5. **物質は厳密保存。** 物質の増減を伴う変更は保存則テストを通し、エネルギー授受は台帳へ漏れなく計上する
+6. **決定性を壊さない。** 乱数は `Simulation.rng` のみ。壁時計・別乱数源・順序依存を入れない。同一数値実行環境内で再現性を要求する
+7. **想定外の戦略を許容する。** 想定した生態型を出すために挙動を直接制限しない
+8. **環境負荷は具体的な環境量へ分解する。** 抽象ペナルティではなく光・温度・資源等から作用を導く
+9. **環境拡張は原則1軸ずつ。** 複数ルールを同時追加して因果を読めなくしない
 
 ## 結果を変えない変更と、変える変更を区別する
 
-高速化・リファクタリングは **同一数値実行環境で結果を1ビットも変えてはならない**。
-結果が変われば `v1.1-baseline` との比較が壊れ、過去の実験が無効になる。
+高速化・リファクタリング・観測機能追加は、同一数値実行環境で科学結果を変えてはならない。
 
 ```bash
-uv run python tools/golden.py                      # 記録済みの同一数値実行環境での高速チェック
-uv run python tools/verify_vs_ref.py --ref 18137b5 # 同一マシン上で旧refと現在実装を直接比較 (CIが実行)
+uv run python tools/golden.py
+uv run python tools/verify_vs_ref.py --ref 18137b5
 ```
 
-`tools/verify_vs_ref.py` は「WindowsとLinuxで同じ結果を出す」ツールではない。
-各実行環境の中で旧実装と新実装を同じ条件で走らせ、実装変更そのものが結果を変えていないかを検証する。
+`tools/verify_vs_ref.py` は異OS間の一致を保証するものではない。同一数値実行環境内で旧実装と新実装を比較する。
 
-意図的にモデルを変更する場合のみ `tools/golden.py --write` で指紋を更新し、
-**理由をコミットメッセージに残すこと**。
-
-**注意: 結果は数値実行環境に依存する。** `math.sin/cos/atan2/hypot` と `pow` の最終ビットが
-OS側の数学ライブラリ等に依存するため、同じseedでもWindowsとLinuxでは結果が異なる。
-比較実験は同一マシン・同一数値実行環境で行い、異なる環境の結果を同一seedだからという理由で直接比較しないこと。
+意図的に世界モデルを変更する場合は、バージョン境界として理由を記録し、必要なgolden指紋更新を明示する。
 
 ## 開発フロー
 
-- ブランチを切って作業し、PRで提出する。mainへの直接pushはしない
-- 変更後は必ず `uv run pytest tests` を全通しし、結果不変変更では `verify_vs_ref.py` も通す（CIでも自動実行される）
-- パラメータ調整をした場合は、根拠（どのseedで何tick回してどうなったか）をPR説明に書く
-- 意味のある実験結果は `experiments/` に保存する（下記）
+- 原則ブランチを切り、PRで提出する
+- 変更後は `uv run pytest tests` を全通しする
+- 結果不変変更では結果不変性確認も通す
+- パラメータ調整の根拠をPR説明に残す
+- 意味のある実験結果は `experiments/` に保存する
 
 ## 実験結果の残し方
 
-`runs/` は.gitignore対象（日常の実行データ）。残す価値のある実験は:
+`runs/` は日常実行用。残す価値のある実験は:
 
-```
+```text
 experiments/expNN_<名前>/
-├─ config.json / meta.json   seed・設定を保存
-├─ stats.csv                 集計統計
-├─ events.csv                全出生死亡イベント (任意)
-├─ plots/                    グラフPNG
-└─ NOTES.md                  目的・観察結果・考察
+├─ config.json / meta.json
+├─ stats.csv
+├─ events.csv
+├─ plots/
+└─ NOTES.md
 ```
 
-**再現にはseedだけでは不十分。** Config、コード版、依存関係、数値実行環境を揃えること。
-`meta.json` にはOS / architecture / Python / NumPy / git SHA等を保存する。
+再現にはseedだけでなくConfig、コード版、依存関係、数値実行環境が必要。`meta.json` にOS / architecture / Python / NumPy / git SHA等を保存する。
 
 ## 技術スタック
 
 Python 3.12 / uv / numpy / pygame-ce / matplotlib / pytest。
-uvがPATHにない環境では `python -m uv ...` で起動する。
 
 ```bash
-python -m uv run pytest tests                                       # テスト
-python -m uv run python main.py --seed 42                           # GUI
-python -m uv run python main.py --headless --ticks 20000 --seed 42  # 高速実験
-python -m uv run python tools/plot_run.py runs/<run_id>              # グラフ生成
+python -m uv run pytest tests
+python -m uv run python main.py --seed 42
+python -m uv run python main.py --headless --ticks 20000 --seed 42
+python -m uv run python tools/plot_run.py runs/<run_id>
 ```
