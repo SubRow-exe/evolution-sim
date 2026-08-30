@@ -11,6 +11,74 @@ import numpy as np
 from .config import Config
 
 
+def _build_vertical_light(cfg: Config) -> np.ndarray:
+    """V1.1 Control の光場。北(y=0)が明るい線形勾配。
+
+    **この式は変更しない。** V1.1 との比較基準そのものであるため。
+    """
+    gw, gh = cfg.grid_w, cfg.grid_h
+    frac = 1.0 - (np.arange(gh) + 0.5) / gh
+    col = cfg.light_max * (cfg.light_floor + (1.0 - cfg.light_floor) * frac)
+    return np.tile(col, (gw, 1))  # [ix, iy]
+
+
+def _build_high_contrast_light(cfg: Config) -> np.ndarray:
+    """V1.2 Treatment。明部plateau → 線形遷移 → 暗部の3帯。
+
+    形状を作ったあと、**同じConfigの vertical が持つ総光量**へ正規化する。
+    これにより「空間偏在」と「総光量」を独立した軸として扱える
+    (total_scale=1.0 なら世界全体のエネルギー流入量は Control と同じ)。
+
+    乱数を一切消費しない。同一seedで chem_mask 等の確率生成物を変えないため。
+    """
+    gw, gh = cfg.grid_w, cfg.grid_h
+    b = cfg.light_hc_bright_frac
+    t = cfg.light_hc_transition_frac
+    f = cfg.light_hc_dark_floor
+
+    u = (np.arange(gh) + 0.5) / gh
+    z = np.clip((u - b) / t, 0.0, 1.0)          # 遷移帯内の進行度
+    shape = np.where(u < b, 1.0,
+                     np.where(u < b + t, 1.0 - (1.0 - f) * z, f))
+
+    raw = cfg.light_max * np.tile(shape, (gw, 1))
+    raw_total = float(raw.sum())
+    if raw_total <= 0.0:
+        raise ValueError("high_contrast_vertical の光場が全てゼロになる")
+    target_total = float(_build_vertical_light(cfg).sum()) * cfg.light_hc_total_scale
+    return raw * (target_total / raw_total)
+
+
+def build_light_field(cfg: Config) -> np.ndarray:
+    """Config から光場を構築する。乱数は使わない。"""
+    p = cfg.light_pattern
+    if p == "vertical":
+        return _build_vertical_light(cfg)
+    if p == "uniform":
+        return np.full((cfg.grid_w, cfg.grid_h), cfg.light_max)
+    if p == "high_contrast_vertical":
+        _validate_high_contrast(cfg)
+        return _build_high_contrast_light(cfg)
+    raise ValueError(
+        f"未知の light_pattern: {p!r} "
+        "(vertical | uniform | high_contrast_vertical)")
+
+
+def _validate_high_contrast(cfg: Config) -> None:
+    b, t = cfg.light_hc_bright_frac, cfg.light_hc_transition_frac
+    f, s = cfg.light_hc_dark_floor, cfg.light_hc_total_scale
+    if not 0.0 <= f < 1.0:
+        raise ValueError(f"light_hc_dark_floor は 0 <= f < 1: {f}")
+    if not 0.0 < b < 1.0:
+        raise ValueError(f"light_hc_bright_frac は 0 < b < 1: {b}")
+    if not 0.0 < t <= 1.0:
+        raise ValueError(f"light_hc_transition_frac は 0 < t <= 1: {t}")
+    if b + t > 1.0:
+        raise ValueError(f"bright + transition が1を超える: {b} + {t}")
+    if s <= 0.0:
+        raise ValueError(f"light_hc_total_scale は正: {s}")
+
+
 class World:
     def __init__(self, cfg: Config, rng: np.random.Generator):
         self.cfg = cfg
@@ -20,13 +88,9 @@ class World:
         self._ix_max = gw - 1
         self._iy_max = gh - 1
 
-        # 光フラックス (静的な空間勾配) [E/tick/セル]
-        if cfg.light_pattern == "vertical":
-            frac = 1.0 - (np.arange(gh) + 0.5) / gh  # 北(y=0)が明るい
-            col = cfg.light_max * (cfg.light_floor + (1.0 - cfg.light_floor) * frac)
-            self.light = np.tile(col, (gw, 1))  # [ix, iy]
-        else:
-            self.light = np.full((gw, gh), cfg.light_max)
+        # 光フラックス (静的な空間分布) [E/tick/セル]。
+        # rng より先に構築するが乱数を消費しないため、chem_mask の生成には影響しない。
+        self.light = build_light_field(cfg)
 
         # 無機栄養 (閉じた物質循環の無機物プール)
         self.nutrients = np.full((gw, gh), cfg.nutrient_initial)

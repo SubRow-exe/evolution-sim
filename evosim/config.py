@@ -20,8 +20,18 @@ class Config:
 
     # --- 光 (フロー型エネルギー流入) ---
     light_max: float = 1.2          # 最大セル光フラックス [E/tick]
-    light_pattern: str = "vertical"  # "vertical" | "uniform"
-    light_floor: float = 0.3         # 勾配の下限割合
+    # "vertical" (V1.1 Control) | "uniform" | "high_contrast_vertical" (V1.2)
+    light_pattern: str = "vertical"
+    light_floor: float = 0.3         # vertical 勾配の下限割合
+
+    # --- V1.2: high_contrast_vertical の形状 ---
+    # 北から「明部plateau → 線形遷移 → 暗部」の3帯を作る。
+    # shape を作った後、同じConfigの vertical が持つ総光量へ正規化するため、
+    # 形状 (空間偏在) と総光量を独立に振れる。Exp05 では total_scale=1.0 固定。
+    light_hc_bright_frac: float = 0.20       # 明部plateauが占める縦方向の割合
+    light_hc_transition_frac: float = 0.50   # 線形遷移帯が占める割合
+    light_hc_dark_floor: float = 0.0         # 暗部の相対光量 (0 = 完全暗部)
+    light_hc_total_scale: float = 1.0        # Control総光量に対する倍率
 
     # --- 化学エネルギー (ストック型) ---
     n_vents: int = 4
