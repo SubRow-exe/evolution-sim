@@ -1,8 +1,9 @@
-"""Exp05 pilot の実装健全性チェック (docs/Exp05_実験計画.md §5)。
+"""Exp05 の光場・出力構造チェック (docs/Exp05_実験計画.md §5)。
 
     uv run python tools/check_pilot.py runs/exp05_pilot --ticks 5000
+    uv run python tools/check_pilot.py runs/exp05 --ticks 40000 --seeds 1-20
 
-pilot は **実装が仕様どおり動いているか**だけを見る。
+pilot でも本番でも **実装が仕様どおり動いているか**だけを見る。
 暗部無人化・大量死・形質変化などの生物学的結果はここでは判定しない
 (正しいモデル帰結を理由に条件を変えないため)。
 
@@ -53,6 +54,19 @@ class Report:
     def warn(self, label: str) -> None:
         print(f"  警告 {label}")
         self.warns.append(label)
+
+
+def parse_seeds(spec: str) -> list[int]:
+    """"1,2,3" や "1-20" や "1-3,10" を seed のリストに展開する。"""
+    seeds: list[int] = []
+    for part in spec.split(","):
+        part = part.strip()
+        if "-" in part:
+            lo, hi = part.split("-")
+            seeds.extend(range(int(lo), int(hi) + 1))
+        elif part:
+            seeds.append(int(part))
+    return seeds
 
 
 def run_dirs(cond: Path) -> list[Path]:
@@ -181,13 +195,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Exp05 pilot の健全性チェック")
     ap.add_argument("pilot_dir", help="条件ディレクトリ (既定 control/ treatment/) を含むディレクトリ")
     ap.add_argument("--ticks", type=int, default=5000)
-    ap.add_argument("--seeds", default="1,2,3")
+    ap.add_argument("--seeds", default="1,2,3", help='例: "1,2,3" / "1-20"')
     ap.add_argument("--conditions", default="control,treatment",
                     help="比較する2条件のディレクトリ名 (Control,Treatment の順)")
     args = ap.parse_args()
 
     base = Path(args.pilot_dir)
-    want_seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
+    want_seeds = parse_seeds(args.seeds)
     rep = Report()
 
     names = [c.strip() for c in args.conditions.split(",") if c.strip()]
@@ -258,7 +272,7 @@ def main() -> int:
         for f in rep.fails:
             print(f"  - {f}")
         return 1
-    print("判定: OK — pilot の実装健全性チェックは全て通過")
+    print("判定: OK — 光場と出力構造のチェックは全て通過")
     return 0
 
 

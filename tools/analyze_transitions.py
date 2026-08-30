@@ -53,7 +53,7 @@ def transition_tick(s: dict, threshold: float) -> float | None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="転移の発生率と時期の解析 (Exp03)")
+    ap = argparse.ArgumentParser(description="sweep(転移)の累積発生率と時期の解析")
     ap.add_argument("batch_dir")
     ap.add_argument("--threshold", type=float, default=SWEEP_THRESHOLD)
     args = ap.parse_args()
@@ -84,7 +84,9 @@ def main() -> None:
     trans = [r for r in rows if r["t"] is not None]
     non = [r for r in rows if r["t"] is None]
 
-    print(f"=== Exp03: {n} seed / {int(max_tick):,} tick / 閾値 share>={args.threshold} ===\n")
+    # 見出しは対象ディレクトリ名から作る (Exp03専用ツールではなくなったため)
+    print(f"=== {batch.name}: {n} seed / {int(max_tick):,} tick "
+          f"/ 閾値 share>={args.threshold} ===\n")
     print(f"{int(max_tick):,} tickまでに転移: {len(trans)}/{n} "
           f"({len(trans) / n:.0%})   未転移: {len(non)}/{n}")
     print("※ これは『転移率』ではなく『この時点までの累積発生率』である\n")
