@@ -35,7 +35,11 @@ def make_preview(
 
     with Image.open(src) as im:
         base_duration = int(im.info.get("duration", 167))
-        source_frames = list(ImageSequence.Iterator(im))
+        # ImageSequence.Iteratorは同じ内部Imageを使い回すため、その場でRGB化+copyする。
+        # 後からlist化した参照を処理すると全要素が最終フレーム相当になる場合がある。
+        source_frames = [
+            frame.convert("RGB").copy() for frame in ImageSequence.Iterator(im)
+        ]
         if not source_frames:
             raise ValueError(f"GIF has no frames: {src}")
 
@@ -43,7 +47,7 @@ def make_preview(
         for i, frame in enumerate(source_frames):
             if i % stride != 0:
                 continue
-            f = frame.convert("RGB")
+            f = frame.copy()
             f.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
             f = f.convert("P", palette=Image.Palette.ADAPTIVE, colors=colors)
             out_frames.append(f.copy())
