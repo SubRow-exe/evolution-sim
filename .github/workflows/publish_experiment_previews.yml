@@ -1,0 +1,215 @@
+name: Publish Experiment Previews
+
+# V1.2.2: 完了済みの科学runを再実行せず、Actions artifactから
+# GitHub閲覧用の軽量プロット/GIFだけを experiments/ へ発行する。
+# 科学計算とは完全に分離した後処理。
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "元の実験Actions run ID"
+        required: true
+        type: string
+      experiment:
+        description: "artifact prefix / 保存名 (例: exp05)"
+        required: true
+        type: string
+        default: "exp05"
+      conditions:
+        description: "条件名 (カンマ区切り)"
+        required: true
+        type: string
+        default: "control,treatment"
+      preview_seeds:
+        description: "GitHubへ残す代表seed (カンマ区切り)"
+        required: true
+        type: string
+        default: "1,12"
+      target_branch:
+        description: "previewを書き込むbranch"
+        required: true
+        type: string
+        default: "main"
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-experiment-previews
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: 依存をlockfileどおりに同期
+        run: uv sync --frozen
+
+      - name: 入力を検証
+        env:
+          EXP: ${{ inputs.experiment }}
+          CONDITIONS: ${{ inputs.conditions }}
+          SEEDS: ${{ inputs.preview_seeds }}
+        run: |
+          set -euo pipefail
+          [[ "$EXP" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "::error::invalid experiment: $EXP"; exit 1; }
+          [[ "$CONDITIONS" =~ ^[A-Za-z0-9._,-]+$ ]] || { echo "::error::invalid conditions"; exit 1; }
+          [[ "$SEEDS" =~ ^[0-9,]+$ ]] || { echo "::error::invalid preview_seeds"; exit 1; }
+
+      - name: 元runの個別artifactを取得
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.source_run_id }}
+          pattern: ${{ inputs.experiment }}-*-seed*
+          path: dl
+
+      - name: 条件ごとのrun群を再構成
+        env:
+          EXP: ${{ inputs.experiment }}
+        run: |
+          set -euo pipefail
+          mkdir -p runs/publish
+          found=0
+          for d in dl/${EXP}-*-seed*; do
+            [ -d "$d" ] || continue
+            found=1
+            name=$(basename "$d")
+            rest=${name#${EXP}-}
+            cond=${rest%-seed*}
+            mkdir -p "runs/publish/$cond"
+            cp -r "$d"/* "runs/publish/$cond"/
+          done
+          [ "$found" = "1" ] || { echo "::error::対象artifactが見つからない"; exit 1; }
+          find runs/publish -mindepth 1 -maxdepth 2 -type d -print
+
+      - name: 集計プロットを再生成
+        env:
+          CONDITIONS: ${{ inputs.conditions }}
+        run: |
+          set -euo pipefail
+          IFS=',' read -ra CONDS <<< "$CONDITIONS"
+          for cond in "${CONDS[@]}"; do
+            cond=$(echo "$cond" | xargs)
+            batch="runs/publish/$cond"
+            [ -d "$batch" ] || { echo "::warning::$batch がないためskip"; continue; }
+            uv run python tools/analyze_transitions.py "$batch"
+            uv run python tools/run_batch.py --aggregate "$batch" || true
+          done
+
+      - name: GitHub閲覧用bundleを作成
+        env:
+          EXP: ${{ inputs.experiment }}
+          CONDITIONS: ${{ inputs.conditions }}
+          SEEDS: ${{ inputs.preview_seeds }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          OUT="experiments/${EXP}_results"
+          rm -rf "$OUT"
+          mkdir -p "$OUT/plots" "$OUT/previews"
+
+          IFS=',' read -ra CONDS <<< "$CONDITIONS"
+          IFS=',' read -ra PREVIEW_SEEDS <<< "$SEEDS"
+
+          # 集計画像は条件名をprefixして保存する。
+          for cond in "${CONDS[@]}"; do
+            cond=$(echo "$cond" | xargs)
+            agg="runs/publish/$cond/aggregate"
+            if [ -d "$agg" ]; then
+              while IFS= read -r -d '' p; do
+                cp "$p" "$OUT/plots/${cond}_$(basename "$p")"
+              done < <(find "$agg" -maxdepth 1 -type f -name '*.png' -print0)
+            fi
+
+            for seed in "${PREVIEW_SEEDS[@]}"; do
+              seed=$(echo "$seed" | xargs)
+              artifact="dl/${EXP}-${cond}-seed${seed}"
+              [ -d "$artifact" ] || { echo "::warning::$artifact がない"; continue; }
+              run_dir=$(find "$artifact" -mindepth 1 -maxdepth 1 -type d | head -1)
+              [ -n "$run_dir" ] || continue
+              src="$run_dir/spatial/light/light.gif"
+              if [ -f "$src" ]; then
+                uv run python tools/make_result_preview.py "$src" \
+                  "$OUT/previews/${cond}_seed${seed}.gif" \
+                  --max-size 480 --stride 2 --colors 128
+              else
+                echo "::warning::$src がない"
+              fi
+            done
+          done
+
+          {
+            echo "# ${EXP} results preview"
+            echo
+            echo "GitHub上で素早く結果を見るための軽量成果物です。"
+            echo "科学解析用の生データではありません。生データはActions artifact / 外部ストレージを正本とします。"
+            echo
+            echo "- source Actions run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}"
+            echo "- conditions: ${CONDITIONS}"
+            echo "- preview seeds: ${SEEDS}"
+            echo "- generated by: V1.2.2 result preview publisher"
+            echo
+            echo "## Preview GIFs"
+            echo
+            for gif in "$OUT"/previews/*.gif; do
+              [ -f "$gif" ] || continue
+              base=$(basename "$gif")
+              echo "### ${base%.gif}"
+              echo
+              echo "![${base%.gif}](previews/$base)"
+              echo
+            done
+            echo "## Aggregate plots"
+            echo
+            for png in "$OUT"/plots/*.png; do
+              [ -f "$png" ] || continue
+              base=$(basename "$png")
+              echo "### ${base%.png}"
+              echo
+              echo "![${base%.png}](plots/$base)"
+              echo
+            done
+          } > "$OUT/README.md"
+
+          echo "=== publish bundle ==="
+          find "$OUT" -maxdepth 2 -type f -printf '%p %k KB\n' | sort
+          du -sh "$OUT"
+
+      - name: experiments/へcommit
+        env:
+          EXP: ${{ inputs.experiment }}
+          TARGET: ${{ inputs.target_branch }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "experiments/${EXP}_results"
+          if git diff --cached --quiet; then
+            echo "変更なし"
+            exit 0
+          fi
+          git commit -m "Add ${EXP} result previews from run ${SOURCE_RUN_ID} [skip ci]"
+          git push origin "HEAD:${TARGET}"
+
+      - name: 発行先を表示
+        env:
+          EXP: ${{ inputs.experiment }}
+          TARGET: ${{ inputs.target_branch }}
+        run: |
+          echo "### Result preview published" >> "$GITHUB_STEP_SUMMARY"
+          echo "- path: \`experiments/${EXP}_results/\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- branch: \`${TARGET}\`" >> "$GITHUB_STEP_SUMMARY"
