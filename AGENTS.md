@@ -4,147 +4,224 @@
 
 ## 現在の作業方針の参照順
 
-1. `docs/次の実験計画.md` — 今から何をするか
-2. **`docs/Exp06_実験計画.md` — 現在の最優先実験・診断条件の正本**
-3. `docs/Exp06_実行手順.md` — Exp06の実行手順とハーネス仕様
-4. `docs/Exp05_結果考察.md` — Exp06を必要とした根拠
-5. `docs/Exp05_実験計画.md` — Exp05の事前登録条件
-6. `docs/V1.1_総括.md`
-7. `docs/バージョニング方針.md`
-8. `docs/V1.2_V1.2.1_詳細実装仕様.md`
-9. `docs/開発ロードマップ_リアル化方針.md`
+1. `docs/次の実験計画.md` — 現在地と直近順序
+2. **`docs/V1.3_化学資源モデル仕様.md` — V1.3実装の正本**
+3. **`docs/Exp07_実験計画.md` — Exp07条件・判定の正本**
+4. `experiments/exp06_actions_20260830_104921/NOTES.md` — Exp06実測結果
+5. `docs/Exp06_実験計画.md`
+6. `docs/Exp05_結果考察.md`
+7. `docs/V1.1_総括.md`
+8. `docs/バージョニング方針.md`
+9. `docs/V1.2_V1.2.1_詳細実装仕様.md`
 
-古いExp03/Exp04コメント・旧「次は光総量を振る」案より上記正本を優先する。
-作業完了後は `docs/次の実験計画.md` と該当Issueを更新する。
+古い「次はlight total_scaleを0.75/0.50へ振る」「現行chem_regenを増やす」案より上記正本を優先する。
 
 ## 現在の短期順序
 
 ```text
 V1.1保存済み
-→ V1.2高コントラスト光場 実装済み
-→ V1.2.1空間観測 実装済み
-→ Exp05 40 run 完了・レビュー済み
-→ V1.2.2軽量結果preview 実装済み
-→ chemical利用経路の成立性に重大な懸念を発見
-→ Exp06診断ハーネスを実装 (済 / Config注入 + configs/exp06_*.json)
-→ Exp06用Actionsワークフロー整備 (済 / .github/workflows/exp06.yml)
-→ Exp06: 4条件 × seed 1-10 × 10,000 tick  ← 現在地
-→ 結果次第で初期パラメータ / chemical資源 / 探索能力を1軸ずつ見直す
-→ 光総量0.75/0.50系列はそれまで保留
+→ V1.2 / V1.2.1 / V1.2.2 実装済み
+→ Exp05完了
+→ Exp06完了: 4条件すべて0/10生存
+→ chemical source式のモデル不整合を確認
+→ PR #36でExp06結果とV1.3/Exp07方針を確定
+→ V1.2最終状態を v1.2-final (branch + tag) として保存
+→ V1.3 chemical sourceモデル実装  ← 次
+→ unit / Energy conservation tests
+→ Exp07 Pilot 9 run
+→ Exp07 240 run × 60k
+→ chemical成立/到達/探索の順に判定
+→ 成立後に光+chemical同居実験
 ```
 
-## Exp06の目的
+## Exp06で確定した解釈
 
-Exp05では完全暗部にchemical ventとnutrientが存在したにもかかわらず、暗部が早期に無人化しchemical利用型が成立しなかった。
-
-現在の最重要問い:
-
-> 現行モデルは複数Energy戦略が実際に進化可能なのか。それとも通常祖先からは実質的に光利用経路しか開通していないのか。
-
-後者なら「光利用型が競争に勝った」という解釈ではなく、モデル設計上の到達可能性の問題として修正する。
-
-### Exp06 4条件
-
-全条件 `light=0`、その他の世界ルールは現行V1.2のまま。
+Exp06は全条件light=0で、以下を各10 seed実行した。
 
 ```text
 A Ancestor / Random
 B Ancestor / Vent
-C Chem-adapted / Vent   chemical_absorption=2.0固定
-D Chem-adapted / Random chemical_absorption=2.0固定
+C Chem2.0 / Vent
+D Chem2.0 / Random
 ```
 
-`2.0`は診断用positive controlであり、新しい初期値候補ではない。
+全条件0/10生存。positive controlのCも全滅した。
+
+したがって、以下は支持されない:
+
+> 「複数の一次Energy戦略が十分に成立可能な世界で、光利用型が競争に勝った」
+
+Exp03-05の観測事実・sweep・同じ光利用経路内での比較は保持するが、光利用優勢の原因をEnergy戦略間競争の勝利とは解釈しない。
+
+## V1.3 chemicalモデルの定義
+
+chemicalは、海底熱水噴出孔・冷湧水等から供給される還元性物質が持つ利用可能化学自由Energyの粗視化量。
+
+旧式:
 
 ```text
-seed 1-10
-10,000 tick
-4条件 × 10 = 40 run
+regen = r * stock * (1-stock/K)
 ```
 
-結果が混在し診断不能な条件だけseed 11-20を追加することを事前規定する。
+は自己増殖資源型であり廃止する。
 
-### Exp06実装時の重要事項
+新構造:
 
-- default `INITIAL_GENOME` を変更しない
-- default初期配置を変更しない
-- Exp06専用の初期条件注入/runnerとして実装する
-- 通常実行の乱数系列・科学結果を変えない
-- 既存CI + 結果不変性テストを通す
-- chemical_absorption=2.0を一般Configの推奨値として扱わない
-- Exp06結果を見る前にchemical資源量や感覚能力を同時調整しない
+```text
+地質source S（一定・生物消費と独立）
+        ↓
+局所chemical stock C
+   ↓              ↓
+生物吸収 U     環境損失 L
+               混合/流出/希釈/酸化等
+```
 
-## Exp05から分かったこと
+1 tickの環境更新:
 
-- 総光量を同じにして空間偏在だけ変えても進化史は大きく変化
-- 高light_absorptionは維持
-- 小型化は弱まり、局所強光では大型化が許容
-- 完全暗部30%は早期に無人化
-- 明部ほどmatter/body_sizeが大きい傾向
-- 暗部のchemical stockが未利用で残るケースを確認
+```text
+L = chem_loss_frac * C
+C1 = C - L
+C2 = C1 + chem_source_flux
+```
 
-したがって、光総量をさらに振る前にchemical利用経路の成立性を診断する。
+その後、生物がC2から吸収する。
 
-## 過去実験の解釈上の注意
+stockに上限 (capacity) は置かない。source全量が流入し、一次損失だけで
+有限化する。生物不在の平衡は `S / chem_loss_frac`。
+capacityでクリップすると欠けvent/重複セルで実効sourceがseed依存に
+最大10.8%失われるため廃止した。
 
-Exp03〜05で観測された数値・sweep・形質変化は保持する。
+sourceはstock=0でも毎tick一定量供給される。生物は局所stockを低下させられるが地質source自体を枯渇させられない。
 
-ただしExp06完了まで以下は保留:
+## V1.3 Config
 
-> 「複数Energy戦略が十分に進化可能な世界で、光利用型が競争に勝った」
+```text
+chem_vent_flux = 8.0      # 暫定default。旧モデル最大供給規模≈32.5 E/tickに近い世界総32を基準化
+chem_loss_frac = 0.10
+chem_uptake = 0.5
+n_vents = 4
+vent_radius_cells = 2
+```
 
-Exp04のsweep促進因子解析など、同じ進化経路内の比較は引き続き有効。
+旧 `chem_regen` / `chem_min_stock` / `chem_capacity` はConfigから削除する。
+
+`chem_vent_flux`は1 ventの総source。各ventの円盤セル数に関係なく、そのventの総sourceは常に設定値とする。
+
+`chem_source_flux[ix,iy]` fieldを作り、vent端/重複でも:
+
+```text
+sum(chem_source_flux) == n_vents * chem_vent_flux
+```
+
+を保証する。
+
+初期stock (更新式の不動点):
+
+```text
+chem_source_flux / chem_loss_frac
+```
+
+旧`chem_regen`/`chem_min_stock`は通常V1.3経路で使わない。
+
+## Energy台帳
+
+chemical external sourceは`energy_in_cum`。
+
+`chem_loss_frac * stock` は`energy_out_cum`。
+capacity clippingを廃止したのでoverflow項は無い。
+
+保存則を必ずテストする。
+
+## Exp07
+
+全条件light=0。目的は光との競争ではなく、V1.3 chemical source単独の成立性。
+
+振る世界パラメータは`chem_vent_flux`のみ:
+
+```text
+4, 8, 12, 16, 24, 32, 48, 64 E/tick/vent
+```
+
+各fluxで:
+
+```text
+C chem2.0固定 / vent
+B ancestor / vent
+D chem2.0固定 / random
+```
+
+```text
+8 flux × 3条件 × 10 seed = 240 run
+120,000 tick
+```
+
+Pilotはflux 4/16/64 × C/B/D × seed1 = 9 run / 5k。
+
+### 判定順
+
+1. Cでchemical生態のecological viability境界
+2. C成立域でBを見て祖先からの進化bootstrap
+3. C成立域でDを見てvent探索/空間access
+
+Bは生存/絶滅の二値で読まない。祖先の収支上、chemical吸収だけで黒字化するには
+`chemical_absorption ≈ 0.9` (実効1.0前後) が必要で、初期値0.3の約3倍である。
+`>= 0.5 / 0.9 / 1.2 / 1.5 / 2.0` の到達seed数と初回tickを見る。
+
+高fluxで`max_population_halt`へ達した場合はscientific resultとして記録する。
+
+## V1.3/Exp07で変更しないもの
+
+- lightモデル
+- chemical_absorption初期値/意味
+- chem_uptake
+- initial_population
+- sensory/movement
+- 生理/繁殖/mutation
+- vent数/半径
+- nutrient
+- corpse/predation
+
+## 当面残す懸念
+
+1. chemical diffusion/advection/plume未実装
+2. chemical uptakeの逐次処理順bias
+3. chem_loss_frac=0.10の実時間校正なし
+4. vent上100個体の局所過密
+5. tickの現実時間未定義
+
+Exp07はlineage sweepや最終最適形質の強い結論には使わない。
 
 ## バージョニング
 
-- `V1.1 → V1.2 → V1.3`: 世界ルールや初期パラメータを変え、科学結果を変え得る変更
-- `V1.2 → V1.2.1 → V1.2.2`: 世界を変えない観測・解析・GUI・実行基盤等
+- `V1.1 → V1.2 → V1.3`: 世界ルール変更
+- `V1.2 → V1.2.1 → V1.2.2`: 観測・解析・実行基盤等の結果不変変更
 
-Exp06用の診断支援はdefault世界を変えない実験ハーネスとして実装する。Exp06後に初期ゲノムやchemical資源そのものを恒久変更する場合は次の世界バージョンとして扱う。
+V1.3はchemicalを人工的にbuffするためではなく、Exp06で見つかった**地質sourceとしてのモデル定義不整合を修正**する世界ルール変更。
 
-## プロジェクトの目的
+## プロジェクトの絶対原則
 
-単純な世界のルール（物理・エネルギー・物質・遺伝・突然変異）だけを設定し、自然選択によって予想していなかった生命形態・生態・行動が創発することを観察するシミュレーション。「賢い生物を作る」のではなく「生物が生まれ得る世界を作る」。
-
-## 絶対に守る設計原則
-
-1. **適応度を直接計算しない。** `fitness = ...` や特定形質への直接ボーナスは禁止
-2. **種クラスを作らない。** 役割は遺伝子と資源利用から創発させる
-3. **寿命値を作らない。** 死亡はEnergy・Matter・損傷等の帰結
-4. **コストは物理・生理則から導く。** 恣意的な勝敗調整を避ける
-5. **物質は厳密保存。** Energy授受は台帳へ漏れなく計上
-6. **決定性を壊さない。** 乱数は `Simulation.rng` のみ
-7. **想定外の戦略を許容する。** 欲しい生態型を直接出さない
-8. **環境負荷は具体的な環境量へ分解する**
-9. **環境拡張・パラメータ見直しは原則1軸ずつ**
-10. **「パラメータが存在する」ことと「進化的に到達可能」なことを区別する。** 複数戦略を比較する前に各経路の成立性を確認する
-
-## 結果を変えない変更と、変える変更を区別する
-
-高速化・リファクタリング・観測機能・Exp06診断ハーネスのdefault無効状態は、同一数値実行環境で通常科学結果を変えてはならない。
-
-```bash
-uv run pytest tests
-uv run python tools/golden.py
-uv run python tools/verify_vs_ref.py --ref <reference>
-```
-
-意図的に世界モデル・初期値を変更する場合は、バージョン境界として理由を記録する。
+1. 適応度を直接計算しない
+2. 種クラスを作らない
+3. 寿命値を直接作らない
+4. コストは具体的な物理・生理則から導く
+5. Matter保存・Energy台帳を守る
+6. 乱数系列と決定性を守る
+7. 想定外の戦略を許容する
+8. 特定生態型に直接ボーナスを与えない
+9. 原則1軸ずつ変更する
+10. 「遺伝子がある」ことと「その進化経路が成立可能」を区別する
+11. 比較するEnergy戦略は、まず単独で持続可能か確認する
 
 ## 開発フロー
 
-- 原則ブランチを切り、PRで提出
-- 変更後は `uv run pytest tests` を全通し
-- 結果不変変更では結果不変性確認も通す
-- パラメータ調整の根拠をPR説明に残す
-- 意味のある実験結果は `experiments/` とdocsへ保存
-
-## 実験結果の残し方
-
-生データはActions artifact / 外部ストレージを正本とする。
-GitHubにはConfig・結果要約・主要plot・代表GIF previewを保存する。
-
-再現にはseed、Config、コード版、依存関係、数値実行環境が必要。`meta.json` にOS / architecture / Python / NumPy / git SHA等を保存する。
+- V1.3実装前に`v1.2-final`を保存
+- 原則branch + PR
+- `uv run pytest tests`
+- Energy conservation test
+- source fieldのseed/edge/overlap test
+- Pilotで実装健全性のみ確認
+- 生物学的結果を見てExp07の事前登録条件を変更しない
+- 意味のある結果は`experiments/`とdocsへ保存
 
 ## 技術スタック
 
