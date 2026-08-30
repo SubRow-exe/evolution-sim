@@ -159,7 +159,9 @@ class Viewer:
 
         light = sim.world.light / max(cfg.light_max, 1e-9)
         nut = np.clip(sim.world.nutrients / (cfg.nutrient_initial * 2.0), 0, 1)
-        chem = np.clip(sim.world.chemical / max(cfg.chem_capacity, 1e-9), 0, 1)
+        # V1.3: stockに上限が無いため、生物不在の最大平衡stockで正規化する
+        chem_scale = float(sim.world.chem_source_flux.max()) / cfg.chem_loss_frac
+        chem = np.clip(sim.world.chemical / max(chem_scale, 1e-9), 0, 1)
         rgb = np.zeros((cfg.grid_w, cfg.grid_h, 3), dtype=np.uint8)
         base = 30 + 60 * light
         rgb[..., 0] = np.clip(base + 90 * chem, 0, 255)

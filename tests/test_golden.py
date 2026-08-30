@@ -11,6 +11,10 @@ Goldenは便宜上 `os-machine` キーで保存し、未記録キーではスキ
 意図的にモデルを変更した場合のみ:
     uv run python tools/golden.py --write
 を実行し、変更理由をコミットメッセージに残すこと。
+
+世界バージョン境界では指紋は必ず変わる。V1.2以前の指紋は
+`tests/golden_state_v1.2.json` に履歴として残してあり、
+V1.3の指紋とは比較しない (V1.2の再現には `v1.2-final` を使う)。
 """
 import json
 import sys
