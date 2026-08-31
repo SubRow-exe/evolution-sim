@@ -5,199 +5,256 @@
 ## 現在の作業方針の参照順
 
 1. `docs/次の実験計画.md` — 現在地と直近順序
-2. **`docs/V1.3_化学資源モデル仕様.md` — V1.3実装の正本**
-3. **`docs/Exp07_実験計画.md` — Exp07条件・判定の正本**
-4. `experiments/exp06_actions_20260830_104921/NOTES.md` — Exp06実測結果
-5. `docs/Exp06_実験計画.md`
-6. `docs/Exp05_結果考察.md`
+2. **`docs/Exp07_結果考察.md` — Exp07結果と新たに検出した設計課題**
+3. **`docs/V1.4_一次エネルギー吸収仕様.md` — V1.4実装の正本**
+4. **`docs/Exp08_実験計画.md` — V1.4校正実験の正本**
+5. `docs/V1.3_化学資源モデル仕様.md`
+6. `docs/Exp07_実験計画.md`
 7. `docs/V1.1_総括.md`
 8. `docs/バージョニング方針.md`
-9. `docs/V1.2_V1.2.1_詳細実装仕様.md`
 
-古い「次はlight total_scaleを0.75/0.50へ振る」「現行chem_regenを増やす」案より上記正本を優先する。
+古い「次は光総量0.75/0.50」「V1.3のまま光+chemicalを直接競争」「chem_regenを増やす」案より上記を優先する。
 
 ## 現在の短期順序
 
 ```text
-V1.1保存済み
-→ V1.2 / V1.2.1 / V1.2.2 実装済み
-→ Exp05完了
-→ Exp06完了: 4条件すべて0/10生存
-→ chemical source式のモデル不整合を確認
-→ PR #36でExp06結果とV1.3/Exp07方針を確定
-→ V1.2最終状態を v1.2-final (branch + tag) として保存
-→ V1.3 chemical sourceモデル実装 (済)
-→ unit / Energy conservation tests (済)
-→ Exp07 config/workflow/checker実装 (済)
-→ Exp07 Pilot 9 run  ← 次 (未実行)
-→ Exp07 240 run × 60k
-→ chemical成立/到達/探索の順に判定
-→ 成立後に光+chemical同居実験
+V1.1-1.2保存/実験済み
+→ Exp06: 旧chemicalではpositive controlまで全滅
+→ V1.3: 地質source + 局所stock + 環境損失へ修正
+→ Exp07 240 run × 120k 完了
+   - C: flux8以上で10/10成立
+   - B: 全80/80絶滅
+   - D: flux8以上で10/10到達
+→ Exp07後監査で光吸収上限欠落を設計ミスとして確認
+→ Exp07結果/考察を正本化
+→ V1.3最終状態を v1.3-final 保存       ← 次
+→ V1.4 一次Energy吸収則実装
+→ unit / Energy / Matter保存テスト
+→ Exp08 Phase0ベンチ
+→ Exp08 PhaseA/B 90 run × 60k
+→ light/chemicalのdefault校正
+→ 原生生物的な異種刺激比較則を確定
+→ 光+chemical同居診断
 ```
 
-## Exp06で確定した解釈
+## Exp07で確定したこと
 
-Exp06は全条件light=0で、以下を各10 seed実行した。
+全条件light=0。
+
+### C — chemical_absorption=2.0固定 / vent
+
+- `chem_vent_flux=8`以上で10/10が120,000 tick維持
+- flux4は9/10絶滅、唯一の生存も最終5個体
+
+したがってV1.3 chemical sourceモデルは完成chemical型の持続生態を成立させられる。
+
+### B — 通常祖先 / vent
+
+- 全8 flux × 10 seed = 80/80絶滅
+- 多くは約150 tick
+- `chemical_absorption>=0.5`へ到達したrunなし
+
+source不足ではなく、通常祖先からchemical利用型への進化bootstrapが成立していない。
+
+### D — chemical_absorption=2.0固定 / random
+
+- flux8以上で10/10が120k到達
+- 多くのrunで最終個体の90%以上がvent cell
+
+完成chemical型はrandom配置から少なくとも一部ventへ到達・定着可能。
+ただし4 ventsすべてを必ず占有するわけではなく、vent間探索は弱い可能性がある。
+
+## V1.1-Exp05の解釈
+
+保持:
+- 高光利用化・小型化が実際に観測された
+- lineage sweepは多因子
+- mutation_rate等のExp04結果
+- 光利用経路内部での比較
+
+撤回/保留:
+
+> 複数の一次Energy戦略が対等に成立可能な世界で、光利用型が競争に勝った。
+
+Exp06でchemical環境側の不整合、Exp07後監査で光吸収側の不整合が見つかったため支持されない。
+
+## V1.4で直す根本問題
+
+### 1. 光の個体吸収上限
+
+旧光は:
 
 ```text
-A Ancestor / Random
-B Ancestor / Vent
-C Chem2.0 / Vent
-D Chem2.0 / Random
+weight = light_absorption × matter × health
 ```
 
-全条件0/10生存。positive controlのCも全滅した。
+をセル光量の分配比率にしか使わない。
 
-したがって、以下は支持されない:
+1匹なら低 `light_absorption` でもセル光をほぼ全取得する。
 
-> 「複数の一次Energy戦略が十分に成立可能な世界で、光利用型が競争に勝った」
-
-Exp03-05の観測事実・sweep・同じ光利用経路内での比較は保持するが、光利用優勢の原因をEnergy戦略間競争の勝利とは解釈しない。
-
-## V1.3 chemicalモデルの定義
-
-chemicalは、海底熱水噴出孔・冷湧水等から供給される還元性物質が持つ利用可能化学自由Energyの粗視化量。
-
-旧式:
+V1.4では:
 
 ```text
-regen = r * stock * (1-stock/K)
+light_demand
+= light_uptake_coef
+× light_absorption
+× effective_surface
+× health
 ```
 
-は自己増殖資源型であり廃止する。
+を個体の最大要求量にする。
 
-新構造:
+`light_uptake_coef`は「光吸収速度係数」。恒久defaultはExp08で校正する。
+
+### 2. 有効表面積
 
 ```text
-地質source S（一定・生物消費と独立）
-        ↓
-局所chemical stock C
-   ↓              ↓
-生物吸収 U     環境損失 L
-               混合/流出/希釈/酸化等
+effective_surface = matter^(2/3)
 ```
 
-1 tickの環境更新:
+を導入する。
+
+意味:
+- matterを概ね体積とみなす
+- 同形状なら体積8倍で表面積4倍
+- 環境との直接交換は体積そのものではなく接触面で律速
+
+将来形状遺伝子を入れたら差し替える暫定近似。
+
+### 3. chemical
+
+V1.3環境source式は維持。
+
+生物側のみ:
 
 ```text
-L = chem_loss_frac * C
-C1 = C - L
-C2 = C1 + chem_source_flux
+chemical_demand
+= chem_uptake
+× chemical_absorption
+× effective_surface
+× health
 ```
 
-その後、生物がC2から吸収する。
+へ変更する。
 
-stockに上限 (capacity) は置かない。source全量が流入し、一次損失だけで
-有限化する。生物不在の平衡は `S / chem_loss_frac`。
-capacityでクリップすると欠けvent/重複セルで実効sourceがseed依存に
-最大10.8%失われるため廃止した。
+stock不足時はセル内全個体の需要比で同時配分し、リスト順biasを廃止する。
 
-sourceはstock=0でも毎tick一定量供給される。生物は局所stockを低下させられるが地質source自体を枯渇させられない。
+### 4. nutrient
 
-## V1.3 Config
+無機栄養も環境からの直接吸収なので `effective_surface` を使う。
+Matter同化コスト/保存則は維持。
+
+### 5. tick内処理
+
+個体ごとの「移動→吸収」を逐次行わず、少なくとも:
 
 ```text
-chem_vent_flux = 8.0      # 暫定default。旧モデル最大供給規模≈32.5 E/tickに近い世界総32を基準化
-chem_loss_frac = 0.10
-chem_uptake = 0.5
-n_vents = 4
-vent_radius_cells = 2
+全個体が行動/移動
+→ post-move hash再構築
+→ light/chemical/nutrientの全需要を計算
+→ セル内需要比例配分
 ```
 
-旧 `chem_regen` / `chem_min_stock` / `chem_capacity` はConfigから削除する。
+とする。
 
-`chem_vent_flux`は1 ventの総source。各ventの円盤セル数に関係なく、そのventの総sourceは常に設定値とする。
+光とchemicalで参照する位置時点を統一する。
 
-`chem_source_flux[ix,iy]` fieldを作り、vent端/重複でも:
+## 行動ルールの原則
+
+**未来のEnergy収益を予測させない。**
+
+禁止:
 
 ```text
-sum(chem_source_flux) == n_vents * chem_vent_flux
+各セルで次tick得られるEnergyを計算
+→ 最も儲かる場所へ移動
 ```
 
-を保証する。
+これは原始生物として高度すぎる。
 
-初期stock (更新式の不動点):
+維持する思想:
 
-```text
-chem_source_flux / chem_loss_frac
-```
+> 現在感じる刺激への反射的な走光性/走化性。
 
-旧`chem_regen`/`chem_min_stock`は通常V1.3経路で使わない。
+ただし現行は光供給値とchemical stockをraw値で直接比較しており単位が異なる。
+これはExp08では各source単独なので主判定を妨げないが、**最初の光+chemical同居実験前に必ず修正**する。
 
-## Energy台帳
+半飽和型受容器等の無次元刺激化が候補だが、勝手に係数を追加・確定しない。
 
-chemical external sourceは`energy_in_cum`。
+## V1.4で変更しないもの
 
-`chem_loss_frac * stock` は`energy_out_cum`。
-capacity clippingを廃止したのでoverflow項は無い。
-
-保存則を必ずテストする。
-
-## Exp07
-
-全条件light=0。目的は光との競争ではなく、V1.3 chemical source単独の成立性。
-
-振る世界パラメータは`chem_vent_flux`のみ:
-
-```text
-4, 8, 12, 16, 24, 32, 48, 64 E/tick/vent
-```
-
-各fluxで:
-
-```text
-C chem2.0固定 / vent
-B ancestor / vent
-D chem2.0固定 / random
-```
-
-```text
-8 flux × 3条件 × 10 seed = 240 run
-120,000 tick
-```
-
-Pilotはflux 4/16/64 × C/B/D × seed1 = 9 run / 5k。
-
-### 判定順
-
-1. Cでchemical生態のecological viability境界
-2. C成立域でBを見て祖先からの進化bootstrap
-3. C成立域でDを見てvent探索/空間access
-
-Bは生存/絶滅の二値で読まない。祖先の収支上、chemical吸収だけで黒字化するには
-`chemical_absorption ≈ 0.9` (実効1.0前後) が必要で、初期値0.3の約3倍である。
-`>= 0.5 / 0.9 / 1.2 / 1.5 / 2.0` の到達seed数と初回tickを見る。
-
-高fluxで`max_population_halt`へ達した場合はscientific resultとして記録する。
-
-## V1.3/Exp07で変更しないもの
-
-- lightモデル
-- chemical_absorption初期値/意味
-- chem_uptake
-- initial_population
-- sensory/movement
-- 生理/繁殖/mutation
+- mutation
+- reproduction
+- basic metabolic cost / organ_upkeep
+- movement/sensoryの基本構造
+- `chem_uptake=0.5`
+- chemical source/stock/loss式
 - vent数/半径
-- nutrient
 - corpse/predation
+- 日照時間変動
 
-## 当面残す懸念
+吸収利益側と維持費を同時に変更しない。
 
-1. chemical diffusion/advection/plume未実装
-2. chemical uptakeの逐次処理順bias
-3. chem_loss_frac=0.10の実時間校正なし
-4. vent上100個体の局所過密
-5. tickの現実時間未定義
+## chemical絶対量
 
-Exp07はlineage sweepや最終最適形質の強い結論には使わない。
+V1.3 `chem_vent_flux=8`でも完成型は成立。
+
+恒久default候補:
+
+```text
+16-24 E/tick/vent
+```
+
+理由:
+- 世界総量はV1.1光より十分小さい
+- 典型13セルventで約1.23-1.85 E/tick/cell
+- V1.1光0.4-1.2 E/tick/cellに対し局所高密度を作れる
+
+ただしExp08まで確定しない。
+
+## Exp08
+
+### Phase 0 — 決定論ベンチ
+
+- matter 0.5/0.8/1/2/4/8
+- absorption 0.3/1/2/5
+- light_uptake_coef 1.0/1.5/2.0
+- 1/5/20/100個体の密度競争
+- list順を変えて配分不変
+
+### Phase A — 光単独
+
+```text
+vertical light
+chemical=0
+light_uptake_coef = 1.0 / 1.5 / 2.0
+```
+
+- L0: ancestor light_abs≈0.3固定
+- L2: light_abs=2.0固定
+
+60 run × 60k。
+
+### Phase B — chemical単独
+
+```text
+light=0
+chem_abs=2.0固定 / vent
+chem_vent_flux = 8 / 16 / 24
+```
+
+30 run × 60k。
+
+合計90 run + Phase0。
+
+Exp08では光/chemical競争、祖先chemical bootstrap、動物的進化について結論しない。
 
 ## バージョニング
 
-- `V1.1 → V1.2 → V1.3`: 世界ルール変更
-- `V1.2 → V1.2.1 → V1.2.2`: 観測・解析・実行基盤等の結果不変変更
+- V1.3: chemical環境sourceメカニズム修正
+- V1.4: 生物の一次Energy/資源直接吸収メカニズム修正
 
-V1.3はchemicalを人工的にbuffするためではなく、Exp06で見つかった**地質sourceとしてのモデル定義不整合を修正**する世界ルール変更。
+V1.4実装前に `v1.3-final` branchを保存する。
 
 ## プロジェクトの絶対原則
 
@@ -210,19 +267,9 @@ V1.3はchemicalを人工的にbuffするためではなく、Exp06で見つか�
 7. 想定外の戦略を許容する
 8. 特定生態型に直接ボーナスを与えない
 9. 原則1軸ずつ変更する
-10. 「遺伝子がある」ことと「その進化経路が成立可能」を区別する
-11. 比較するEnergy戦略は、まず単独で持続可能か確認する
-
-## 開発フロー
-
-- V1.3実装前に`v1.2-final`を保存 (branch済み。tagは要手動作成)
-- 原則branch + PR
-- `uv run pytest tests`
-- Energy conservation test
-- source fieldのseed/edge/overlap test
-- Pilotで実装健全性のみ確認
-- 生物学的結果を見てExp07の事前登録条件を変更しない
-- 意味のある結果は`experiments/`とdocsへ保存
+10. 「遺伝子がある」ことと「進化経路が成立可能」を区別する
+11. 比較するEnergy戦略はまず単独で持続可能か確認する
+12. 行動に暗黙の知能・未来予測を勝手に導入しない
 
 ## 技術スタック
 
