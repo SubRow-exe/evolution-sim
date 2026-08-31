@@ -22,8 +22,9 @@ jobs:
         # 参照実装と現在の実装を実際に走らせて比較する。
         #
         # V1.4は世界ルール変更境界なので、V1.3以前とは意図的に結果が異なる。
-        # V1.4内の結果不変変更は、最初のV1.4実装コミット 5aca88e を基準にする。
+        # V1.4内の結果不変変更は、Exp08で校正した恒久defaultを確定した
+        # 226a926 (= v1.4-final) を基準にする。
         # Repository variable が古い値のまま残っていても基準を上書きしないよう、
         # このworkflowではrefを明示的に固定する。
         # 過去バージョンの再現は v1.2-final / v1.3-final を使用する。
-        run: uv run python tools/verify_vs_ref.py --ref 5aca88e
+        run: uv run python tools/verify_vs_ref.py --ref 226a926
