@@ -1,274 +1,275 @@
 # AI協働開発ガイドライン (AGENTS.md)
 
-本リポジトリは複数のAIアシスタントと人間が共同開発する。コードを変更する前に、本書と現在の司令塔ドキュメントを必ず読むこと。
+本リポジトリは複数AIと人間で共同開発する。コード変更前に本書と正本を必ず読むこと。
 
-## 現在の作業方針の参照順
+## 現在の参照順
 
-1. `docs/次の実験計画.md` — 現在地と直近順序
-2. **`docs/Exp07_結果考察.md` — Exp07結果と新たに検出した設計課題**
-3. **`docs/V1.4_一次エネルギー吸収仕様.md` — V1.4実装の正本**
-4. **`docs/Exp08_実験計画.md` — V1.4校正実験の正本**
-5. `docs/V1.3_化学資源モデル仕様.md`
-6. `docs/Exp07_実験計画.md`
+1. `docs/次の実験計画.md`
+2. `docs/V1.4_一次エネルギー吸収仕様.md` — V1.4実装の正本
+3. `docs/Exp08_実験計画.md` — Exp08条件の正本
+4. `experiments/exp07_actions_20260830_160556/NOTES.md` — Exp07実測
+5. `docs/Exp07_結果考察.md`
+6. `docs/V1.3_化学資源モデル仕様.md`
 7. `docs/V1.1_総括.md`
 8. `docs/バージョニング方針.md`
 
-古い「次は光総量0.75/0.50」「V1.3のまま光+chemicalを直接競争」「chem_regenを増やす」案より上記を優先する。
+古い以下の案は採用しない。
+- 光総量0.75/0.50を次に振る
+- V1.3のまま光+chemicalを直接競争させる
+- Exp08旧案のlight coef 1.0/1.5/2.0 × L0/L2全組合せ
+- tick全体を一気に全面フェーズ化する
 
-## 現在の短期順序
+## 現在地
+
+Exp07完了:
 
 ```text
-V1.1-1.2保存/実験済み
-→ Exp06: 旧chemicalではpositive controlまで全滅
-→ V1.3: 地質source + 局所stock + 環境損失へ修正
-→ Exp07 240 run × 120k 完了
-   - C: flux8以上で10/10成立
-   - B: 全80/80絶滅
-   - D: flux8以上で10/10到達
-→ Exp07後監査で光吸収上限欠落を設計ミスとして確認
-→ Exp07結果/考察を正本化
-→ V1.3最終状態を v1.3-final 保存       ← 次
-→ V1.4 一次Energy吸収則実装
-→ unit / Energy / Matter保存テスト
-→ Exp08 Phase0ベンチ
-→ Exp08 PhaseA/B 90 run × 60k
-→ light/chemicalのdefault校正
-→ 原生生物的な異種刺激比較則を確定
-→ 光+chemical同居診断
+C chem2/vent: flux8以上で10/10成立
+B ancestor/vent: 全80/80絶滅、chem_abs>=0.5到達0
+D chem2/random: flux8以上で10/10成立
 ```
 
-## Exp07で確定したこと
+chemical環境自体は成立可能。通常祖先からchemical型へのbootstrapは未成立。
 
-全条件light=0。
+Exp07後監査で、光に個体吸収上限が無い等の生物側設計ミスを検出したためV1.4へ進む。
 
-### C — chemical_absorption=2.0固定 / vent
+## V1.4で必ず実装するもの
 
-- `chem_vent_flux=8`以上で10/10が120,000 tick維持
-- flux4は9/10絶滅、唯一の生存も最終5個体
-
-したがってV1.3 chemical sourceモデルは完成chemical型の持続生態を成立させられる。
-
-### B — 通常祖先 / vent
-
-- 全8 flux × 10 seed = 80/80絶滅
-- 多くは約150 tick
-- `chemical_absorption>=0.5`へ到達したrunなし
-
-source不足ではなく、通常祖先からchemical利用型への進化bootstrapが成立していない。
-
-### D — chemical_absorption=2.0固定 / random
-
-- flux8以上で10/10が120k到達
-- 多くのrunで最終個体の90%以上がvent cell
-
-完成chemical型はrandom配置から少なくとも一部ventへ到達・定着可能。
-ただし4 ventsすべてを必ず占有するわけではなく、vent間探索は弱い可能性がある。
-
-## V1.1-Exp05の解釈
-
-保持:
-- 高光利用化・小型化が実際に観測された
-- lineage sweepは多因子
-- mutation_rate等のExp04結果
-- 光利用経路内部での比較
-
-撤回/保留:
-
-> 複数の一次Energy戦略が対等に成立可能な世界で、光利用型が競争に勝った。
-
-Exp06でchemical環境側の不整合、Exp07後監査で光吸収側の不整合が見つかったため支持されない。
-
-## V1.4で直す根本問題
-
-### 1. 光の個体吸収上限
-
-旧光は:
+### 1. 有効表面積
 
 ```text
-weight = light_absorption × matter × health
+A_eff = matter^(2/3)
 ```
 
-をセル光量の分配比率にしか使わない。
+light/chemical/nutrientの環境直接吸収へ共通適用。
 
-1匹なら低 `light_absorption` でもセル光をほぼ全取得する。
-
-V1.4では:
+### 2. 光個体吸収上限
 
 ```text
-light_demand
+raw_light_demand
 = light_uptake_coef
 × light_absorption
-× effective_surface
+× A_eff
 × health
 ```
 
-を個体の最大要求量にする。
+Energy空き容量でcap。
 
-`light_uptake_coef`は「光吸収速度係数」。恒久defaultはExp08で校正する。
+セル供給不足時は需要比例配分。
 
-### 2. 有効表面積
+暫定Config default:
 
 ```text
-effective_surface = matter^(2/3)
+light_uptake_coef = 2.0
 ```
 
-を導入する。
+恒久defaultはExp08で決定。
 
-意味:
-- matterを概ね体積とみなす
-- 同形状なら体積8倍で表面積4倍
-- 環境との直接交換は体積そのものではなく接触面で律速
+### 3. chemical公平配分
 
-将来形状遺伝子を入れたら差し替える暫定近似。
-
-### 3. chemical
-
-V1.3環境source式は維持。
-
-生物側のみ:
+V1.3 source/stock/lossは変更しない。
 
 ```text
-chemical_demand
+raw_chemical_demand
 = chem_uptake
 × chemical_absorption
-× effective_surface
+× A_eff
 × health
 ```
 
-へ変更する。
+Energy空き容量でcap。stock不足時は需要比例配分。個体リスト順の先着biasを廃止。
 
-stock不足時はセル内全個体の需要比で同時配分し、リスト順biasを廃止する。
+`chem_uptake=0.5`はExp08では固定。
 
-### 4. nutrient
-
-無機栄養も環境からの直接吸収なので `effective_surface` を使う。
-Matter同化コスト/保存則は維持。
-
-### 5. tick内処理
-
-個体ごとの「移動→吸収」を逐次行わず、少なくとも:
+### 4. nutrient公平配分
 
 ```text
-全個体が行動/移動
-→ post-move hash再構築
-→ light/chemical/nutrientの全需要を計算
-→ セル内需要比例配分
+raw_nutrient_demand
+= nutrient_uptake
+× nutrient_absorption
+× A_eff
+× health
 ```
 
-とする。
+公平配分前に:
+- Matterを取り込める余地
+- 現在Energyで同化コストを払える量
 
-光とchemicalで参照する位置時点を統一する。
+でcapする。
 
-## 行動ルールの原則
+Matter保存・Energy非負を必ず守る。
 
-**未来のEnergy収益を予測させない。**
+### 5. tick処理は最小限の再構成
+
+```text
+環境更新
+→ 全個体が従来思想で行動決定
+→ 全個体移動
+→ post-move hash再構築
+→ light/chemical/nutrient需要計算・セル公平配分
+→ 以降は可能な限り現行逐次順
+   corpse → predation → 生理/修復 → 死亡 → 繁殖 → 記録
+```
+
+死亡/繁殖まで全面フェーズ化しない。
+
+副作用としてcorpse/predationはpost-move hashを参照し、遭遇率が変わり得る。V1.4世界境界として記録する。
+
+## 行動原則
+
+**未来Energy収益を予測させない。**
 
 禁止:
 
 ```text
-各セルで次tick得られるEnergyを計算
-→ 最も儲かる場所へ移動
+候補セルごとの将来Energy収益を計算
+→ 最も得な場所へ移動
 ```
-
-これは原始生物として高度すぎる。
 
 維持する思想:
 
-> 現在感じる刺激への反射的な走光性/走化性。
+> 現在感じる刺激への反射的走光性/走化性。
 
-ただし現行は光供給値とchemical stockをraw値で直接比較しており単位が異なる。
-これはExp08では各source単独なので主判定を妨げないが、**最初の光+chemical同居実験前に必ず修正**する。
+光供給値とchemical stockのraw比較は単位が異なるが、Exp08は各source単独なのでV1.4実装時には変更しない。
 
-半飽和型受容器等の無次元刺激化が候補だが、勝手に係数を追加・確定しない。
+最初の光+chemical同居前に、未来予測ではない無次元受容器応答として別途設計する。
+
+## lightとchemicalの相対スケール
+
+`light_uptake_coef`と`chem_uptake`は同種の「遺伝するabsorption能力→実吸収速度」の変換係数だが、同じ数値に強制しない。
+
+`chem_uptake=0.5`でも、matter0.8 / chemical_absorption=5なら個体ceilingは約2.15 E/tickであり、V1.1明部光最大約1.2を超え得る。
+
+よってExp08前にchemicalを人工的にbuffしない。
+
+chemical供給候補:
+
+```text
+chem_vent_flux = 8 / 16 / 24
+```
+
+16/24は「flux8が不成立だから」ではなく、世界総量は小さいままvent局所供給密度を光帯と同等以上にする事前設計候補。
+
+## Exp08
+
+### Phase0
+
+必須ベンチ:
+- matter 0.5/0.8/1/2/4/8
+- absorption 0.3/1/2/5
+- light coef 1/1.5/2/3/4
+- light/chemical ceilingを同一表に出す
+- 維持費/修復/初期Energy/繁殖閾値
+- 1/5/20/100個体の公平配分
+- nutrient Energy/Matter cap
+- shuffleにSimulation.rngを使わない
+
+### Phase A 光単独
+
+光単独でも乱数消費維持のため:
+
+```text
+n_vents=4
+chem_vent_flux=0.0
+```
+
+L0:
+
+```text
+light_absorption≈0.3固定
+light_uptake_coef = 1.0 / 1.5 / 2.0 / 3.0 / 4.0
+5 × 10 seed = 50 run
+```
+
+L2 positive control:
+
+```text
+light_absorption=2.0固定
+light_uptake_coef=2.0固定
+10 seed
+```
+
+Phase A合計60 run × 60k。
+
+### Phase B chemical単独
+
+```text
+light=0
+chemical_absorption=2.0固定 / vent
+chem_uptake=0.5
+chem_vent_flux=8/16/24
+3 × 10 seed = 30 run
+60k
+```
+
+Exp08総計90 run + Phase0。
+
+条件は生物学的結果を見て同一Exp08内で変更しない。
+
+## 実装テスト必須
+
+1. matter1→surface1 / matter8→surface4
+2. 低light_abs単独個体が全光を取得しない
+3. light総取得=min(supply,total demand)
+4. light配分が個体順不変
+5. chemical配分が個体順不変
+6. chemical総取得<=stock
+7. nutrient各個体取得<=事前demand
+8. nutrient総取得=min(stock,total demand)
+9. nutrient同化後Energy非負
+10. Matter保存
+11. Energy台帳保存
+12. light/chemical/nutrientがpost-moveセル参照
+13. test shuffleはSimulation.rng非消費
+14. V1.4のgolden/CI基準ref更新
+
+V1.4では未利用光と低い光利用率が増える可能性がある。これは意図した挙動であり異常扱いしない。
 
 ## V1.4で変更しないもの
 
 - mutation
-- reproduction
+- reproduction rule
 - basic metabolic cost / organ_upkeep
-- movement/sensoryの基本構造
+- sensory/movementの基本思想
+- V1.3 chemical source/stock/loss
 - `chem_uptake=0.5`
-- chemical source/stock/loss式
 - vent数/半径
-- corpse/predation
 - 日照時間変動
+- 捕食強化
+- chemical plume
+- 学習/記憶
+- 有性生殖
 
-吸収利益側と維持費を同時に変更しない。
-
-## chemical絶対量
-
-V1.3 `chem_vent_flux=8`でも完成型は成立。
-
-恒久default候補:
+## 直近順序
 
 ```text
-16-24 E/tick/vent
+Exp07実測NOTES main保存 ✅
+→ 正本へClaudeレビュー判断反映 ✅
+→ v1.3-finalを最新保存点へ更新
+→ V1.4実装
+→ unit/Energy/Matter/RNG tests
+→ V1.4 golden/CI基準ref更新
+→ Exp08 Phase0
+→ Exp08 90 run × 60k
+→ default校正
+→ 必要ならchem_uptake独立診断
+→ 異種刺激比較則
+→ 光+chemical同居
 ```
 
-理由:
-- 世界総量はV1.1光より十分小さい
-- 典型13セルventで約1.23-1.85 E/tick/cell
-- V1.1光0.4-1.2 E/tick/cellに対し局所高密度を作れる
-
-ただしExp08まで確定しない。
-
-## Exp08
-
-### Phase 0 — 決定論ベンチ
-
-- matter 0.5/0.8/1/2/4/8
-- absorption 0.3/1/2/5
-- light_uptake_coef 1.0/1.5/2.0
-- 1/5/20/100個体の密度競争
-- list順を変えて配分不変
-
-### Phase A — 光単独
-
-```text
-vertical light
-chemical=0
-light_uptake_coef = 1.0 / 1.5 / 2.0
-```
-
-- L0: ancestor light_abs≈0.3固定
-- L2: light_abs=2.0固定
-
-60 run × 60k。
-
-### Phase B — chemical単独
-
-```text
-light=0
-chem_abs=2.0固定 / vent
-chem_vent_flux = 8 / 16 / 24
-```
-
-30 run × 60k。
-
-合計90 run + Phase0。
-
-Exp08では光/chemical競争、祖先chemical bootstrap、動物的進化について結論しない。
-
-## バージョニング
-
-- V1.3: chemical環境sourceメカニズム修正
-- V1.4: 生物の一次Energy/資源直接吸収メカニズム修正
-
-V1.4実装前に `v1.3-final` branchを保存する。
-
-## プロジェクトの絶対原則
+## プロジェクト絶対原則
 
 1. 適応度を直接計算しない
 2. 種クラスを作らない
 3. 寿命値を直接作らない
-4. コストは具体的な物理・生理則から導く
+4. コストは物理・生理則から導く
 5. Matter保存・Energy台帳を守る
-6. 乱数系列と決定性を守る
-7. 想定外の戦略を許容する
-8. 特定生態型に直接ボーナスを与えない
+6. 乱数系列と決定性を意識する
+7. 想定外戦略を許容する
+8. 特定生態型へ直接ボーナスを与えない
 9. 原則1軸ずつ変更する
-10. 「遺伝子がある」ことと「進化経路が成立可能」を区別する
-11. 比較するEnergy戦略はまず単独で持続可能か確認する
+10. 遺伝子の存在と進化経路の成立を区別する
+11. 比較するEnergy戦略は単独成立性を先に確認する
 12. 行動に暗黙の知能・未来予測を勝手に導入しない
 
 ## 技術スタック
