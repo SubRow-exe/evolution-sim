@@ -250,6 +250,8 @@ Exp07実測NOTES main保存 ✅
 → unit/Energy/Matter/RNG tests ✅ (tests/test_v14_uptake.py)
 → V1.4 golden/CI基準ref更新 ✅
 → Exp08 Phase0 ✅ (tools/bench_v14_uptake.py)
+→ Exp08 実行基盤 ✅ (configs/exp08 / exp08.yml / check_exp08 / summarize_exp08)
+→ Exp08 Pilot → 本番90 run × 60k  ← 次 (未実行)
 → Exp08 90 run × 60k
 → default校正
 → 必要ならchem_uptake独立診断
