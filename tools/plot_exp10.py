@@ -123,7 +123,7 @@ def fig5_heatmap(rows, out: Path) -> Path:
     """パラメータスイープheatmap: (tau, gain) → high-Q改善量 [pp]。"""
     pairs = (("K1_light_Y", "lightspec"), ("K2_chem_X", "chemspec"),
              ("K3_orthogonal", "generalist"), ("K4_conflict", "generalist"))
-    fig, axes = plt.subplots(1, len(pairs), figsize=(3.5 * len(pairs), 3.8))
+    fig, axes = plt.subplots(1, len(pairs), figsize=(3.5 * len(pairs), 4.3))
     vmax = 0.0
     grids = []
     for env, pheno in pairs:
@@ -152,12 +152,12 @@ def fig5_heatmap(rows, out: Path) -> Path:
         ax.set_yticks(range(len(MEMORY_TAUS)))
         ax.set_yticklabels([f"{t:g}" for t in MEMORY_TAUS], fontsize=8)
         ax.set_xlabel("response_gain")
-        ax.set_title(f"{env}\n{pheno}", fontsize=9)
+        ax.set_title(f"{env}\n{pheno}", fontsize=9, pad=6)
     axes[0].set_ylabel("memory_tau [tick]")
     fig.colorbar(im, ax=axes, shrink=0.8,
                  label="high-Q residence gain over control [pp]")
     fig.suptitle("Fig.5  Parameter sweep: improvement over the "
-                 "response_gain=0 control", fontsize=11)
+                 "response_gain=0 control", fontsize=11, y=1.04)
     p = out / "fig5_param_sweep.png"
     fig.savefig(p, dpi=130, bbox_inches="tight")
     plt.close(fig)
