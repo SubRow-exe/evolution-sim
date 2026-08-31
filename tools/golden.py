@@ -44,6 +44,25 @@ CASES = [
     ("dense_s7_1500", 7, 1500, {"initial_population": 300}),
 ]
 
+# V1.5 の異種刺激比較は light と chemical の両方が存在するときだけ働く。
+# 単独source世界では V1.4 と完全に一致していなければならない
+# (docs/Exp09_実験計画.md §5-5 / §10 の停止条件)。
+#   uv run python tools/verify_vs_ref.py --ref v1.4-final --single-source
+SINGLE_SOURCE_CASES = [
+    ("light_only_s1_1500", 1, 1500, {"chem_vent_flux": 0.0}),
+    ("light_only_s4_1200", 4, 1200, {"chem_vent_flux": 0.0}),
+    ("chem_only_s1_1500", 1, 1500, {
+        "light_pattern": "uniform", "light_max": 0.0,
+        "diagnostic_placement": "vent",
+        "fixed_genes": ["chemical_absorption"],
+        "diagnostic_gene_overrides": {"chemical_absorption": 2.0}}),
+    ("chem_only_s4_1200", 4, 1200, {
+        "light_pattern": "uniform", "light_max": 0.0,
+        "diagnostic_placement": "vent",
+        "fixed_genes": ["chemical_absorption"],
+        "diagnostic_gene_overrides": {"chemical_absorption": 2.0}}),
+]
+
 
 def fingerprint(sim: Simulation) -> str:
     """全個体・全フィールドをビット単位で畳み込んだ指紋。
@@ -92,9 +111,10 @@ def platform_key() -> str:
     return f"{platform.system().lower()}-{platform.machine().lower()}"
 
 
-def compute_all() -> dict[str, str]:
+def compute_all(cases=None) -> dict[str, str]:
     """全ケースの指紋を計算する。verify_vs_ref.py からも使う。"""
-    return {name: run_case(seed, ticks, ov) for name, seed, ticks, ov in CASES}
+    return {name: run_case(seed, ticks, ov)
+            for name, seed, ticks, ov in (CASES if cases is None else cases)}
 
 
 def main() -> None:
@@ -102,9 +122,11 @@ def main() -> None:
     ap.add_argument("--write", action="store_true", help="現在の実装の指紋を記録する")
     ap.add_argument("--print", dest="print_json", action="store_true",
                     help="指紋をJSONで標準出力する (verify_vs_ref.py 用)")
+    ap.add_argument("--single-source", action="store_true",
+                    help="単独source (light-only / chemical-only) のケースを使う")
     args = ap.parse_args()
 
-    current = compute_all()
+    current = compute_all(SINGLE_SOURCE_CASES if args.single_source else None)
     if args.print_json:
         print(json.dumps(current, indent=2))
         return

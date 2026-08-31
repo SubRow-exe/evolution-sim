@@ -68,6 +68,10 @@ class Recorder:
             *[f"frac_{b}_band" for b in BAND_NAMES],
             "mean_local_light", "vent_cell_population", "vent_cell_frac",
             "mean_move_per_org_tick",
+            # 一次Energy刺激の選択統計 (V1.5 観測。区間集計)
+            "sel_light", "sel_chemical", "sel_tie", "sel_walk",
+            "sel_both_events", "sel_agree", "sel_lost_light", "sel_lost_chemical",
+            "sel_light_resp_mean", "sel_chem_resp_mean", "sel_chem_stock_mean",
             *[f"mean_{n}" for n in GENE_NAMES],
             *[f"var_{n}" for n in GENE_NAMES],
         ]
@@ -145,6 +149,13 @@ class Recorder:
         mean_move = (round(sim._move_sum / sim._move_count, 6)
                      if sim._move_count else "")
 
+        # 一次Energy刺激の選択統計 (V1.5 観測)
+        obs = sim.stim_obs
+        nb = obs["both_events"]
+        obs_light_resp = round(obs["light_resp_sum"] / nb, 6) if nb else ""
+        obs_chem_resp = round(obs["chem_resp_sum"] / nb, 6) if nb else ""
+        obs_chem_stock = round(obs["chem_stock_sum"] / nb, 6) if nb else ""
+
         # 系統別集計 (改善方針 Ver.1.2 §4)
         by_lineage: dict[int, list] = {}
         for o in orgs:
@@ -191,6 +202,10 @@ class Recorder:
             *[sp_pop[f"frac_{b}_band"] for b in BAND_NAMES],
             sp_pop["mean_local_light"], sp_pop["vent_cell_population"],
             sp_pop["vent_cell_frac"], mean_move,
+            obs["light"], obs["chemical"], obs["tie"], obs["walk"],
+            obs["both_events"], obs["agree"],
+            obs["lost_light"], obs["lost_chemical"],
+            obs_light_resp, obs_chem_resp, obs_chem_stock,
             *[round(float(v), 6) for v in gmean],
             *[round(float(v), 6) for v in gvar],
         ]
@@ -199,6 +214,7 @@ class Recorder:
         self._events_f.flush()  # 中断時にイベントログの末尾が欠けないように
         self._last_stats_tick = sim.tick
         # 移動量は stats 区間ごとの平均にする
+        sim.stim_obs = sim._new_stim_obs()
         sim._move_sum = 0.0
         sim._move_count = 0
         sim._move_by_lineage.clear()
