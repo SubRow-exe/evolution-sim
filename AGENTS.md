@@ -4,260 +4,202 @@
 
 ## 現在の参照順
 
-1. `docs/次の実験計画.md`
-2. `docs/V1.4_一次エネルギー吸収仕様.md` — V1.4実装の正本
-3. `docs/Exp08_実験計画.md` — Exp08条件の正本
-4. `experiments/exp07_actions_20260830_160556/NOTES.md` — Exp07実測
-5. `docs/Exp07_結果考察.md`
-6. `docs/V1.3_化学資源モデル仕様.md`
-7. `docs/V1.1_総括.md`
+1. `docs/次の実験計画.md` — 現在の司令塔
+2. `docs/V1.4_総括.md` — V1.4最終判断・default
+3. `docs/V1.5_異種刺激比較仕様.md` — V1.5実装の正本
+4. `docs/Exp09_実験計画.md` — Exp09条件の正本
+5. `docs/Exp08_結果考察.md` — V1.4校正の実測
+6. `experiments/exp08_actions_20260831_052756/NOTES.md`
+7. `docs/実験結果保存方針.md`
 8. `docs/バージョニング方針.md`
+9. `docs/V1.4_一次エネルギー吸収仕様.md`
+10. `docs/V1.3_化学資源モデル仕様.md`
 
-古い以下の案は採用しない。
-- 光総量0.75/0.50を次に振る
-- V1.3のまま光+chemicalを直接競争させる
-- Exp08旧案のlight coef 1.0/1.5/2.0 × L0/L2全組合せ
-- tick全体を一気に全面フェーズ化する
+古い「V1.4 default未決定」「Exp08未実行」の記述より上記正本を優先する。
 
 ## 現在地
 
-Exp07完了:
+Exp08完了。V1.4の一次Energy/資源吸収則は妥当性確認を通過。
 
-```text
-C chem2/vent: flux8以上で10/10成立
-B ancestor/vent: 全80/80絶滅、chem_abs>=0.5到達0
-D chem2/random: flux8以上で10/10成立
-```
-
-chemical環境自体は成立可能。通常祖先からchemical型へのbootstrapは未成立。
-
-Exp07後監査で、光に個体吸収上限が無い等の生物側設計ミスを検出したためV1.4へ進む。
-
-## V1.4で必ず実装するもの
-
-### 1. 有効表面積
-
-```text
-A_eff = matter^(2/3)
-```
-
-light/chemical/nutrientの環境直接吸収へ共通適用。
-
-### 2. 光個体吸収上限
-
-```text
-raw_light_demand
-= light_uptake_coef
-× light_absorption
-× A_eff
-× health
-```
-
-Energy空き容量でcap。
-
-セル供給不足時は需要比例配分。
-
-暫定Config default:
+恒久defaultは人間判断で確定済み:
 
 ```text
 light_uptake_coef = 2.0
+chem_vent_flux = 16.0
+chem_uptake = 0.5
 ```
 
-恒久defaultはExp08で決定。
+`light_uptake_coef`は個体の光利用能力を1 tickあたりの実吸収上限へ変換する世界側係数。
 
-### 3. chemical公平配分
+`chem_vent_flux`はchemical噴出口1つが1 tickに供給するEnergy量。
 
-V1.3 source/stock/lossは変更しない。
+## 小型化の判断
+
+V1.4では環境直接吸収利益が`matter^(2/3)`、維持費の多くは身体量に強く依存する。
+
+その結果、小型個体が単位身体量あたりの交換効率で有利になることは現時点では**仕様上の自然な選択圧として許容する**。
+
+小型化を抑えるためだけの人工的ペナルティは入れない。
+
+将来、温度・熱損失・備蓄・防御・捕食等から大型化の利点が自然に生じる余地を残す。
+
+## V1.5実装前に必ず行うこと
+
+1. `evosim/config.py`へV1.4恒久defaultを反映
+   - `light_uptake_coef = 2.0`
+   - `chem_vent_flux = 16.0`
+   - `chem_uptake = 0.5`
+2. 暫定defaultコメント・文書を更新
+3. 全test / Energy / Matter / RNG / CI確認
+4. default変更でgolden結果が意図的に変わるなら旧fingerprintを履歴保存
+5. V1.4最終状態を`v1.4-final` branchへ保存
+6. その後にV1.5を実装
+
+V1.4を保存する前にV1.5行動則を混ぜない。
+
+## V1.5の目的
+
+現行行動は光とchemicalを
 
 ```text
-raw_chemical_demand
-= chem_uptake
-× chemical_absorption
-× A_eff
-× health
+ability × raw field value
 ```
 
-Energy空き容量でcap。stock不足時は需要比例配分。個体リスト順の先着biasを廃止。
+で比較するが、光はflow、chemicalはstockで単位・範囲が違う。
 
-`chem_uptake=0.5`はExp08では固定。
-
-### 4. nutrient公平配分
+V1.5では異種一次Energy刺激を無次元受容器応答へ変換する。
 
 ```text
-raw_nutrient_demand
-= nutrient_uptake
-× nutrient_absorption
-× A_eff
-× health
+response(x,K) = x / (x + K)
 ```
 
-公平配分前に:
-- Matterを取り込める余地
-- 現在Energyで同化コストを払える量
-
-でcapする。
-
-Matter保存・Energy非負を必ず守る。
-
-### 5. tick処理は最小限の再構成
+事前登録default:
 
 ```text
-環境更新
-→ 全個体が従来思想で行動決定
-→ 全個体移動
-→ post-move hash再構築
-→ light/chemical/nutrient需要計算・セル公平配分
-→ 以降は可能な限り現行逐次順
-   corpse → predation → 生理/修復 → 死亡 → 繁殖 → 記録
+light_stimulus_half = 1.2
+chemical_stimulus_half = 12.3
 ```
 
-死亡/繁殖まで全面フェーズ化しない。
+score:
 
-副作用としてcorpse/predationはpost-move hashを参照し、遭遇率が変わり得る。V1.4世界境界として記録する。
+```text
+light_score
+= light_absorption × response(light, 1.2)
 
-## 行動原則
+chemical_score
+= chemical_absorption × response(chemical_stock, 12.3)
+```
+
+## V1.5実装スコープ
+
+変更対象は**light vs chemicalという一次Energy源同士の比較**。
+
+- light候補を独立抽出
+- chemical候補を独立抽出
+- 両方あるときだけ無次元response scoreで比較
+- 片方だけなら従来のsource内選択を維持
+- nutrient / corpse / predationの全面無次元化は今回しない
+- V1.4の吸収則は変更しない
+
+`response`は単調増加なので、light-only / chemical-onlyでsource内の最良セル順位がV1.4と一致することを必ずテストする。
+
+### tie
+
+同score時にfield走査順だけで常にlightまたはchemicalが勝つ隠れbiasを作らない。
+
+未来予測や新しい固定source優先順位も導入しない。
+
+詳細は`docs/V1.5_異種刺激比較仕様.md`を正本とする。
+
+## 行動の絶対原則
 
 **未来Energy収益を予測させない。**
 
 禁止:
 
 ```text
-候補セルごとの将来Energy収益を計算
-→ 最も得な場所へ移動
+候補セルごとの将来Energy獲得量を計算
+→ 移動コスト等まで含め最適地点へ移動
 ```
 
 維持する思想:
 
-> 現在感じる刺激への反射的走光性/走化性。
+> 現在感じる刺激への反射的走光性・走化性。
 
-光供給値とchemical stockのraw比較は単位が異なるが、Exp08は各source単独なのでV1.4実装時には変更しない。
+V1.5の無次元化は「賢くする」ためではなく、異なる単位の刺激を感覚として比較可能にするため。
 
-最初の光+chemical同居前に、未来予測ではない無次元受容器応答として別途設計する。
+## Exp09
 
-## lightとchemicalの相対スケール
+Exp09はV1.5比較則の診断。
 
-`light_uptake_coef`と`chem_uptake`は同種の「遺伝するabsorption能力→実吸収速度」の変換係数だが、同じ数値に強制しない。
+進化競争はまだ評価しない。
 
-`chem_uptake=0.5`でも、matter0.8 / chemical_absorption=5なら個体ceilingは約2.15 E/tickであり、V1.1明部光最大約1.2を超え得る。
+### Phase 0
 
-よってExp08前にchemicalを人工的にbuffしない。
+- response算術
+- half-response
+- 単調性
+- source-only順位不変
+- 等価刺激
+- 能力差による切替
+- tie biasなし
+- 未来予測なし
+- RNG / Energy / Matter健全性
 
-chemical供給候補:
+### Phase A
 
-```text
-chem_vent_flux = 8 / 16 / 24
-```
+synthetic arenaで:
 
-16/24は「flux8が不成立だから」ではなく、世界総量は小さいままvent局所供給密度を光帯と同等以上にする事前設計候補。
+- light-only
+- chemical-only
+- 等価刺激
+- light specialist
+- chemical specialist
+- generalist
 
-## Exp08
+を直接検証。
 
-### Phase0
+### Phase B
 
-必須ベンチ:
-- matter 0.5/0.8/1/2/4/8
-- absorption 0.3/1/2/5
-- light coef 1/1.5/2/3/4
-- light/chemical ceilingを同一表に出す
-- 維持費/修復/初期Energy/繁殖閾値
-- 1/5/20/100個体の公平配分
-- nutrient Energy/Matter cap
-- shuffleにSimulation.rngを使わない
-
-### Phase A 光単独
-
-光単独でも乱数消費維持のため:
-
-```text
-n_vents=4
-chem_vent_flux=0.0
-```
-
-L0:
+標準混合世界の短時間sanity check。
 
 ```text
-light_absorption≈0.3固定
-light_uptake_coef = 1.0 / 1.5 / 2.0 / 3.0 / 4.0
-5 × 10 seed = 50 run
+Light-only control
+Chemical-only control
+Mixed / light specialist
+Mixed / chemical specialist
+Mixed / generalist
 ```
 
-L2 positive control:
+Pilot: 各条件seed1、500〜1,000 tick。
 
-```text
-light_absorption=2.0固定
-light_uptake_coef=2.0固定
-10 seed
-```
+本番候補: 5条件 × seed1-5 × 5,000 tick = 25 run。
 
-Phase A合計60 run × 60k。
+評価は行動選択回数、Energy flow、vent滞在、明暗帯滞在等。
 
-### Phase B chemical単独
+Exp09から光/chemicalの進化的優劣を結論しない。
 
-```text
-light=0
-chemical_absorption=2.0固定 / vent
-chem_uptake=0.5
-chem_vent_flux=8/16/24
-3 × 10 seed = 30 run
-60k
-```
+## 実験結果保存
 
-Exp08総計90 run + Phase0。
+`docs/実験結果保存方針.md`を必ず読む。
 
-条件は生物学的結果を見て同一Exp08内で変更しない。
+正式実験の結果確定時は文字サマリーだけで終了しない。
 
-## 実装テスト必須
+GitHubへ:
+- 結果考察
+- 実測NOTES
+- 集計プロット
+- 代表GIF/PNG
 
-1. matter1→surface1 / matter8→surface4
-2. 低light_abs単独個体が全光を取得しない
-3. light総取得=min(supply,total demand)
-4. light配分が個体順不変
-5. chemical配分が個体順不変
-6. chemical総取得<=stock
-7. nutrient各個体取得<=事前demand
-8. nutrient総取得=min(stock,total demand)
-9. nutrient同化後Energy非負
-10. Matter保存
-11. Energy台帳保存
-12. light/chemical/nutrientがpost-moveセル参照
-13. test shuffleはSimulation.rng非消費
-14. V1.4のgolden/CI基準ref更新
+全生データ・全画像はGoogle Drive / Actions artifactへ保存する。
 
-V1.4では未利用光と低い光利用率が増える可能性がある。これは意図した挙動であり異常扱いしない。
+## 世界バージョン境界
 
-## V1.4で変更しないもの
+V1.5の行動比較則は結果を変えるため世界ルール変更。
 
-- mutation
-- reproduction rule
-- basic metabolic cost / organ_upkeep
-- sensory/movementの基本思想
-- V1.3 chemical source/stock/loss
-- `chem_uptake=0.5`
-- vent数/半径
-- 日照時間変動
-- 捕食強化
-- chemical plume
-- 学習/記憶
-- 有性生殖
+V1.5最初の意図的結果変更commitを新しいCI基準refへ設定する。
 
-## 直近順序
-
-```text
-Exp07実測NOTES main保存 ✅
-→ 正本へClaudeレビュー判断反映 ✅
-→ v1.3-finalを最新保存点へ更新 ✅
-→ V1.4実装 ✅ (evosim/physiology.py / simulation.py / config.py)
-→ unit/Energy/Matter/RNG tests ✅ (tests/test_v14_uptake.py)
-→ V1.4 golden/CI基準ref更新 ✅
-→ Exp08 Phase0 ✅ (tools/bench_v14_uptake.py)
-→ Exp08 実行基盤 ✅ (configs/exp08 / exp08.yml / check_exp08 / summarize_exp08)
-→ Exp08 Pilot → 本番90 run × 60k  ← 次 (未実行)
-→ Exp08 90 run × 60k
-→ default校正
-→ 必要ならchem_uptake独立診断
-→ 異種刺激比較則
-→ 光+chemical同居
-```
+V1.4再現用に`v1.4-final`を必ず先に保存する。
 
 ## プロジェクト絶対原則
 
