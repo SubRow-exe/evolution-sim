@@ -24,7 +24,7 @@ class Config:
     light_pattern: str = "vertical"
     light_floor: float = 0.3         # vertical 勾配の下限割合
     # V1.4: 光利用能力 → 個体の1 tickあたり最大変換速度への変換係数。
-    # 恒久defaultではない (Exp08 Phase Aで校正する暫定値)。
+    # Exp08 Phase A で校正した恒久default (docs/V1.4_総括.md §3)。
     light_uptake_coef: float = 2.0
 
     # --- V1.2: high_contrast_vertical の形状 ---
@@ -42,7 +42,10 @@ class Config:
     # 置かず、一次の環境損失だけで有限化する (生物不在の平衡は S/loss)。
     n_vents: int = 4
     vent_radius_cells: int = 2
-    chem_vent_flux: float = 8.0      # 1 ventの総外部供給 [E/tick/vent]
+    # Exp08 Phase B で校正した恒久default (docs/V1.4_総括.md §3)。
+    # 標準13セルventで約1.23 E/tick/cell となり、光の最大1.2 E/tick/cell と
+    # ほぼ同じ局所供給密度。世界総量は光より小さいままに保つ。
+    chem_vent_flux: float = 16.0     # 1 ventの総外部供給 [E/tick/vent]
     chem_loss_frac: float = 0.10     # stockの環境損失割合 [1/tick]
     chem_uptake: float = 0.5         # 吸収レート係数
 
