@@ -1,106 +1,114 @@
 # Exp08 実験計画 — V1.4 吸収則の校正
 
 更新: 2026-08-31
-状態: **方針確定 / V1.4実装後に実行**
+状態: **事前条件確定 / V1.4実装後に実行**
 
 正本:
 - `docs/V1.4_一次エネルギー吸収仕様.md`
 - 本書
+- `experiments/exp07_actions_20260830_160556/NOTES.md`
 - `docs/Exp07_結果考察.md`
 
 ## 1. 目的
 
-Exp08は「光とchemicalのどちらが進化的に勝つか」を調べる実験ではない。
+Exp08は光とchemicalの「進化競争」を調べる実験ではない。
 
-V1.4で一次Energy吸収則を変更した直後に、以下を校正・検証する。
+V1.4で生物側の一次Energy/資源吸収則を変更した直後に、以下を校正する。
 
-1. 光利用能力が実際の個体吸収量を律速するか
-2. 有効表面積 `matter^(2/3)` が意図どおり作用するか
-3. 光/chemicalの資源不足時の配分が個体処理順に依存しないか
-4. V1.4後も光単独・chemical単独の完成戦略が生態として成立可能か
-5. 恒久default候補の `light_uptake_coef` と `chem_vent_flux` の範囲を決める
+1. `light_absorption`が実際の個体吸収上限として機能するか
+2. `matter^(2/3)` の有効表面積則が意図どおり作用するか
+3. light/chemical/nutrientの不足時配分が個体処理順に依存しないか
+4. V1.4後も完成光型・完成chemical型の単独生態が成立可能か
+5. `light_uptake_coef`の恒久default候補を絞る
+6. `chem_vent_flux=8/16/24`でchemical単独生態の出力・人口・stockを比較する
+7. 光とchemicalの個体吸収ceilingの相対スケールを定量化する
 
-まだ光+chemicalを同居させない。
+Exp08では光とchemicalを同居させない。
 
 ## 2. Exp08で変更しないもの
 
 - 初期ゲノムの恒久値
 - mutation rule
-- movement/sensoryの基本則
 - reproduction
-- metabolic cost
+- basic metabolic cost / organ upkeep
+- movement/sensoryの基本思想
 - `chem_uptake=0.5`
 - n_vents=4
 - vent_radius_cells=2
 - chem_loss_frac=0.10
 - nutrient world total
 - 日照時間変動
-- 捕食/死骸ルール
+- corpse/predationのルールそのもの
 
-## 3. Phase 0 — 決定論的な吸収ベンチテスト
+V1.4のtick順変更によりcorpse/predationがpost-move hashを見る副作用はあるが、捕食強度等を追加調整しない。
 
-本番run前にseed依存しない診断スクリプトを作る。
+## 3. Phase 0 — 決定論ベンチ
 
-目的:
-- 数式そのものを確認
-- 長時間進化runを使わずに黒字/赤字境界を見る
+本番run前にseed依存しない診断スクリプト/テストを用意する。
 
-### 3.1 body size / surface scaling
+### 3.1 surface scaling
 
-評価matter:
+matter:
 
 ```text
-0.5, 0.8, 1.0, 2.0, 4.0, 8.0
+0.5 / 0.8 / 1.0 / 2.0 / 4.0 / 8.0
 ```
 
 確認:
 
 ```text
 A_eff = matter^(2/3)
-```
-
-特に:
-
-```text
 matter 1 → A_eff 1
 matter 8 → A_eff 4
 ```
 
-を機械的に固定する。
-
-### 3.2 光
+### 3.2 光の収支
 
 `light_absorption`:
 
 ```text
-0.3, 1.0, 2.0, 5.0
+0.3 / 1.0 / 2.0 / 5.0
 ```
 
-`light_uptake_coef`候補:
+`light_uptake_coef`:
 
 ```text
-1.0, 1.5, 2.0
+1.0 / 1.5 / 2.0 / 3.0 / 4.0
 ```
 
-各matterについて:
-- 個体最大光吸収量/tick
+各matterについて以下を表出力する。
+
+- 個体最大light demand/tick
+- セル供給上限との関係
 - 現行維持費/tick
-- 静止時net Energy/tick
-- cell光量が上限になる条件
+- 代謝損傷修復を含む参考net Energy/tick
+- Energy容量上限
+- 現行初期Energyと繁殖閾値
 
-を表で出力する。
+注意:
+- 単純静止break-evenは係数≈1.29
+- 修復まで含む実効break-evenは概ね1.4付近
+- ただし現行祖先は初期Energyを持ち、開始時点で繁殖可能な場合がある
+- よってcoef1.0を「必ず即絶滅」とは事前断定しない
 
-### 3.3 chemical
+### 3.3 chemicalの収支
 
 `chemical_absorption`:
 
 ```text
-0.3, 1.0, 2.0, 5.0
+0.3 / 1.0 / 2.0 / 5.0
 ```
 
 `chem_uptake=0.5`固定。
 
-同様に最大吸収・維持費・net Energyを計算する。
+光と同じmatterについて:
+- 最大chemical demand/tick
+- 維持費との差
+- absorption=2 / 5での個体ceiling
+
+を出す。
+
+**同じmatter・同じabsorption値でlight/chemical双方のceilingを同じ表に併記する。**
 
 ### 3.4 密度競争
 
@@ -110,200 +118,248 @@ matter 8 → A_eff 4
 1 / 5 / 20 / 100 個体
 ```
 
-を置き、光/chemicalそれぞれで:
+を置き、light/chemical/nutrientで:
 - 供給十分
 - 供給不足
 
-を作る。
+の双方を確認する。
 
-個体リスト順を逆転・shuffleしても、同じ個体状態なら配分総量/各demand比が一致することを確認する。
+要件:
+- 個体順をreverse/shuffleしても同一状態個体の配分比が不変
+- shuffleはSimulation.rngを消費しない別RNG
+- 総取得=`min(供給,総需要)`
+- nutrientは同化EnergyとMatter余地を含む事前demandを超えない
 
-## 4. Phase A — 光単独の生態校正
+### 3.5 Phase 0の役割
+
+Phase 0は数式・実装確認であり進化runの結果ではない。
+
+本書に固定したPhase A/Bの条件はPhase0を見て同一Exp08内で変更しない。実装バグが見つかった場合のみ修正してPhase0を再実行し、本番前にGreenにする。
+
+## 4. Phase A — 光単独
 
 ### 4.1 世界
 
 ```text
-chemical source = 0
-light_pattern = vertical (V1.1互換)
-nutrient等 = V1.4 default
+light_pattern = vertical（V1.1互換）
+chem_vent_flux = 0.0
+n_vents = 4 維持
 ```
 
-V1.1の光空間分布を維持し、変えるのは `light_uptake_coef`だけ。
+`n_vents=0`にはしない。vent生成に伴う乱数消費を維持するため。
 
-候補:
+### 4.2 L0 — 低光利用能力固定
 
 ```text
-1.0 / 1.5 / 2.0
+通常祖先
+light_absorption≈0.3 を固定
 ```
 
-### 4.2 2診断条件
-
-#### L0 — Ancestor-light fixed
+`light_uptake_coef`:
 
 ```text
-初期ゲノムは通常祖先
-light_absorptionのみ初期値≈0.3で固定
+1.0 / 1.5 / 2.0 / 3.0 / 4.0
 ```
+
+各10 seed。
 
 目的:
-> 低い光利用能力が「能力が低いのにセル光を全取得」せず、現実に吸収上限として機能した状態で祖先がどの光環境まで維持可能か。
+- 低い`light_absorption`が本当に個体吸収上限として機能するか
+- 赤字側〜十分黒字側まで広く跨いで、生態成立と人口動態を校正する
+- 1.0は負の対照候補、1.5はbreak-even近傍、3/4は高出力側
 
-#### L2 — Light-adapted fixed
+```text
+5 coef × 10 seed = 50 run
+```
+
+### 4.3 L2 — 完成光型positive control
 
 ```text
 light_absorption=2.0固定
-その他は通常祖先
+light_uptake_coef=2.0固定
 ```
 
-目的:
-> 完成した光利用能力を持つ生物がV1.4光環境で長期成立可能か。
+10 seed。
 
-### 4.3 規模
+理由:
+- matter≈0.8ではcoef1.0の時点でもabsorption2.0のdemandが多くのセルで光供給上限を超える
+- coefを複数振っても供給律速で判別力が低い
+- L2は「V1.4後も完成光型の生態が成立するか」のpositive controlとして1水準で十分
 
 ```text
-3 light_uptake_coef
-× 2条件
-× 10 seed
-= 60 run
+10 run
+```
 
+### 4.4 Phase A規模
+
+```text
+L0 50 run
+L2 10 run
+合計60 run
 60,000 tick
 ```
 
-V1.4直後の校正なので、まず60kとする。
-境界が曖昧な場合のみExp08bを事前登録して延長/追加seedする。
-
-### 4.4 主評価
+### 4.5 評価
 
 - 生存率 / extinction tick
 - population / biomass
-- 実際のlight uptake/tick
+- light uptake/tick
 - 世界光供給に対する利用率
+- unused light
 - mean matter / body_size
 - net Energy budget
 - 明暗帯別population
+- initial transientと後半population傾向
 
-特にL0で低い `light_absorption` があるにもかかわらず高率でセル光を全量利用していないことを確認する。
+V1.4では光利用率がV1.3以前より大幅低下しても異常ではない。低能力個体が使えない光を未利用として捨てるのが新仕様の目的だからである。
 
-## 5. Phase B — chemical単独の再校正
+break-even近傍条件は60k時点の生存/絶滅だけでなくpopulation推移を読む。
 
-V1.4ではchemical吸収も `matter` → `matter^(2/3)` へ変わり、処理順biasも除去するため、Exp07の成立境界を短縮版で再確認する。
+## 5. Phase B — chemical単独
 
 ### 5.1 条件
 
 ```text
 light = 0
 chemical_absorption=2.0固定
-初期配置=vent
+初期配置 = vent
 chem_uptake=0.5固定
+chem_vent_flux = 8 / 16 / 24 E/tick/vent
 ```
 
-`chem_vent_flux`候補:
-
-```text
-8 / 16 / 24 E/tick/vent
-```
-
-理由:
-- 8: Exp07で成立した現V1.3 default
-- 16: 典型ventセルで約1.23 E/tick供給
-- 24: 典型ventセルで約1.85 E/tick供給
-
-### 5.2 規模
+各10 seed。
 
 ```text
 3 flux × 10 seed = 30 run
 60,000 tick
 ```
 
-### 5.3 主評価
+### 5.2 3水準の意味
 
-- 生存率
-- population / biomass
+- 8: Exp07で成立したV1.3基準
+- 16: 典型13セルventで約1.23 E/tick/cell
+- 24: 約1.85 E/tick/cell
+
+16/24を候補とするのは「flux8で不安定になるはずだから」ではない。
+
+設計目標:
+
+```text
+世界総量では光より小さい
+vent近傍では光帯と同等〜より高い局所供給密度
+```
+
+を作るための事前候補である。
+
+### 5.3 評価
+
+- 生存率 / population / biomass
 - chemical source利用率
 - stock
+- environmental loss
 - vent滞在率
 - body_size / matter
 - 1個体当たりchemical uptake
+- demand ceilingに張り付く頻度
 
-Exp07のように通常祖先bootstrapはここでは再実行しない。
-まず完成chemical型の生理・生態がV1.4吸収則でも成立することを確認する。
+通常祖先bootstrapは再実行しない。
 
-## 6. Exp08総規模
-
-進化run:
+## 6. 総規模
 
 ```text
-Phase A 60 run
-Phase B 30 run
-合計 90 run × 60,000 tick
+Phase A: 60 run
+Phase B: 30 run
+合計: 90 run × 60,000 tick
++ Phase0決定論ベンチ
 ```
 
-加えてPhase 0の決定論的ベンチテスト。
-
-GitHub Actionsで同一OS/Python/numpy環境を固定する。
+旧案と総run数は同じだが、L2の冗長20 runをL0の広い係数探索へ振り替える。
 
 ## 7. パラメータ選定原則
 
 ### 7.1 `light_uptake_coef`
 
-「光利用型を弱くしたいから」という理由で選ばない。
+特定結果を作るために選ばない。
 
-以下を確認する:
-1. `light_absorption`が個体吸収上限として実際に働く
-2. 低能力祖先が一匹だからとセル光全量を使えない
-3. 完成光利用型は光単独環境で持続可能
-4. 光の広域性は残る
-5. 個体当たりEnergyが常に供給上限へ張り付く設計にしない
+見るもの:
+1. `light_absorption`が吸収上限として機能
+2. L0で係数に応じたEnergy収支差が出る
+3. L2 positive controlが成立
+4. 広域光という性格を維持
+5. 高能力でも全セルで常に供給上限へ張り付く世界にしない
 
-静止祖先の理論的break-evenが `light_uptake_coef≈1.29` 付近なので、1.0/1.5/2.0で赤字側〜黒字側を跨ぐ。
+Exp08終了後に恒久defaultを決める。
 
 ### 7.2 `chem_vent_flux`
 
-目標:
+16〜24を有力default候補とするが、単純な生存率だけで決めない。
 
-```text
-世界全体: 光より小さい
-局所vent: 光より高い供給密度を取り得る
-```
+- 局所供給密度
+- population
+- source利用率
+- stock残量
+- 個体吸収ceiling
 
-16-24を有力候補とするが、Exp08で完成chemical型の人口・stock・利用率を見て確定する。
+を合わせて読む。
 
 ### 7.3 `chem_uptake`
 
 Exp08では0.5固定。
 
-chemicalを高出力化したいという理由で供給量と吸収係数を同時に上げない。
-必要なら次実験で1軸として扱う。
+`light_uptake_coef`と同種の「能力→実吸収速度」の変換係数であることを明記する。
+
+chemical_absorption=5なら現行0.5でもmatter0.8で約2.15 E/tickの潜在ceilingがあり、光明部最大約1.2を超え得る。したがって「chemicalを局所高出力にしたい」という理由だけでExp08前に上げない。
+
+Exp08後もchemical側の個体出力が不十分なら、次実験で`chem_uptake`を独立1軸として扱う。
 
 ## 8. 判定
 
 ### Phase A
 
-- L2が全候補で不成立 → light uptake係数/維持費/光供給の再監査
-- L0とL2が全候補でほぼ同じ → light_absorptionがまだ能力差として機能していない疑い
-- 係数によって明確なEnergy収支差が出る → V1.4光吸収則は機能
+- L2不成立 → light供給/吸収係数/維持費/実装を再監査
+- L0が係数にほぼ非感受 → `light_absorption`またはdemand実装が機能していない疑い
+- L0で係数に応じて赤字〜黒字の人口動態差 → 新光吸収則が機能
+- coef1.0の一時生存は初期Energy/初期繁殖の影響を考慮し、長期trendで読む
 
 ### Phase B
 
-- flux8以上でExp07と同様に成立 → surface則/公平配分変更後もV1.3chemical生態は頑健
-- 8だけ不安定、16/24成立 → 恒久defaultを16-24へ上げる根拠
-- 24まで不成立 → chemical uptake/維持費等を再監査
+- 8/16/24で成立 → V1.3chemical生態はsurface則/公平配分後も頑健
+- fluxによってpopulation/stock/利用率が系統的に変化 → default校正に利用
+- 24まで不成立 → `chem_uptake`/維持費/局所初期密度を再監査
 
-## 9. Exp08で結論しないこと
+## 9. 実行前停止条件
 
-- 光とchemicalのどちらが進化的に優秀か
-- 多様性が増えたか
-- 動物的進化が始まったか
-- chemical祖先bootstrapが解決したか
-- 光/chemicalを同時に感じたときの行動選択
+本番前に以下がGreenであること。
 
-## 10. Exp08後
+1. `v1.3-final`保存済み
+2. V1.4コード実装済み
+3. effective_surface unit test
+4. light/chemical/nutrient公平配分test
+5. nutrient同化Energy非負 / Matter保存
+6. Energy台帳保存
+7. post-moveセル参照test
+8. list順不変test
+9. V1.4 golden/CI基準ref設定
+10. Phase0全項目Green
 
-吸収則とdefault供給量が確定したら、次に:
+実装不具合のみ本番前に修正する。Phase0の算術結果を見て本書の実験条件を変更しない。
 
-1. 光+chemicalを同じ世界へ戻す前に、異種刺激を原生生物的に比較する走光性/走化性ルールを確定
-2. 通常祖先からchemical型へ進める「橋」が光存在下で生じるか診断
-3. その後に日照量の低下・時間変動・季節性等を追加
-4. エネルギーが不安定になることで移動/探索/死骸/捕食の相対価値が自然に上がるかを見る
+## 10. Exp08では結論しない
+
+- 光とchemicalの進化的優劣
+- chemical祖先bootstrap
+- 多様性
+- 動物的進化
+- 日照変動への適応
+- 光とchemicalを同時に感じた際の行動選択
+
+## 11. Exp08後
+
+1. `light_uptake_coef`と`chem_vent_flux`の恒久defaultを確定
+2. 必要なら`chem_uptake`を独立1軸で追加診断
+3. 光+chemical混合前に、未来予測を使わない原生生物的な異種刺激の無次元比較則を確定
+4. 光存在下で通常祖先からchemical経路への進化上の橋が成立するか診断
+5. その後、日照量低下・時間変動・季節性等を追加
+6. 環境ストレスにより移動・探索・死骸利用・捕食の相対価値が自然に上がるか観察
 
 動物的行動への直接ボーナスは入れない。
