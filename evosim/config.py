@@ -95,6 +95,17 @@ class Config:
     corpse_eat_rate: float = 0.5     # 摂取 = k * digestion * s
 
     # --- 行動 ---
+    # V1.5: 異種一次Energy刺激の無次元受容器応答 (docs/V1.5_異種刺激比較仕様.md)。
+    #   response(x, K) = x / (x + K)   0 <= response < 1 / 単調増加
+    # K は実行中のfield最大値やfluxから再計算せず、ここで固定する。
+    # 環境を強くしたときに知覚まで割り戻すと環境変化の効果を打ち消すため。
+    light_stimulus_half: float = 1.2       # 標準光場の最大セル光量が応答0.5
+    # 標準13セルvent (chem_vent_flux=16) の生物不在平衡 stock。
+    # 生物が占有したventの実測stockへ再校正はしない (V1.5仕様 §4)。
+    chemical_stimulus_half: float = 12.3
+    # 同点判定の許容差。広く取ると弱刺激域が一律tieになるため十分小さくする。
+    stimulus_tie_eps: float = 1e-9
+
     sense_coef: float = 25.0         # 感覚半径 = k * sensory_range [wu]
     satiety_energy_frac: float = 0.85
     idle_prob: float = 0.0           # 刺激なし時に静止する確率 (残りはランダムウォーク)

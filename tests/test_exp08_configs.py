@@ -18,6 +18,12 @@ from tools.make_exp08_configs import (CHEM_FLUXES, L2_COEF, LIGHT_COEFS,
                                       OUT_DIR, build_b, build_l0, build_l2,
                                       cases, flux_name, l0_name, l2_name)
 
+# `configs/exp08/` は実行済みExp08 (V1.4) の記録なので再生成しない。
+# V1.5以降に追加されたConfig項目は当時のファイルに存在しないため、
+# 「後から増えた項目か」だけを確認し、V1.4当時の項目は厳密一致で守る。
+POST_V14_KEYS = {"light_stimulus_half", "chemical_stimulus_half",
+                 "stimulus_tie_eps"}
+
 # Phase A内で条件ごとに変わってよい項目
 A_VARIABLE = {"light_uptake_coef", "diagnostic_gene_overrides"}
 # Phase B内で条件ごとに変わってよい項目
@@ -30,9 +36,22 @@ def load(name: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _assert_matches_generator(name: str, cfg) -> None:
+    stored = load(name)
+    generated = dataclasses.asdict(cfg)
+    added = set(generated) - set(stored)
+    assert added <= POST_V14_KEYS, (
+        f"{name}: Exp08当時に無かった項目 {added} は V1.5以降の追加分として "
+        "POST_V14_KEYS へ明示すること")
+    assert set(stored) - set(generated) == set(), (
+        f"{name}: 現行Configから消えた項目がある")
+    for key, value in stored.items():
+        assert generated[key] == value, f"{name}: {key} が生成物と一致しない"
+
+
 def test_all_configs_exist_and_match_generator():
     for name, cfg in cases():
-        assert load(name) == dataclasses.asdict(cfg), f"{name} が生成物と一致しない"
+        _assert_matches_generator(name, cfg)
 
 
 def test_case_count_is_pre_registered():
@@ -111,6 +130,6 @@ def test_intervals_are_pre_registered():
 
 
 def test_generator_functions_match_files():
-    assert dataclasses.asdict(build_l0(LIGHT_COEFS[0])) == load(l0_name(LIGHT_COEFS[0]))
-    assert dataclasses.asdict(build_l2(L2_COEF)) == load(l2_name(L2_COEF))
-    assert dataclasses.asdict(build_b(CHEM_FLUXES[0])) == load(flux_name(CHEM_FLUXES[0]))
+    _assert_matches_generator(l0_name(LIGHT_COEFS[0]), build_l0(LIGHT_COEFS[0]))
+    _assert_matches_generator(l2_name(L2_COEF), build_l2(L2_COEF))
+    _assert_matches_generator(flux_name(CHEM_FLUXES[0]), build_b(CHEM_FLUXES[0]))

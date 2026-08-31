@@ -64,6 +64,18 @@ class Simulation:
         # 系統別の累積出生数 (系統別統計用)
         self.births_by_lineage: dict[int, int] = {}
 
+        # 一次Energy刺激の選択統計 (V1.5 観測)。stats記録ごとにリセットされる
+        # 区間統計で、RNGも個体状態も進化ロジックも一切変えない。
+        #   light/chemical : 一次Energy候補として選ばれた回数
+        #   tie            : 無次元scoreが同点だった回数
+        #   walk           : 刺激が無くランダムウォークへ落ちた回数
+        #   both_events    : light/chemical両方の候補が存在した回数
+        #   *_resp_sum     : そのときの無次元response合計 (平均算出用)
+        #   chem_stock_sum : そのときのchemical stock合計 (平均算出用)
+        #   agree          : 無次元scoreの順位と実際の選択が一致した回数
+        #   lost_*         : 一次Energy候補が他刺激 (栄養/死骸/捕食) に負けた回数
+        self.stim_obs = self._new_stim_obs()
+
         # 移動量の集計 (V1.2.1 観測)。stats記録ごとにリセットされる区間統計。
         # 読み取り専用であり進化ロジックには一切使わない。
         self._move_sum = 0.0
@@ -77,6 +89,14 @@ class Simulation:
         self._spawn_initial()
         self.initial_system_energy = self.system_energy()
         self.initial_system_matter = self.system_matter()
+
+    @staticmethod
+    def _new_stim_obs() -> dict[str, float]:
+        return {"light": 0, "chemical": 0, "tie": 0, "walk": 0,
+                "both_events": 0, "agree": 0,
+                "lost_light": 0, "lost_chemical": 0,
+                "light_resp_sum": 0.0, "chem_resp_sum": 0.0,
+                "chem_stock_sum": 0.0}
 
     # ------------------------------------------------------------------
     # 初期個体群

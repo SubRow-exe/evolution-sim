@@ -23,7 +23,8 @@ DIAGNOSTIC_KEYS = {"chem_vent_flux", "diagnostic_placement",
 # `configs/exp07/` は実行済みExp07 (V1.3) の記録なので再生成しない。
 # V1.4以降に追加されたConfig項目は当時のファイルに存在しないため、
 # 「後から増えた項目か」だけを確認し、V1.3当時の項目は厳密一致で守る。
-POST_V13_KEYS = {"light_uptake_coef"}
+POST_V13_KEYS = {"light_uptake_coef", "light_stimulus_half",
+                 "chemical_stimulus_half", "stimulus_tie_eps"}
 
 
 def load(flux: float, condition: str) -> dict:
