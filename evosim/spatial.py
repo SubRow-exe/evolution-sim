@@ -49,13 +49,17 @@ def population_spatial(sim) -> dict:
 
     light = sim.world.light
     chem_mask = sim.world.chem_mask
+    hi_q = sim.hi_q_mask
     local_light = 0.0
     vent_pop = 0
+    hi_q_pop = 0
     for o in orgs:
         ix, iy = sim.world.cell_index(o.x, o.y)
         local_light += float(light[ix, iy])
         if chem_mask[ix, iy]:
             vent_pop += 1
+        if hi_q[ix, iy]:
+            hi_q_pop += 1
 
     out: dict = {}
     for b in BAND_NAMES:
@@ -64,6 +68,8 @@ def population_spatial(sim) -> dict:
     out["mean_local_light"] = round(local_light / n, 6) if n else 0.0
     out["vent_cell_population"] = vent_pop
     out["vent_cell_frac"] = round(vent_pop / n, 6) if n else 0.0
+    # high-Q領域滞在率 (Exp10 §4/§5 の主観測)。面積で上位25%と定義してある
+    out["hi_q_frac"] = round(hi_q_pop / n, 6) if n else 0.0
     return out
 
 

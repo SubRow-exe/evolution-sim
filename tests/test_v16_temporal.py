@@ -384,7 +384,9 @@ def test_observations_are_finite():
     for _ in range(200):
         sim.step()
     for k, v in sim.stim_obs.items():
-        assert math.isfinite(v), f"{k} が有限でない"
+        vals = v if isinstance(v, list) else [v]
+        for i, x in enumerate(vals):
+            assert math.isfinite(x), f"{k}[{i}] が有限でない"
 
 
 # --- 移動が実際に起きること ---------------------------------------------
@@ -400,3 +402,41 @@ def test_v16_actually_moves_unlike_v15():
         sim.step()
     assert sim._move_count > 0
     assert sim._move_sum / sim._move_count > 0.0
+
+
+# --- vent距離帯別の観測 (Exp10 §5.4) -----------------------------------
+
+def test_vent_band_partitions_the_grid():
+    """距離帯は全セルを重複なく覆い、vent中心は最も内側の帯になる。"""
+    from evosim.world import VENT_BAND_NAMES
+    cfg = Config()
+    w = World(cfg, np.random.default_rng(1))
+    assert w.vent_band.shape == (cfg.grid_w, cfg.grid_h)
+    assert set(np.unique(w.vent_band).tolist()) <= set(range(len(VENT_BAND_NAMES)))
+    for vx, vy in w.vent_centers:
+        assert w.vent_band[vx, vy] == 0
+
+
+def test_band_observations_sum_to_the_totals():
+    """帯別の内訳が全体の観測と一致する (取りこぼし・二重計上が無い)。"""
+    sim = Simulation(Config(stats_interval=0), 1)
+    for _ in range(120):
+        sim.step()
+    obs = sim.stim_obs
+    assert sum(obs["band_n"]) == obs["stim_events"]
+    assert sum(obs["band_dq_light"]) == pytest.approx(obs["dq_light_sum"],
+                                                      rel=1e-9, abs=1e-12)
+    assert sum(obs["band_dq_chem"]) == pytest.approx(obs["dq_chem_sum"],
+                                                     rel=1e-9, abs=1e-12)
+    assert sum(obs["band_sigma_eff"]) == pytest.approx(obs["sigma_eff_sum"],
+                                                       rel=1e-9, abs=1e-12)
+
+
+def test_band_observations_do_not_change_results():
+    """帯別観測はRNGにも結果にも影響しない (同一seedで再現する)。"""
+    a = Simulation(Config(), 8)
+    b = Simulation(Config(), 8)
+    for _ in range(120):
+        a.step()
+        b.step()
+    assert fingerprint(a) == fingerprint(b)

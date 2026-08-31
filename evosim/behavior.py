@@ -163,6 +163,11 @@ def decide_and_move(org, sim) -> float:
         turn_factor = 2.0 / (1.0 + math.exp(z))
 
     # 観測 (RNG非消費・行動へ非フィードバック)
+    band = int(world.vent_band[ix0, iy0])
+    obs["band_n"][band] += 1
+    obs["band_dq_light"][band] += d_l
+    obs["band_dq_chem"][band] += d_c
+    obs["band_sigma_eff"][band] += cfg.wander_turn_sigma * turn_factor
     obs["stim_events"] += 1
     obs["q_sum"] += q_now
     obs["q_mem_sum"] += q_mem

@@ -14,6 +14,11 @@ import numpy as np
 
 from .config import Config
 
+# vent距離帯の境界 [cell] (観測専用)。band = digitize(距離, これ)
+#   band 0: 0-1 / 1: 1-2 / 2: 2-4 / 3: 4+
+VENT_BAND_EDGES = (1.0, 2.0, 4.0)
+VENT_BAND_NAMES = ("d0_1", "d1_2", "d2_4", "d4plus")
+
 
 def _build_vertical_light(cfg: Config) -> np.ndarray:
     """V1.1 Control の光場。北(y=0)が明るい線形勾配。
@@ -120,6 +125,15 @@ class World:
             for ix, iy in cells:
                 self.chem_source_flux[ix, iy] += share
         self.chem_mask = self.chem_source_flux > 0.0
+        # vent中心からの距離帯 (観測専用・静的)。Exp10 §5.4 の層別集計に使う。
+        #   0: 0-1 cell / 1: 1-2 / 2: 2-4 / 3: 4+ (ventが無ければ全て3)
+        self.vent_band = np.full((gw, gh), len(VENT_BAND_EDGES), dtype=np.int8)
+        if self.vent_centers:
+            ii, jj = np.meshgrid(np.arange(gw), np.arange(gh), indexing="ij")
+            d = np.full((gw, gh), np.inf)
+            for vx, vy in self.vent_centers:
+                d = np.minimum(d, np.hypot(ii - vx, jj - vy))
+            self.vent_band = np.digitize(d, VENT_BAND_EDGES).astype(np.int8)
         # 世界全体の外部chemical供給量/tick (不変)。台帳と検証用
         self.chem_source_total = float(self.chem_source_flux.sum())
         # 初期stockは生物不在の平衡値 = 更新式の不動点。
