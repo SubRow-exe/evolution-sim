@@ -1,7 +1,11 @@
 # Exp09 実験計画 — V1.5 異種一次Energy刺激比較則の診断
 
 更新: 2026-08-31
-状態: **事前登録 / Claudeレビュー判断反映済み / V1.5実装前**
+状態: **実行完了 / Green**
+
+実測結果:
+- `docs/Exp09_結果考察.md`
+- `experiments/exp09_actions_20260831_085922/NOTES.md`
 
 正本:
 - `docs/V1.4_総括.md`
