@@ -20,6 +20,11 @@ from tools.make_exp07_configs import (CONDITIONS, FLUXES, OUT_DIR, build,
 DIAGNOSTIC_KEYS = {"chem_vent_flux", "diagnostic_placement",
                    "diagnostic_gene_overrides", "fixed_genes"}
 
+# `configs/exp07/` は実行済みExp07 (V1.3) の記録なので再生成しない。
+# V1.4以降に追加されたConfig項目は当時のファイルに存在しないため、
+# 「後から増えた項目か」だけを確認し、V1.3当時の項目は厳密一致で守る。
+POST_V13_KEYS = {"light_uptake_coef"}
+
 
 def load(flux: float, condition: str) -> dict:
     path = OUT_DIR / config_name(flux, condition)
@@ -30,7 +35,17 @@ def load(flux: float, condition: str) -> dict:
 def test_all_configs_exist_and_match_generator():
     for flux in FLUXES:
         for cond in CONDITIONS:
-            assert load(flux, cond) == dataclasses.asdict(build(flux, cond))
+            stored = load(flux, cond)
+            generated = dataclasses.asdict(build(flux, cond))
+            added = set(generated) - set(stored)
+            assert added <= POST_V13_KEYS, (
+                f"{config_name(flux, cond)}: Exp07当時に無かった項目 {added} は "
+                "V1.4以降の追加分としてPOST_V13_KEYSへ明示すること")
+            assert set(stored) - set(generated) == set(), (
+                f"{config_name(flux, cond)}: 現行Configから消えた項目がある")
+            for key, value in stored.items():
+                assert generated[key] == value, (
+                    f"{config_name(flux, cond)}: {key} が生成物と一致しない")
 
 
 def test_only_flux_and_diagnostics_differ():

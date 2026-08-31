@@ -21,6 +21,9 @@ from .organism import Organism
 from .recorder import Recorder
 from .world import World
 
+# これ未満の吸収能力は「器官を持たない」とみなす (V1.3以前と同じ閾値)
+ABILITY_EPS = 1e-6
+
 
 class Simulation:
     def __init__(self, cfg: Config, seed: int, run_dir=None):
@@ -152,21 +155,19 @@ class Simulation:
         self.energy_in_cum += chem_influx
         self.energy_out_cum += chem_loss
 
-        # 2. 空間ハッシュと光分配重みの構築 (tick開始時の位置スナップショット)
+        # 2. 空間ハッシュ (tick開始時の位置スナップショット)。
+        #    行動決定はこの時点の刺激場・配置を見る。
         self._build_hashes()
-        photo_w = self._photo_weights()
 
-        # 3. 個体処理 (リスト順で決定的)
-        newborns: list[Organism] = []
+        # 3. 全個体の行動決定と移動 (リスト順で決定的)
+        moved: list[tuple[Organism, float]] = []
         for org in self.organisms:
             if not org.alive:
                 continue
             org.age += 1
             org.attacked_recently = False
-            cell0 = self.world.cell_index(org.x, org.y)
-
-            # 行動 + 移動
             v = behavior.decide_and_move(org, self)
+            moved.append((org, v))
             # 移動量の集計 (V1.2.1 観測)。読み取り専用で、RNGにも
             # 個体状態にも一切フィードバックしない。
             self._move_sum += v
@@ -176,8 +177,18 @@ class Simulation:
             self._movecnt_by_lineage[org.lineage_id] = (
                 self._movecnt_by_lineage.get(org.lineage_id, 0) + 1)
 
-            # 栄養獲得
-            self._absorb(org, cell0, photo_w)
+        # 4. 移動後の空間ハッシュを再構築 (V1.4)。
+        #    以降の吸収・局所相互作用はすべて移動後の位置で判定する。
+        self._build_hashes()
+
+        # 5. 環境フィールドからの吸収 (セル単位の需要比例配分・個体順に非依存)
+        self._absorb_fields()
+
+        # 6. 局所相互作用〜繁殖 (従来どおり個体逐次・リスト順で決定的)
+        newborns: list[Organism] = []
+        for org, v in moved:
+            if not org.alive:
+                continue
             self._eat_corpse(org)
             self._predate(org)
 
@@ -198,14 +209,14 @@ class Simulation:
             if child is not None:
                 newborns.append(child)
 
-        # 4. 死亡個体の除去・新生児の追加
+        # 7. 死亡個体の除去・新生児の追加
         self.organisms = [o for o in self.organisms if o.alive]
         self.organisms.extend(newborns)
 
-        # 5. 死骸の分解・散逸
+        # 8. 死骸の分解・散逸
         self._decay_corpses()
 
-        # 6. 記録
+        # 9. 記録
         if self.recorder:
             if self.tick % cfg.stats_interval == 0:
                 self.recorder.stats(self)
@@ -225,69 +236,145 @@ class Simulation:
             key = self.world.cell_index(c.x, c.y)
             self.corpse_hash.setdefault(key, []).append(c)
 
-    def _photo_weights(self) -> dict[tuple[int, int], float]:
-        """セルごとの光吸収重みの合計 (光の分配 = 空間競争)。"""
-        cfg = self.cfg
-        weights: dict[tuple[int, int], float] = {}
-        for key, orgs in self.org_hash.items():
-            w = 0.0
-            for o in orgs:
-                a = o.genome[LIGHT_ABS]
-                if a > 1e-6:
-                    w += a * o.matter * o.phi(cfg.damage_capacity, cfg.phi_floor)
-            if w > 0.0:
-                weights[key] = w
-        return weights
-
     # ------------------------------------------------------------------
-    # 栄養獲得
+    # 環境フィールドからの吸収 (V1.4)
 
-    def _absorb(self, org: Organism, cell0: tuple[int, int],
-                photo_w: dict[tuple[int, int], float]) -> None:
+    def _absorb_fields(self) -> None:
+        """光・化学・無機栄養をセル単位で配分する (V1.4 §4-6)。
+
+        セルごとに全個体の要求量 (demand) を先に求め、供給が足りなければ
+        需要比例で縮小する。総取得は必ず ``min(供給, 総需要)`` になり、
+        個体リスト順は配分結果に影響しない (V1.3以前の先着biasを廃止)。
+
+        資源間の順序 (光 → 化学 → 無機栄養) はV1.3以前と同じ。有効表面積と
+        健全度はセル処理の開始時点で一度だけ求め、3資源で共有する。
+        """
         cfg = self.cfg
-        g = org.genome
-        phi = org.phi(cfg.damage_capacity, cfg.phi_floor)
-        e_max = org.energy_max(cfg.energy_capacity)
+        dc, pf = cfg.damage_capacity, cfg.phi_floor
+        for key, orgs in self.org_hash.items():
+            phis = [o.phi(dc, pf) for o in orgs]
+            areas = [physiology.effective_surface(o.matter) for o in orgs]
+            self._absorb_light(orgs, phis, areas, key)
+            self._absorb_chemical(orgs, phis, areas, key)
+            self._absorb_nutrient(orgs, phis, areas, key)
 
-        # 光 (tick開始時のセルで分配; 使われない光は流入しない=散逸)
-        w_sum = photo_w.get(cell0, 0.0)
-        my_w = g[LIGHT_ABS] * org.matter * phi
-        if w_sum > 0.0 and my_w > 0.0:
-            flux = float(self.world.light[cell0])
-            share = flux * my_w / w_sum
-            gain = min(share, max(0.0, e_max - org.energy))
-            org.energy += gain
-            self.energy_in_cum += gain
-            self.flows["light"] += gain
+    @staticmethod
+    def _demand_scale(demands: list[float], supply: float) -> float:
+        """需要比例配分の縮小率。総需要が供給以下なら1.0 (未利用分は残る)。
 
-        # 化学 (現在セルのストックから; フィールド→個体の移動なので流入計上なし)
-        ix, iy = self.world.cell_index(org.x, org.y)
-        if g[CHEM_ABS] > 1e-6:
-            stock = float(self.world.chemical[ix, iy])
-            if stock > 0.0:
-                rate = cfg.chem_uptake * g[CHEM_ABS] * org.matter * phi
-                u = min(rate, stock, max(0.0, e_max - org.energy))
-                org.energy += u
-                self.world.chemical[ix, iy] = stock - u
-                self.flows["chemical"] += u
+        合計に ``math.fsum`` を使うので、個体の並び順を変えても縮小率は
+        ビット単位で同じになる。
+        """
+        if supply <= 0.0:
+            return 0.0
+        total = math.fsum(demands)
+        if total <= 0.0:
+            return 0.0
+        return min(1.0, supply / total)
 
-        # 無機栄養 (物質; 吸収には同化エネルギーコスト)
-        matter_cap = cfg.matter_cap_frac * org.target_size
-        if g[NUTRIENT_ABS] > 1e-6 and org.matter < matter_cap:
-            stock = float(self.world.nutrients[ix, iy])
-            if stock > 0.0:
-                rate = cfg.nutrient_uptake * g[NUTRIENT_ABS] * org.matter * phi
-                u = min(rate, stock, matter_cap - org.matter)
-                cost = cfg.matter_absorb_cost * u
-                if cost > org.energy:  # 払える分だけ吸収
-                    u = org.energy / cfg.matter_absorb_cost
-                    cost = org.energy
-                if u > 0.0:
-                    org.matter += u
-                    org.energy -= cost
-                    self.world.nutrients[ix, iy] = stock - u
-                    self.energy_out_cum += cost
-                    self.flows["nutrient"] += u
+    def _absorb_light(self, orgs, phis, areas, key) -> None:
+        """光: 個体の変換能力が上限。未利用光はそのtickで散逸する。"""
+        cfg = self.cfg
+        flux = float(self.world.light[key])
+        if flux <= 0.0:
+            return
+        coef = cfg.light_uptake_coef
+        cap = cfg.energy_capacity
+        demands = []
+        for o, phi, area in zip(orgs, phis, areas):
+            a = o.genome[LIGHT_ABS]
+            if a <= ABILITY_EPS:
+                demands.append(0.0)
+                continue
+            raw = coef * a * area * phi
+            demands.append(min(raw, max(0.0, o.energy_max(cap) - o.energy)))
+        scale = self._demand_scale(demands, flux)
+        if scale <= 0.0:
+            return
+        gains = []
+        for o, d in zip(orgs, demands):
+            if d <= 0.0:
+                continue
+            gain = d * scale
+            o.energy += gain
+            gains.append(gain)
+        taken = math.fsum(gains)
+        self.energy_in_cum += taken
+        self.flows["light"] += taken
+
+    def _absorb_chemical(self, orgs, phis, areas, key) -> None:
+        """化学: 局所stockから吸収 (フィールド→個体の移動なので流入計上なし)。"""
+        cfg = self.cfg
+        stock = float(self.world.chemical[key])
+        if stock <= 0.0:
+            return
+        rate = cfg.chem_uptake
+        cap = cfg.energy_capacity
+        demands = []
+        for o, phi, area in zip(orgs, phis, areas):
+            a = o.genome[CHEM_ABS]
+            if a <= ABILITY_EPS:
+                demands.append(0.0)
+                continue
+            raw = rate * a * area * phi
+            demands.append(min(raw, max(0.0, o.energy_max(cap) - o.energy)))
+        scale = self._demand_scale(demands, stock)
+        if scale <= 0.0:
+            return
+        gains = []
+        for o, d in zip(orgs, demands):
+            if d <= 0.0:
+                continue
+            gain = d * scale
+            o.energy += gain
+            gains.append(gain)
+        taken = math.fsum(gains)
+        self.world.chemical[key] = max(0.0, stock - taken)
+        self.flows["chemical"] += taken
+
+    def _absorb_nutrient(self, orgs, phis, areas, key) -> None:
+        """無機栄養 (物質): 吸収には同化エネルギーコストがかかる。
+
+        配分前の要求量を、身体物質の余地と「現在のエネルギーで同化コストを
+        払える量」でもcapする。したがって配分後にEnergyが負にならない。
+        """
+        cfg = self.cfg
+        stock = float(self.world.nutrients[key])
+        if stock <= 0.0:
+            return
+        rate = cfg.nutrient_uptake
+        acost = cfg.matter_absorb_cost
+        demands = []
+        for o, phi, area in zip(orgs, phis, areas):
+            a = o.genome[NUTRIENT_ABS]
+            if a <= ABILITY_EPS:
+                demands.append(0.0)
+                continue
+            room = cfg.matter_cap_frac * o.target_size - o.matter
+            if room <= 0.0:
+                demands.append(0.0)
+                continue
+            affordable = o.energy / acost
+            demands.append(min(rate * a * area * phi, room, affordable))
+        scale = self._demand_scale(demands, stock)
+        if scale <= 0.0:
+            return
+        gains = []
+        for o, d in zip(orgs, demands):
+            if d <= 0.0:
+                continue
+            u = d * scale
+            cost = acost * u
+            if cost > o.energy:  # 浮動小数の端数対策 (demand段階でcap済み)
+                u = o.energy / acost
+                cost = o.energy
+            o.matter += u
+            o.energy -= cost
+            self.energy_out_cum += cost
+            gains.append(u)
+        taken = math.fsum(gains)
+        self.world.nutrients[key] = max(0.0, stock - taken)
+        self.flows["nutrient"] += taken
 
     def _eat_corpse(self, org: Organism) -> None:
         cfg = self.cfg

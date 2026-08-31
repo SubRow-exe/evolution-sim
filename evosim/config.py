@@ -23,6 +23,9 @@ class Config:
     # "vertical" (V1.1 Control) | "uniform" | "high_contrast_vertical" (V1.2)
     light_pattern: str = "vertical"
     light_floor: float = 0.3         # vertical 勾配の下限割合
+    # V1.4: 光利用能力 → 個体の1 tickあたり最大変換速度への変換係数。
+    # 恒久defaultではない (Exp08 Phase Aで校正する暫定値)。
+    light_uptake_coef: float = 2.0
 
     # --- V1.2: high_contrast_vertical の形状 ---
     # 北から「明部plateau → 線形遷移 → 暗部」の3帯を作る。

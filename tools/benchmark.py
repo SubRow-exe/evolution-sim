@@ -67,9 +67,11 @@ QUICK = {
 PHASE_MAP = {
     ("world.py", "update"): "環境更新",
     ("simulation.py", "_build_hashes"): "空間インデックス構築",
-    ("simulation.py", "_photo_weights"): "光の分配計算",
     ("behavior.py", "decide_and_move"): "行動判断 (AI) と移動",
-    ("simulation.py", "_absorb"): "資源吸収",
+    ("simulation.py", "_absorb_fields"): "資源吸収 (セル配分)",
+    ("simulation.py", "_absorb_light"): "資源吸収 (光)",
+    ("simulation.py", "_absorb_chemical"): "資源吸収 (化学)",
+    ("simulation.py", "_absorb_nutrient"): "資源吸収 (無機栄養)",
     ("simulation.py", "_eat_corpse"): "死骸摂取 (接触判定)",
     ("simulation.py", "_predate"): "捕食 (接触判定)",
     ("physiology.py", "maintenance_and_movement"): "生理 (代謝・移動コスト)",
