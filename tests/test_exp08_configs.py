@@ -22,7 +22,9 @@ from tools.make_exp08_configs import (CHEM_FLUXES, L2_COEF, LIGHT_COEFS,
 # V1.5以降に追加されたConfig項目は当時のファイルに存在しないため、
 # 「後から増えた項目か」だけを確認し、V1.4当時の項目は厳密一致で守る。
 POST_V14_KEYS = {"light_stimulus_half", "chemical_stimulus_half",
-                 "stimulus_tie_eps"}
+                 "stimulus_tie_eps",
+                 # V1.6 temporal biased random walk
+                 "memory_tau", "response_gain"}
 
 # Phase A内で条件ごとに変わってよい項目
 A_VARIABLE = {"light_uptake_coef", "diagnostic_gene_overrides"}

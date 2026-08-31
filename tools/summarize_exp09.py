@@ -14,6 +14,13 @@ Exp09は光とchemicalの優劣を測る実験ではない。V1.5の異種刺激
 そのうえで選択率・response・stock・vent滞在・明暗帯滞在を並べる。
 
 出力は機械的な整理であり、結論は人が決める。
+
+**このツールはV1.5の行動則を前提にした履歴用ツールである。**
+V1.6で一次EnergyのWTA比較則そのものが無くなったため、現在のmainでは
+動作しない (bench_exp09は観測カウンタが変わったため実行不可)。
+Exp09の再現は `v1.5-final` branchで行うこと。
+Exp09の実測結果は docs/Exp09_結果考察.md と
+experiments/exp09_actions_20260831_085922/ に保存済み。
 """
 from __future__ import annotations
 

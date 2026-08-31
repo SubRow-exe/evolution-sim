@@ -104,7 +104,26 @@ class Config:
     # 生物が占有したventの実測stockへ再校正はしない (V1.5仕様 §4)。
     chemical_stimulus_half: float = 12.3
     # 同点判定の許容差。広く取ると弱刺激域が一律tieになるため十分小さくする。
+    # V1.6では一次Energyのwinner-take-all比較を廃止したため未使用だが、
+    # V1.5 Configの読み書き互換のために残す。
     stimulus_tie_eps: float = 1e-9
+
+    # V1.6: temporal biased random walk (docs/V1.6_行動則設計案.md)。
+    # 一次Energyは「周囲の最良セルへ向かう」のをやめ、現在地の知覚Qの
+    # 時間変化 dQ で既存random walkの曲がり幅だけを変える。
+    #
+    #   Q          = (aL*R_light + aC*R_chem) / (aL + aC)   能力加重平均
+    #   dQ         = Q_now - Q_memory
+    #   alpha      = 1 - exp(-1 / memory_tau)               EMA更新率
+    #   turn_factor= 2 / (1 + exp(response_gain * dQ))      (0, 2)
+    #   sigma_eff  = wander_turn_sigma * turn_factor
+    #
+    # memory_tau (短期記憶の時定数 [tick]) と
+    # response_gain (dQ が曲がり幅へ効く強さ [無次元]) は
+    # **Exp10で校正する暫定値**であり、恒久defaultではない
+    # (docs/Exp10_実験計画案.md §4.3 の候補格子の中央付近を仮置き)。
+    memory_tau: float = 10.0
+    response_gain: float = 16.0
 
     sense_coef: float = 25.0         # 感覚半径 = k * sensory_range [wu]
     satiety_energy_frac: float = 0.85

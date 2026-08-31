@@ -68,10 +68,15 @@ class Recorder:
             *[f"frac_{b}_band" for b in BAND_NAMES],
             "mean_local_light", "vent_cell_population", "vent_cell_frac",
             "mean_move_per_org_tick",
-            # 一次Energy刺激の選択統計 (V1.5 観測。区間集計)
-            "sel_light", "sel_chemical", "sel_tie", "sel_walk",
-            "sel_both_events", "sel_agree", "sel_lost_light", "sel_lost_chemical",
-            "sel_light_resp_mean", "sel_chem_resp_mean", "sel_chem_stock_mean",
+            # V1.6 temporal sensing の観測 (区間集計)。
+            # 平均は「知覚が起きた回数 stim_events」で割る。
+            "sel_walk", "stim_events",
+            "q_mean", "q_mem_mean", "dq_mean", "dq_abs_mean",
+            "dq_light_mean", "dq_chem_mean",
+            "turn_factor_mean", "sigma_eff_mean",
+            "r_light_mean", "r_chem_mean",
+            "dq_pos", "dq_neg", "dq_zero",
+            "turn_factor_pos_mean", "turn_factor_neg_mean",
             *[f"mean_{n}" for n in GENE_NAMES],
             *[f"var_{n}" for n in GENE_NAMES],
         ]
@@ -149,12 +154,24 @@ class Recorder:
         mean_move = (round(sim._move_sum / sim._move_count, 6)
                      if sim._move_count else "")
 
-        # 一次Energy刺激の選択統計 (V1.5 観測)
+        # V1.6 temporal sensing の観測
         obs = sim.stim_obs
-        nb = obs["both_events"]
-        obs_light_resp = round(obs["light_resp_sum"] / nb, 6) if nb else ""
-        obs_chem_resp = round(obs["chem_resp_sum"] / nb, 6) if nb else ""
-        obs_chem_stock = round(obs["chem_stock_sum"] / nb, 6) if nb else ""
+        ns = obs["stim_events"]
+
+        def _mean(key: str, denom: float) -> object:
+            return round(obs[key] / denom, 8) if denom else ""
+
+        stim_cols = [
+            obs["walk"], ns,
+            _mean("q_sum", ns), _mean("q_mem_sum", ns),
+            _mean("dq_sum", ns), _mean("dq_abs_sum", ns),
+            _mean("dq_light_sum", ns), _mean("dq_chem_sum", ns),
+            _mean("turn_factor_sum", ns), _mean("sigma_eff_sum", ns),
+            _mean("r_light_sum", ns), _mean("r_chem_sum", ns),
+            obs["dq_pos"], obs["dq_neg"], obs["dq_zero"],
+            _mean("turn_factor_pos_sum", obs["dq_pos"]),
+            _mean("turn_factor_neg_sum", obs["dq_neg"]),
+        ]
 
         # 系統別集計 (改善方針 Ver.1.2 §4)
         by_lineage: dict[int, list] = {}
@@ -202,10 +219,7 @@ class Recorder:
             *[sp_pop[f"frac_{b}_band"] for b in BAND_NAMES],
             sp_pop["mean_local_light"], sp_pop["vent_cell_population"],
             sp_pop["vent_cell_frac"], mean_move,
-            obs["light"], obs["chemical"], obs["tie"], obs["walk"],
-            obs["both_events"], obs["agree"],
-            obs["lost_light"], obs["lost_chemical"],
-            obs_light_resp, obs_chem_resp, obs_chem_stock,
+            *stim_cols,
             *[round(float(v), 6) for v in gmean],
             *[round(float(v), 6) for v in gvar],
         ]

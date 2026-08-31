@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from .config import Config
@@ -100,10 +102,14 @@ class World:
         # 化学エネルギー (V1.3): 地質source field と局所stock。
         # vent中心の抽選はV1.2と同じ乱数消費 (1 ventにつき整数2つ) を保つ。
         self.chem_source_flux = np.zeros((gw, gh))
+        # vent中心のセル座標。観測 (vent距離帯別集計) 専用の記録で、
+        # 乱数消費も field の内容も変えない。
+        self.vent_centers: list[tuple[int, int]] = []
         r = cfg.vent_radius_cells
         for _ in range(cfg.n_vents):
             vx = int(rng.integers(0, gw))
             vy = int(rng.integers(0, gh))
+            self.vent_centers.append((vx, vy))
             cells = [(ix, iy)
                      for ix in range(max(0, vx - r), min(gw, vx + r + 1))
                      for iy in range(max(0, vy - r), min(gh, vy + r + 1))
@@ -146,6 +152,57 @@ class World:
     def cell_center(self, ix: int, iy: int) -> tuple[float, float]:
         c = self.cfg.cell_size
         return (ix + 0.5) * c, (iy + 0.5) * c
+
+    # --- 知覚 (V1.6) ---
+
+    def sample(self, arr: np.ndarray, x: float, y: float) -> float:
+        """連続座標 (x, y) における field 値を双線形補間で返す (V1.6 §2.1)。
+
+        **知覚専用**である。吸収・供給・損失はV1.5以前のままセル単位で行う。
+
+        なぜ必要か (docs/V1.6_Exp10_レビュー.md A-2):
+        field はセル内一定 (piecewise constant) なので、そのまま読むと
+        同じセルに留まる約24 tickの間 `Q_now - Q_memory` が厳密に0になり、
+        時間比較による走性が原理的に働かない。知覚だけを空間連続にする。
+
+        補間はセル**中心**を格子点とする。したがってセル中心では元の
+        field値と厳密に一致する。world端では最外セルの値へ clamp するので
+        境界でも連続で、外挿はしない。
+        """
+        c = self._cell_size
+        fx = x / c - 0.5
+        fy = y / c - 0.5
+        i0 = math.floor(fx)
+        j0 = math.floor(fy)
+        tx = fx - i0
+        ty = fy - j0
+        # 端は最外セルへ clamp。i0 == i1 になると tx が効かず値が一定になる
+        i0c = 0 if i0 < 0 else (self._ix_max if i0 > self._ix_max else i0)
+        i1c = 0 if i0 + 1 < 0 else (self._ix_max if i0 + 1 > self._ix_max else i0 + 1)
+        j0c = 0 if j0 < 0 else (self._iy_max if j0 > self._iy_max else j0)
+        j1c = 0 if j0 + 1 < 0 else (self._iy_max if j0 + 1 > self._iy_max else j0 + 1)
+        v00 = arr[i0c, j0c]
+        v10 = arr[i1c, j0c]
+        v01 = arr[i0c, j1c]
+        v11 = arr[i1c, j1c]
+        return float((v00 * (1.0 - tx) + v10 * tx) * (1.0 - ty)
+                     + (v01 * (1.0 - tx) + v11 * tx) * ty)
+
+    def vent_distance_cells(self, x: float, y: float) -> float:
+        """最寄りvent中心までの距離 [cell]。観測専用 (Exp10の距離帯別集計)。
+
+        ventが1つも無い世界では inf を返す。
+        """
+        if not self.vent_centers:
+            return float("inf")
+        c = self.cfg.cell_size
+        best = float("inf")
+        for vx, vy in self.vent_centers:
+            cx, cy = (vx + 0.5) * c, (vy + 0.5) * c
+            d2 = (x - cx) ** 2 + (y - cy) ** 2
+            if d2 < best:
+                best = d2
+        return math.sqrt(best) / c
 
     # --- 毎tick更新 ---
 

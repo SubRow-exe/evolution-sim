@@ -75,6 +75,11 @@ class Simulation:
         #   agree          : 無次元scoreの順位と実際の選択が一致した回数
         #   lost_*         : 一次Energy候補が他刺激 (栄養/死骸/捕食) に負けた回数
         self.stim_obs = self._new_stim_obs()
+        # V1.6 短期記憶のEMA更新率。alpha = 1 - exp(-1/tau)。
+        # tick毎に exp を呼ばないよう __init__ で1度だけ求める。
+        # tau <= 0 は「記憶しない」= 常に現在値 (alpha = 1)。
+        tau = cfg.memory_tau
+        self.stim_alpha = 1.0 if tau <= 0.0 else 1.0 - math.exp(-1.0 / tau)
 
         # 移動量の集計 (V1.2.1 観測)。stats記録ごとにリセットされる区間統計。
         # 読み取り専用であり進化ロジックには一切使わない。
@@ -92,11 +97,20 @@ class Simulation:
 
     @staticmethod
     def _new_stim_obs() -> dict[str, float]:
-        return {"light": 0, "chemical": 0, "tie": 0, "walk": 0,
-                "both_events": 0, "agree": 0,
-                "lost_light": 0, "lost_chemical": 0,
-                "light_resp_sum": 0.0, "chem_resp_sum": 0.0,
-                "chem_stock_sum": 0.0}
+        """V1.6 temporal sensing の観測。RNGを消費せず行動へ戻さない。
+
+        `walk` はV1.5から引き継ぎ。それ以外はV1.6で入れ替えた
+        (一次EnergyのWTAが無くなったので light/chemical選択回数は消える)。
+        """
+        return {"walk": 0,
+                "stim_events": 0,
+                "q_sum": 0.0, "q_mem_sum": 0.0,
+                "dq_sum": 0.0, "dq_abs_sum": 0.0,
+                "dq_light_sum": 0.0, "dq_chem_sum": 0.0,
+                "turn_factor_sum": 0.0, "sigma_eff_sum": 0.0,
+                "r_light_sum": 0.0, "r_chem_sum": 0.0,
+                "dq_pos": 0, "dq_neg": 0, "dq_zero": 0,
+                "turn_factor_pos_sum": 0.0, "turn_factor_neg_sum": 0.0}
 
     # ------------------------------------------------------------------
     # 初期個体群

@@ -23,6 +23,13 @@ Phase 0-5 (単独sourceが `v1.4-final` と完全一致) は git worktree を使
 
 Phase A (§6): A1 light-only / A2 chemical-only / A3 等価刺激・tie /
 A4 光専門型 / A5 chemical専門型 / A6 両用型の環境依存切替。
+
+**このツールはV1.5の行動則を前提にした履歴用ツールである。**
+V1.6で一次EnergyのWTA比較則そのものが無くなったため、現在のmainでは
+動作しない (bench_exp09は観測カウンタが変わったため実行不可)。
+Exp09の再現は `v1.5-final` branchで行うこと。
+Exp09の実測結果は docs/Exp09_結果考察.md と
+experiments/exp09_actions_20260831_085922/ に保存済み。
 """
 from __future__ import annotations
 
