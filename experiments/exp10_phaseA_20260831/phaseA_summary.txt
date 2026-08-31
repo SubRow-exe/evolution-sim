@@ -1,0 +1,78 @@
+Phase A: 3,900 run / 20 seed / 2,000 tick / 100 個体
+判定: seed比率 80% 以上 / high-Q改善量中央値 +5 pp 以上 / K0のWelch |t| < 2.0
+
+=== high-Q領域滞在率 (中央値。tau=10固定) ===
+env             phenotype         g=0      g=4     g=16     g=64    g=256
+K0_uniform      lightspec      1.0000   1.0000   1.0000   1.0000   1.0000
+K0_uniform      chemspec       1.0000   1.0000   1.0000   1.0000   1.0000
+K0_uniform      generalist     1.0000   1.0000   1.0000   1.0000   1.0000
+K1_light_Y      lightspec      0.2444   0.2472   0.2563   0.2960   0.5732
+K1_light_Y      chemspec       0.2444   0.2448   0.2461   0.2515   0.2743
+K1_light_Y      generalist     0.2444   0.2461   0.2512   0.2731   0.3877
+K2_chem_X       lightspec      0.2301   0.2306   0.2320   0.2395   0.2694
+K2_chem_X       chemspec       0.2301   0.2336   0.2458   0.2893   0.5913
+K2_chem_X       generalist     0.2301   0.2319   0.2390   0.2679   0.3809
+K3_orthogonal   lightspec      0.2369   0.2412   0.2559   0.3133   0.5942
+K3_orthogonal   chemspec       0.2409   0.2436   0.2536   0.2967   0.6086
+K3_orthogonal   generalist     0.2432   0.2476   0.2595   0.3180   0.5763
+K4_conflict     lightspec      0.2444   0.2461   0.2509   0.2763   0.4386
+K4_conflict     chemspec       0.2534   0.2550   0.2613   0.2861   0.4991
+K4_conflict     generalist     0.2397   0.2419   0.2482   0.2799   0.4922
+
+=== 集団重心drift [cell] (中央値。tau=10固定) ===
+env             phenotype     axis      g=0      g=4     g=16     g=64    g=256
+K0_uniform      lightspec        x    -0.06    -0.06    -0.06    -0.06    -0.06
+K0_uniform      lightspec        y    -0.01    -0.01    -0.01    -0.01    -0.01
+K0_uniform      chemspec         x    -0.06    -0.06    -0.06    -0.06    -0.06
+K0_uniform      chemspec         y    -0.01    -0.01    -0.01    -0.01    -0.01
+K0_uniform      generalist       x    -0.06    -0.06    -0.06    -0.06    -0.06
+K0_uniform      generalist       y    -0.01    -0.01    -0.01    -0.01    -0.01
+K1_light_Y      lightspec        x    -0.06    -0.01     0.02     0.08     0.17
+K1_light_Y      lightspec        y    -0.01     0.32     1.27     5.32    16.45
+K1_light_Y      chemspec         x    -0.06    -0.05    -0.03     0.04     0.09
+K1_light_Y      chemspec         y    -0.01     0.04     0.19     0.78     3.14
+K1_light_Y      generalist       x    -0.06    -0.03     0.04     0.07     0.21
+K1_light_Y      generalist       y    -0.01     0.18     0.75     3.00    11.03
+K2_chem_X       lightspec        x    -0.06     0.01     0.23     1.05     3.87
+K2_chem_X       lightspec        y    -0.01    -0.01    -0.02     0.06     0.10
+K2_chem_X       chemspec         x    -0.06     0.43     1.69     6.25    17.05
+K2_chem_X       chemspec         y    -0.01    -0.02     0.14    -0.02     0.02
+K2_chem_X       generalist       x    -0.06     0.22     1.01     3.71    12.02
+K2_chem_X       generalist       y    -0.01    -0.02     0.05     0.07    -0.12
+K3_orthogonal   lightspec        x    -0.06     0.06     0.28     1.16     4.23
+K3_orthogonal   lightspec        y    -0.01     0.32     1.29     5.40    16.41
+K3_orthogonal   chemspec         x    -0.06     0.43     1.68     6.23    17.12
+K3_orthogonal   chemspec         y    -0.01     0.03     0.37     0.74     3.39
+K3_orthogonal   generalist       x    -0.06     0.24     1.06     3.79    12.36
+K3_orthogonal   generalist       y    -0.01     0.17     0.85     3.07    11.18
+K4_conflict     lightspec        x    -0.06    -0.01     0.04     0.13     0.27
+K4_conflict     lightspec        y    -0.01     0.26     1.04     4.29    12.49
+K4_conflict     chemspec         x    -0.06    -0.05    -0.04    -0.05    -0.07
+K4_conflict     chemspec         y    -0.01    -0.38    -1.38    -5.22   -14.18
+K4_conflict     generalist       x    -0.06    -0.05     0.06     0.04     0.09
+K4_conflict     generalist       y    -0.01    -0.06    -0.19    -0.75    -1.43
+
+=== 事前登録Green条件の判定 (全seed) ===
+   tau   gain   C1 K0 C2 grad  C3 K3  C4 K4    Green   詳細(C2: 改善seed率 / 改善量中央値pp)
+     3      4      OK      NG     NG     NG        -   K1:1.00/+0.2 K2:1.00/+0.2
+     3     16      OK      NG     OK     OK        -   K1:1.00/+0.7 K2:1.00/+0.8
+     3     64      OK      NG     OK     OK        -   K1:1.00/+2.9 K2:1.00/+3.0
+     3    256      OK      OK     OK     OK    GREEN   K1:1.00/+13.1 K2:1.00/+13.7
+    10      4      OK      NG     NG     NG        -   K1:1.00/+0.3 K2:1.00/+0.3
+    10     16      OK      NG     OK     OK        -   K1:1.00/+1.2 K2:1.00/+1.4
+    10     64      OK      OK     OK     OK    GREEN   K1:1.00/+5.2 K2:1.00/+5.5
+    10    256      OK      OK     OK     OK    GREEN   K1:1.00/+30.4 K2:1.00/+35.3
+    30      4      OK      NG     NG     NG        -   K1:1.00/+0.4 K2:1.00/+0.5
+    30     16      OK      NG     OK     OK        -   K1:1.00/+1.7 K2:1.00/+2.0
+    30     64      OK      OK     OK     OK    GREEN   K1:1.00/+6.9 K2:1.00/+8.2
+    30    256      OK      OK     OK     OK    GREEN   K1:1.00/+55.7 K2:1.00/+57.5
+
+Green組: 5 / 12
+条件5 (隣接する複数組で成立): OK
+参考 (先頭10 seedのみ): Green組 5 → [(3.0, 256.0), (10.0, 64.0), (10.0, 256.0), (30.0, 64.0), (30.0, 256.0)]
+
+=== 最終候補 (§4.7: 最小gain → 最短tau) ===
+  memory_tau    = 10
+  response_gain = 64
+
+-> /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_phaseA/phaseA_selection.json

@@ -1,0 +1,32 @@
+{
+  "memory_tau": 10.0,
+  "response_gain": 64.0,
+  "green_combos": [
+    [
+      3.0,
+      256.0
+    ],
+    [
+      10.0,
+      64.0
+    ],
+    [
+      10.0,
+      256.0
+    ],
+    [
+      30.0,
+      64.0
+    ],
+    [
+      30.0,
+      256.0
+    ]
+  ],
+  "adjacent_green": true,
+  "seed_frac": 0.8,
+  "delta_hi_q_pp": 5.0,
+  "t_crit": 2.0,
+  "n_seeds": 20,
+  "rule": "§4.7 最小response_gain → 同gainなら最短memory_tau"
+}

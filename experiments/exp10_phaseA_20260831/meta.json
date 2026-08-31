@@ -1,0 +1,55 @@
+{
+  "ticks": 2000,
+  "n_org": 100,
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ],
+  "environments": [
+    "K0_uniform",
+    "K1_light_Y",
+    "K2_chem_X",
+    "K3_orthogonal",
+    "K4_conflict"
+  ],
+  "phenotypes": [
+    "lightspec",
+    "chemspec",
+    "generalist"
+  ],
+  "memory_taus": [
+    3.0,
+    10.0,
+    30.0
+  ],
+  "response_gains": [
+    4.0,
+    16.0,
+    64.0,
+    256.0
+  ],
+  "control_gain": 0.0,
+  "light_max": 1.2,
+  "chem_max": 24.6,
+  "hi_q_definition": "その表現型のQ上位25%のセル",
+  "elapsed_s": 4676.9,
+  "workers": 4
+}
