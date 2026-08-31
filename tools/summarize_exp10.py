@@ -68,7 +68,10 @@ def load(path: Path) -> list[dict]:
         for k, v in r.items():
             if k in ("env", "phenotype") or isinstance(v, int):
                 continue
-            r[k] = float(v)
+            try:
+                r[k] = float(v)
+            except (TypeError, ValueError):
+                r[k] = float("nan")   # 使わない列 (旧schemaの残り) は無視する
     return rows
 
 

@@ -140,7 +140,9 @@ def make_arena(env: str, pheno: str, seed: int, n_org: int,
 
 
 def run_arena(env: str, pheno: str, seed: int, memory_tau: float,
-              response_gain: float, ticks: int, n_org: int) -> dict:
+              response_gain: float, ticks: int, n_org: int,
+              track_out: Path | None = None, track_n: int = 12,
+              track_every: int = 10) -> dict:
     la, ca = PHENOTYPES[pheno]
     sim = make_arena(env, pheno, seed, n_org, memory_tau, response_gain)
     cfg = sim.cfg
@@ -154,12 +156,15 @@ def run_arena(env: str, pheno: str, seed: int, memory_tau: float,
     hi_ticks = 0
     total_ticks = 0
     path_len = 0.0
+    # 図用の軌跡 (観測専用。RNGも行動も変えない)
+    tracks: list[list[tuple[float, float]]] = (
+        [[] for _ in range(min(track_n, n_org))] if track_out else [])
     acc = {k: 0.0 for k in ("q", "dq", "dq_abs", "dq_light", "dq_chem",
                             "turn_factor", "sigma_eff", "r_light", "r_chem")}
     n_ev = 0
     dq_pos = dq_neg = dq_zero = 0
 
-    for _ in range(ticks):
+    for _t in range(ticks):
         sim.stim_obs = sim._new_stim_obs()
         for o in sim.organisms:
             px, py = o.x, o.y
@@ -185,6 +190,10 @@ def run_arena(env: str, pheno: str, seed: int, memory_tau: float,
         dq_pos += obs["dq_pos"]
         dq_neg += obs["dq_neg"]
         dq_zero += obs["dq_zero"]
+        if tracks and (_t % track_every == 0):
+            for k in range(len(tracks)):
+                o = sim.organisms[k]
+                tracks[k].append((o.x, o.y))
 
     x1 = np.array([o.x for o in sim.organisms])
     y1 = np.array([o.y for o in sim.organisms])
@@ -205,7 +214,15 @@ def run_arena(env: str, pheno: str, seed: int, memory_tau: float,
     }
     for k, v in acc.items():
         row[k + "_mean"] = v / n_ev if n_ev else float("nan")
-    row["turn_factor_pos_minus_neg"] = float("nan")
+    if track_out:
+        track_out.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            track_out,
+            tracks=np.array(tracks, dtype=float),
+            final_x=x1, final_y=y1, start_x=x0, start_y=y0,
+            q_field=qf, hi_thresh=hi_thresh,
+            light=sim.world.light, chemical=sim.world.chemical,
+            cell_size=cfg.cell_size)
     return row
 
 
