@@ -245,11 +245,11 @@ V1.4では未利用光と低い光利用率が増える可能性がある。こ�
 ```text
 Exp07実測NOTES main保存 ✅
 → 正本へClaudeレビュー判断反映 ✅
-→ v1.3-finalを最新保存点へ更新
-→ V1.4実装
-→ unit/Energy/Matter/RNG tests
-→ V1.4 golden/CI基準ref更新
-→ Exp08 Phase0
+→ v1.3-finalを最新保存点へ更新 ✅
+→ V1.4実装 ✅ (evosim/physiology.py / simulation.py / config.py)
+→ unit/Energy/Matter/RNG tests ✅ (tests/test_v14_uptake.py)
+→ V1.4 golden/CI基準ref更新 ✅
+→ Exp08 Phase0 ✅ (tools/bench_v14_uptake.py)
 → Exp08 90 run × 60k
 → default校正
 → 必要ならchem_uptake独立診断

@@ -11,6 +11,19 @@ from .genome import (CHEM_ABS, CORPSE_DIG, DAMAGE_RES, LIGHT_ABS, MEMBRANE,
 from .organism import Organism
 
 
+SURFACE_EPS = 1e-9
+
+
+def effective_surface(matter: float) -> float:
+    """環境と直接交換できる有効表面積 A_eff = M^(2/3) (V1.4 §3)。
+
+    形状遺伝子がないため、同形状の3次元物体を粗視化した第一近似として扱う。
+    体積 (= matter) が8倍なら線寸法2倍・表面積4倍。光/化学/無機栄養の
+    「環境フィールドからの直接吸収」はすべてこの共通helperを使う。
+    """
+    return max(matter, SURFACE_EPS) ** (2.0 / 3.0)
+
+
 def maintenance_and_movement(org: Organism, cfg: Config, v: float) -> float:
     """基礎代謝 + 器官維持 + 移動のコストを消費し、損傷を加算する。"""
     g = org.genome
