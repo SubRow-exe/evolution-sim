@@ -1,10 +1,11 @@
 # Exp09 実験計画 — V1.5 異種一次Energy刺激比較則の診断
 
 更新: 2026-08-31
-状態: **事前登録 / V1.5実装前**
+状態: **事前登録 / Claudeレビュー判断反映済み / V1.5実装前**
 
 正本:
 - `docs/V1.4_総括.md`
+- `docs/V1.5_Exp09_レビュー判断.md`
 - `docs/V1.5_異種刺激比較仕様.md`
 - 本書
 
@@ -26,6 +27,8 @@ Exp09は**光とchemicalの進化競争を評価する実験ではない**。
   光刺激の応答が0.5になる光量。V1.5 defaultは1.2。
 - `chemical_stimulus_half`:
   chemical刺激の応答が0.5になるstock。V1.5 defaultは12.3。
+- 交差点stock:
+  ある光量・個体能力の組合せで、light scoreとchemical scoreが等しくなるchemical stock。これよりchemical stockが高ければchemical側、低ければlight側が一次Energy候補として優勢になる。
 - specialist（専門型）:
   片方の一次Energy利用能力を高く、もう片方を低く固定した診断個体。
 - generalist（両用型）:
@@ -48,6 +51,10 @@ chemical_score
 V1.5の一次Energy源選択はこのscoreで行う。
 
 吸収量そのものはV1.4の吸収式を変更しない。
+
+`chemical_stimulus_half=12.3`は、典型的な完全13セルventの生物不在平衡stockを基準とする固定値である。Exp08で生物が占有したventの実測stockへ合わせて引き下げない。
+
+生物がchemicalを利用するとstockと刺激が下がり、離脱すれば回復する負のフィードバックはstock型資源の自然な性質として残す。
 
 ## 4. Exp09で固定する世界default
 
@@ -73,18 +80,33 @@ Exp09中に生物学的結果を見て変更しない。
 1. `response(0,K)=0`
 2. `response(K,K)=0.5`
 3. x増加に対して単調増加
-4. 0 <= response < 1
-5. light-onlyで最良lightセルの順位がV1.4と同じ
-6. chemical-onlyで最良chemicalセルの順位がV1.4と同じ
-7. light=1.2 / chemical=12.3 / 両ability同値なら同一response score
-8. 同じ刺激ならlight能力を上げればlight側、chemical能力を上げればchemical側へ切り替わる
-9. light=1.2固定・両ability同値ならchemical stockが12.3を跨ぐところで理論どおり選択が切り替わる
+4. `0 <= response < 1`
+5. light-only / chemical-onlyの単独source Configで、同一seedなら`v1.4-final`と決定的に完全一致
+6. light=1.2 / chemical=12.3 / 両ability同値なら同一response score
+7. 各診断表現型・代表光量についてlight/chemical scoreの**交差点stockを事前計算**
+8. 交差点の下側でlight、上側でchemicalへ理論どおり選択が反転
+9. 各診断表現型についてlight選択ケースとchemical選択ケースを最低1件ずつ確認
 10. exact tieでfield走査順によるsource固定biasがない
-11. 未来の吸収量、Energy容量、移動後収益をscore計算に使わない
-12. V1.5比較処理が不要な追加乱数を消費しない
-13. V1.4の吸収式・Energy/Matter台帳を変更しない
+11. `stimulus_tie_eps`は1e-9程度の十分小さい値または同等に厳しい相対許容差
+12. 両score=0ではEnergy源による方向付けを行わずV1.4相当の挙動へ戻る
+13. 未来の吸収量、Energy容量、移動後収益をscore計算に使わない
+14. V1.5比較処理が不要な追加乱数を消費しない
+15. V1.4の吸収式・Energy/Matter台帳を変更しない
+16. 観測追加がRNG・個体状態・行動分岐へ影響しない
 
 Phase 0がGreenでなければ本番診断へ進まない。
+
+### 交差点の扱い
+
+Phase 0で事前に、少なくとも以下の表現型について標準光の明部・中間・暗部等で交差点stockを表にする。
+
+```text
+light specialist:    light_absorption=2.0, chemical_absorption=0.3
+chemical specialist: light_absorption=0.3, chemical_absorption=2.0
+generalist:          light_absorption=1.0, chemical_absorption=1.0
+```
+
+Exp08の占有vent stockの実測範囲も参考値として併記するが、その値へKを再校正しない。
 
 ## 6. Phase A — synthetic arena診断
 
@@ -95,16 +117,16 @@ Phase 0がGreenでなければ本番診断へ進まない。
 光勾配のみ。
 
 期待:
-- V1.4と同じ最良light方向を選ぶ
+- `v1.4-final`と同じ行動結果
 
 ### A2 chemical-only
 
 chemical勾配のみ。
 
 期待:
-- V1.4と同じ最良chemical方向を選ぶ
+- `v1.4-final`と同じ行動結果
 
-### A3 等価刺激
+### A3 等価刺激 / tie
 
 ```text
 light = 1.2
@@ -118,14 +140,12 @@ light_absorption = chemical_absorption
 
 ### A4 光専門型
 
-例:
-
 ```text
 light_absorption = 2.0
 chemical_absorption = 0.3
 ```
 
-等価環境刺激ではlightを選ぶ。
+標準的な等価刺激でlightを選ぶケースに加えて、光を十分弱くするなどして理論交差点を超え、chemicalを選ぶケースも必ず作る。
 
 ### A5 chemical専門型
 
@@ -134,7 +154,7 @@ light_absorption = 0.3
 chemical_absorption = 2.0
 ```
 
-等価環境刺激ではchemicalを選ぶ。
+chemicalを選ぶケースだけでなく、chemical stockを交差点未満に落とすなどしてlightを選ぶケースも作る。
 
 ### A6 両用型の環境依存切替
 
@@ -143,7 +163,7 @@ light_absorption = 1.0
 chemical_absorption = 1.0
 ```
 
-lightを固定しchemical stockを低→高へ振り、理論的なscore交差点で選択先が切り替わることを確認する。
+lightを固定しchemical stockを交差点の下→上へ振り、理論的なscore交差点で選択先が切り替わることを確認する。
 
 ### Phase Aの判定
 
@@ -205,39 +225,54 @@ Pilotで実装不備がなければ本番条件を生物学的結果に応じて
 - chemicalを一次Energy候補として選んだ回数
 - tie回数
 - random walkへ戻った回数
+- 選択時のlight response score
+- 選択時のchemical response score
+- 選択時のchemical stock
+- 理論交差点の上/下と実際のsource選択が一致した回数・率
 - light由来Energy flow
 - chemical由来Energy flow
 - ventセル滞在率
 - 明部/暗部の滞在率
 - vent中心までの距離分布または平均距離
+- 一次Energy候補がcorpse / predation等の既存刺激に負けた回数（light由来 / chemical由来を区別）
 
-これらは観測専用で進化ロジックへフィードバックしない。
+これらは観測専用で進化ロジックへフィードバックせず、RNGも消費しない。
 
 ## 9. Phase Bの期待パターン
 
 これは「合格させるためのpopulation目標」ではなく行動則のsanity check。
 
-- light specialistはchemical specialistよりlight選択率が高い
-- chemical specialistはlight specialistよりchemical選択率・vent滞在率が高い
-- generalistは一方へ固定されず、局所刺激条件に応じて選択が変わる
-- light-only / chemical-only controlでV1.5無次元化が単独source内の方向選択を壊さない
+最優先の判定は:
 
-特定のsource選択率（例50%）を合格条件にはしない。
+> **その時点のchemical stockが事前計算した交差点より上ならchemical、下ならlightというscore順位と実際の一次Energy候補選択が一致すること。**
+
+その上で参考として:
+
+- light specialistは標準条件ではchemical specialistよりlight選択率が高い
+- chemical specialistは交差点を超えるstockではchemicalを選ぶ
+- generalistは一方へ固定されることを要求せず、局所stockと光量の組合せに応じて理論式どおり切り替わるかを見る
+- stock消費→離脱→stock回復→再誘引の反復が出ても、交差点式と整合するなら直ちに異常扱いしない
+- light-only / chemical-only controlは`v1.4-final`と完全一致
+
+特定のsource選択率やvent滞在率（例50%）を合格条件にはしない。
 
 ## 10. 停止条件
 
 以下は実装不備として停止:
 
 - Phase 0算術不一致
-- 単独sourceでtarget cell順位が意図せず変わる
+- 単独source Configが`v1.4-final`と完全一致しない
+- 交差点の理論順位と人工arenaの選択結果が一致しない
+- 各診断表現型で交差点の両側を通しても選択が反転しない
 - exact tieがsource走査順で常に一方へ偏る
 - fixed geneが世代中に変化
 - Energy / Matter保存異常
 - source排他条件の破れ
 - Config名と実値不一致
 - 数値実行環境またはcommit混在
+- 観測追加がRNG系列や進化ロジックを変える
 
-絶滅・低populationはそれだけでは実装異常としない。
+絶滅・低population・vent滞在率の低さはそれだけでは実装異常としない。
 
 ## 11. Exp09では結論しない
 
@@ -262,6 +297,8 @@ Exp09がGreenなら、次の段階で初めて通常祖先を光+chemical混合�
 が自然に生じるかを長期進化runで調べる。
 
 この次実験の条件はExp09結果を見てから別途事前登録する。
+
+長期混合進化を解釈するときは、chemicalがstock消費により知覚刺激を下げる性質と、`chem_uptake=0.5`による収支側の差の両方を初期条件として明示する。
 
 ## 13. 保存
 
