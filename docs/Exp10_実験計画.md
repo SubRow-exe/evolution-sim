@@ -5,7 +5,7 @@
 実装・実行担当: **Claude Code または Codex**
 
 正本:
-- `docs/V1.6_行動則設計案.md`
+- `docs/V1.6_行動則仕様.md`
 - `docs/V1.6_Exp10_レビュー.md`
 - `docs/Exp09_結果考察.md`
 
