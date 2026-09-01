@@ -1,238 +1,198 @@
-# Exp11 実験計画案 — core maintenance と body size 進化
+# Exp11 実験計画 — `bmr_core` と body size 進化
 
 更新: 2026-09-01
-状態: **レビュー用事前登録案 / 未実装 / 未実行**
+状態: **事前登録確定 / 未実装 / 未実行**
 
 関連:
 - `docs/V1.7_基礎維持代謝仕様案.md`
+- `docs/V1.7_Exp11_レビュー判断.md`
 - `docs/LUCA参照モデル方針.md`
 - `docs/Exp10_結果考察.md`
 
 ---
 
-## 1. 問い
+## 1. 目的
 
-V1.7候補の縮小不能な基礎維持代謝 `C_core` を導入すると、
+V1.7候補の縮小不能な基礎維持代謝 `bmr_core` を導入し、次を検証する。
 
-1. 現行世界で見えた `body_size=0.2` 方向への強い小型化圧を弱められるか
-2. 逆に `body_size=10` への大型化を強制してしまわないか
-3. 特定サイズを設計者が直接指定せず、内部サイズに進化平衡を作れるか
-4. 同じ `C_core` でも資源環境によって異なるサイズが選択される余地を残せるか
-5. 個体数爆発を抑える方向へ働きつつ、生態そのものを壊さないか
+1. 現行世界で示唆された `body_size=0.2` 方向への強い小型化圧を弱められるか
+2. body size の上下限へ一方向に張り付かず、内部領域に進化状態を作れるか
+3. 同じ `bmr_core` でも資源環境ごとに異なるbody sizeが選択される余地を残せるか
+4. 生態を壊さず、小型多数化による計算量増大も副次的に緩和できるか
 
-を検証する。
+**populationを小さくすること、body_sizeを1.0へ戻すことは選定目的にしない。**
+選定対象は、境界への一方向張り付きを解消するために必要な**最小の生理変更**である。
 
-**populationを小さくすること自体を最適化目的にはしない。**
-主目的は、サイズ進化が遺伝子境界へ一方向に張り付く構造を解消することである。
-計算コスト低下は、その結果として期待する副次的効果とする。
+Exp11で変える世界パラメータは `bmr_core` だけ。進化可能遺伝子は `body_size` だけとし、他13遺伝子は固定する。
 
 ---
 
-## 2. 変更する軸
-
-Exp11で振る世界パラメータは `C_core` だけ。
+## 2. V1.7候補式
 
 ```text
-BMR = C_core + (0.3 - C_core) * M^0.75
+BMR = bmr_core + (bmr_coef - bmr_core) * M^0.75
+bmr_coef = 0.3
+0 <= bmr_core <= 0.3
 ```
 
-`M` は現在の身体Matter。
+`M` は現在の身体Matter (`org.matter`)。
 
-body size の進化効果を切り分けるため、Phase Bでは **14遺伝子中 body_sizeだけ進化ON**、
-残り13遺伝子は全世代固定する。
+候補15水準:
 
-温度、body_size上下限、繁殖則、吸収則、行動則、捕食等は変更しない。
+```text
+0.000, 0.005, 0.010, 0.015, 0.020,
+0.025, 0.030, 0.040, 0.050, 0.060,
+0.075, 0.100, 0.150, 0.200, 0.300
+```
+
+低値側を密に取り、理論的に変化が見込まれる0.03–0.10を細かく覆う。0.300はBMRがサイズ非依存になる上端対照である。
+
+`p_high`（上限張り付き）は安全用sentinelとして測るが、理論検算では `bmr_core=0.3` でも効率最小点がbody size上限10より十分下にあるため、**`p_high`を通過したこと自体を「大型化の問題がない強い証拠」とは解釈しない。**
 
 ---
 
-## 3. C_core候補 — 15水準
+## 3. 実行前提 — V1.6を先に閉じる
 
-合法範囲 `0 <= C_core <= bmr_coef(0.3)` を広く覆う。
-低値側は転換点を拾うため密に、0.3は極端な上限対照として置く。
-
-```text
-0.000
-0.005
-0.010
-0.015
-0.020
-0.025
-0.030
-0.040
-0.050
-0.060
-0.075
-0.100
-0.150
-0.200
-0.300
-```
-
-`bmr_coef=0.3` に対するcore比率では:
+Exp10で採用した現行参照値:
 
 ```text
-0%, 1.7%, 3.3%, 5%, 6.7%, 8.3%, 10%, 13.3%, 16.7%,
-20%, 25%, 33.3%, 50%, 66.7%, 100%
-```
-
-### 3.1 候補を広く取る理由
-
-現行モデルにはすでに固定的なsense維持費、固定birth overhead、
-サイズ依存速度から生じる概ねサイズ非依存の移動費がある。それでも exploratory run では
-`body_size≈0.226` まで縮小した。
-
-したがって単純なBMR比較だけから狭い候補範囲を決めるのは危険である。
-Exp11では0から理論上限0.3まで一度に走らせ、**結果を見て候補を追加する中間判断は行わない**。
-
----
-
-## 4. 実行前提 — V1.6を先に閉じる
-
-Exp10人間判断で採用した
-
-```text
-memory_tau = 10
+memory_tau    = 10
 response_gain = 64
 ```
 
-のうち、2026-09-01時点で通常defaultの `response_gain` は16のまま残っている。
-
-Exp11実装前に、V1.7とは別の確定処理として:
+2026-09-01時点では通常defaultの `response_gain` が16のままなので、V1.7とは別の確定処理として先に:
 
 1. `response_gain=64` をV1.6 defaultへ反映
-2. 結果変更に伴うCI基準を更新
+2. test / CI基準を更新
 3. `v1.6-final` branchを保存
-4. そのcommitをV1.7の親とする
+4. その確定commitをV1.7の親にする
 
-Exp11 Configにも `memory_tau=10 / response_gain=64` を明示する。
+その後にV1.7 `bmr_core` を実装する。
+
+正式Exp11を起動する前に、**V1.7実装、45 Config、`.github/workflows/exp11.yml` をmainへマージ済み**でなければならない。`workflow_dispatch`をfeature branch上だけに置かない。
+
+正式run開始後は、全255 runで同一Git SHA・同一数値環境を固定し、科学コード・Config生成則・判定ロジックを変更しない。
 
 ---
 
-# Phase 0 — 決定論・式・回帰テスト
+# Phase 0 — 実装・回帰・Config健全性
 
-Phase 0は本番runを投入する前の**停止条件**。
+Phase 0は正式run開始前の停止条件。1項目でも失敗したらPhase Bを起動しない。
 
-## 5. 必須項目
+## P0-1 `bmr_core=0` 完全回帰
 
-### P0-1. `C_core=0` 完全回帰
+`v1.6-final` と同一Config・同一seedで、`bmr_core=0` のV1.7が既存goldenケースと完全一致すること。
 
-V1.6-final と同一Config・同一seedで、`bmr_core=0` のV1.7候補実装が
-既存goldenケースに完全一致すること。
-
-### P0-2. reference point不変
-
-任意の合法 `C_core` で:
+## P0-2 式の境界
 
 ```text
-M=1.0 -> BMR=0.3
+M=1.0              -> 任意の合法bmr_coreでBMR=0.3
+bmr_core=0.0       -> V1.6式と一致
+bmr_core=0.3       -> BMR=0.3でサイズ非依存
+bmr_core<0 / >0.3  -> ValueError
 ```
 
-が数値誤差なし、または実装上妥当な厳密許容差で成立。
-
-### P0-3. 境界
-
-```text
-C_core=0.0 -> old formula
-C_core=0.3 -> BMR=0.3 constant
-```
-
-### P0-4. illegal Config
-
-```text
-C_core < 0
-C_core > 0.3
-```
-
-を拒否する。
-
-### P0-5. Energy / Matter / RNG
+## P0-3 Energy / Matter / RNG / 決定性
 
 - Energy台帳整合
 - Matter厳密保存
 - 同一seed決定性
-- 観測コードがRNG系列を変えない
+- 観測追加がRNG系列・分岐を変えない
 
-### P0-6. body_size only evolution
+## P0-4 body_size-only evolution
 
-Phase B Config全45ケース（15 `C_core` × 3環境）について、
-`fixed_genes` が body_size以外の13遺伝子をすべて含み、body_sizeだけを含まないことを
-生成時テストで機械的に確認する。
+Phase B全45 Config（15 `bmr_core` × 3環境）について、`fixed_genes` がbody_size以外の13遺伝子をすべて含み、body_sizeのみ含まないことを機械検証する。
 
-1項目でも失敗したらPhase Bを起動しない。
+## P0-5 Config silent-drop防止
+
+`bmr_core` を以下すべてへ含める。
+
+- `Config`
+- 保存 `config.json`
+- run summary / fingerprint / collect table
+
+非ゼロ値（例 `bmr_core=0.05`）のJSON round-trip testを必須とし、生成JSONの値とロード後Config値が一致することを全45 Configで検証する。未知キーが黙って捨てられて `bmr_core=0` として走る事故を許容しない。
 
 ---
 
-# Phase A — 実行前の生理・life-cycle監査
+# Phase A — 安価な決定論監査
 
-Phase Aは**候補削減に使わない**。全15候補は結果に関係なくPhase Bへ進む。
-途中判断を発生させないためである。
+Phase Aは**候補削減・途中判断には使わない**。全15候補を必ずPhase Bへ送る。目的はPhase B結果を解釈するための予測を実行前に固定すること。
 
-## 6. A1: サイズ地形の決定論計算
+## A1 maintenance landscape
 
-以下の現在Matterについて、全15 `C_core` を計算する。
+現在Matter:
 
 ```text
-M = 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 1.0,
-    1.5, 2.0, 3.0, 5.0, 7.5, 10.0
+M = 0.20, 0.25, 0.30, 0.40, 0.50, 0.75, 0.80,
+    1.00, 1.50, 2.00, 3.00, 5.00, 7.50, 10.00
 ```
 
-INITIAL_GENOME、健全度 `phi=1` を基準に、以下をCSV/図で出す。
+全15 `bmr_core`、各診断表現型について次をCSV/図へ出す。
 
-- BMR
-- BMR内のcore成分 / scalable成分
-- organ upkeep
-- sense upkeep
-- membrane upkeep
-- resistance upkeep
-- movement cost（`v=0` と通常wander速度の両方）
+- BMR（core / scalable内訳）
+- organ / sense / membrane / resistance upkeep
+- movement cost（静止 / 通常wander）
 - total maintenance
 - `total maintenance / M^(2/3)`
-- `C_core / total maintenance`
+- `bmr_core / total maintenance`
+- 通常wander速度
 
-これは「どのサイズが勝つか」を決める適応度計算ではない。
-実際の選択はPhase Bの生態・繁殖・資源競合の帰結に任せる。
+`M=0.8` は正式runの `initial_matter=0.8` なので必須。`M=1`だけ不変でも、初期個体では `bmr_core>0` によりBMRが上がることを明示的に監査する。
 
-## 7. A2: 出産直後の状態監査
+## A2 出産直後の親子状態
 
-core cost は成体だけでなく、親Matterの35%を受け取る小さな子個体へ強く効く可能性がある。
-現行繁殖則を変えず、次のtarget sizeで決定論的なbirth-stateを算出する。
-
-```text
-target body_size = 0.2, 0.5, 1.0, 2.0, 5.0, 10.0
-```
-
-標準化した親状態:
+対象target size:
 
 ```text
-parent matter = target body_size
-parent energy = repro_energy_frac * E_max
-reproduction_investment = INITIAL_GENOME (=0.4)
-child_matter_frac = 0.35
-birth_overhead = 2.0
+0.2, 0.5, 1.0, 2.0, 5.0, 10.0
 ```
 
-実際の `_try_reproduce` と同じ順序で:
+各targetについて、繁殖時parent matterを:
 
-- child matter / parent matter
-- child energy / parent energy
-- child/parent Energy capacity
-- child/parent BMR
-- 静止時total maintenance
-- intake=0と仮定した単純Energy reserve / maintenance
+```text
+0.8 × target, 1.0 × target, 1.2 × target
+```
 
-を出す。
+で監査する。実際の `_try_reproduce` と同じ順序で、親子のMatter / Energy / Energy capacity / BMR / total maintenance / intake=0時のEnergy reserveを出す。`child_matter_frac=0.35`、`birth_overhead=2.0`、`reproduction_investment=0.4`等は正式Config値を使う。
 
-ここでも値を見て候補を除外しない。Phase Bの結果解釈用の診断資料とする。
+## A3 reproductive-opportunity proxy
+
+小型化圧には維持効率だけでなく、短い世代時間と高速移動が含まれるため、世界シミュレーションを使わない決定論診断を追加する。
+
+標準化条件:
+
+```text
+adult matter = target body_size
+start energy = 0.5 * E_max
+matter       = 繁殖条件を満たす
+phi          = 1
+wander       = 通常値
+gross intake proxy I = k * M^(2/3)
+k = 0.6, 1.2, 2.4
+```
+
+各 `bmr_core × M × k` について:
+
+```text
+net = I - total_maintenance
+```
+
+`net>0`なら `E=0.6*E_max` 到達までのtick `T` と `1/T` を出し、`net<=0`なら `T=inf` とする。wander速度も併記する。
+
+これは**適応度ではなくreproductive-opportunity diagnostic**であり、候補選定条件には使わない。
 
 ---
 
-# Phase B — body_sizeだけを進化させる正式実験
+# Phase B — 正式 body_size-only evolution
 
-## 8. 共通条件
+## 4. 共通条件
 
 ```text
 ticks                  = 10,000
 initial_population     = 100
+initial_energy         = 50.0
+initial_matter         = 0.8
 initial genome         = INITIAL_GENOME + 通常standing variation
 body_size              = 進化ON
 other 13 genes         = 完全固定
@@ -243,331 +203,265 @@ snapshot_interval      = 1,000
 max_population_halt    = 10,000
 ```
 
-`max_population_halt=10,000` はpopulationを抑制する生態ルールではない。
-10,000個体へ到達した時点でrunを保存して終了する**計算安全装置**であり、
-その到達自体を「このC_coreでは多数小型化が十分抑制されなかった」という科学的結果として扱う。
+`max_population_halt=10,000` は生態ルールではない。10,000個体到達時に個体を殺さず、状態を保存してrunを終了する計算安全装置である。
 
-絶滅・population haltは workflow failure にしない。
-Config不整合、遺伝子固定違反、環境不一致、保存則破壊、必要run欠落等だけを実行失敗とする。
+## 5. B1 Light-only / light specialist — 主選定
 
----
-
-## 9. B1 — Light-only / light specialist（主選定環境）
-
-Exp10 exploratory runで小型化・個体数増大が最も明確に出た環境を主校正条件とする。
+Exp10正式B1 treatmentをテンプレートにし、`bmr_core`追加とbody_size-only evolution以外は維持。
 
 ```text
+placement      = random
 light          = vertical standard
 chemical       = off
-phenotype      = light specialist
 light_abs      = 2.0 fixed
 chemical_abs   = 0.3 fixed
-body_size      = only mutable gene
-C_core         = 15 levels
 seed           = 1..8
 ```
-
-run数:
 
 ```text
 15 × 8 = 120 run
 ```
 
----
+## 6. B2 Chemical-only / chemical specialist — 一般化/veto
 
-## 10. B2 — Chemical-only / chemical specialist（一般化・veto）
+Exp10正式B2 treatmentをテンプレートにする。
 
 ```text
+placement      = vent
 light          = 0
 chemical       = vent flux 16
-phenotype      = chemical specialist
 light_abs      = 0.3 fixed
 chemical_abs   = 2.0 fixed
-body_size      = only mutable gene
-C_core         = 15 levels
-seed           = 1..4
+seed           = 1..5
 ```
 
-初期配置等はExp10正式B2の成立条件を踏襲する。
-
-run数:
-
 ```text
-15 × 4 = 60 run
+15 × 5 = 75 run
 ```
 
----
+B2は低populationによる確率絶滅が起こりやすいため、B3より1 seed多くする。
 
-## 11. B3 — Mixed / generalist（一般化・veto）
+## 7. B3 Mixed / generalist — 一般化/veto
+
+Exp10正式B5 treatmentをテンプレートにする。
 
 ```text
+placement      = random
 light          = vertical standard
 chemical       = vent flux 16
-phenotype      = generalist
-light_abs      = 1.0 fixed
-chemical_abs   = 1.0 fixed
-body_size      = only mutable gene
-C_core         = 15 levels
+generalist     = light_abs=1.0 / chemical_abs=1.0 fixed
 seed           = 1..4
 ```
-
-run数:
 
 ```text
 15 × 4 = 60 run
 ```
 
----
-
-## 12. 総run数と計算時間設計
+## 8. 総run数・Actions
 
 ```text
-B1 120
-B2  60
-B3  60
-------
-計 240 run
+B1 = 120
+B2 =  75
+B3 =  60
+---------
+計 = 255 run
 ```
 
-240はGitHub Actions matrixの256ジョブ上限内に収められるため、
-**1回のworkflow_dispatchで全条件を登録し、途中の人間判断なしで完走させる**。
+1つのmatrix（255 job）として1回の `workflow_dispatch` で全条件を最初から登録する。`max-parallel=20`。
 
-`max-parallel=20` を基準とする。
-
-Exp10 exploratoryで最も重かった実測は約40分 / 10,000 tick / run。
-これを240 runすべてへ悲観的に当てても:
+Exp10 exploratoryの旧最悪実績40分 / 10,000 tick / runを全runへ悲観的に当てても:
 
 ```text
-240 / 20 × 40 min = 480 min = 約8時間
+ceil(255/20) × 40 min = 13 × 40 = 520 min ≈ 8時間40分
 ```
 
-約2時間の余裕を残す。
-さらにpopulation 10,000到達時は保存して終了するため、想定外の個体数増加で
-1 runが際限なく重くなることを避ける。
+ユーザーが確保している約10時間枠に約1時間20分の余裕を残す。
 
-各jobのtimeoutは余裕を持って120分程度とし、timeoutは科学的STOPではなく実行失敗として記録する。
+各matrix jobの `timeout-minutes` は **350分**を基準とする。timeout / runner interruption / artifact欠落は科学的STOPではなく `INCOMPLETE_RESOURCE` として扱う。collectorは `if: always()` 等で可能な限り完了済み結果を集約し、技術的不完了を科学判定と分離する。同一SHA・同一Configで技術的不完了jobだけ再実行してよい。
 
 ---
 
-# 測定指標
+# 9. run状態の定義
 
-## 13. runごとの主要指標
-
-### サイズ
-
-- final mean / median body_size
-- final Q10 / Q25 / Q75 / Q90
-- lower-bound occupancy:
+各runは次のいずれかに分類する。
 
 ```text
-p_low = fraction(body_size <= 0.21)
+COMPLETE             10,000 tick到達
+EXTINCT              population=0
+POP_HALT             population 10,000到達で安全停止
+INCOMPLETE_RESOURCE  timeout / runner中断 / output欠落
+INTEGRITY_FAIL       Config・環境・固定遺伝子・保存則等の整合性違反
 ```
 
-`0.21` は下限0.2の5%以内。
+EXTINCT / POP_HALTは科学的結果でworkflow failureにしない。
+INCOMPLETE_RESOURCEは技術的不完了で科学的成功/失敗へ数えない。
+INTEGRITY_FAILは正式結果として無効。
 
-- upper-bound occupancy:
+POP_HALTの `final` は `finalize()` が保存した**halt時最終snapshot**と定義し、そこからfinal body-size統計と `p_low/p_high` は報告してよい。一方、COMPLETEでないrunのlate-window / stationarityは **N/A** とする。
 
-```text
-p_high = fraction(body_size >= 9.5)
-```
+---
 
-`9.5` は上限10の5%以内。
+# 10. 測定指標
 
-- late-window mean body_size（8,000–10,000 tick）
-- 6,000–8,000 vs 8,000–10,000 のlate drift
+## body size
 
-### 生態
+- final mean / median / Q10 / Q25 / Q75 / Q90
+- `p_low = fraction(body_size <= 0.21)`
+- `p_high = fraction(body_size >= 9.5)`
+- COMPLETE runのみ:
+  - `m1` = mean body_size over tick 6,000–8,000
+  - `m2` = mean body_size over tick 8,000–10,000
+  - `late_drift = abs(m2-m1) / max(0.2, abs(m2))`
 
-- 10,000 tick生存 / extinction
-- population halt到達
+`p_low/p_high` はsnapshotから計算する。finalizeによる最終snapshotを必ず保存する。
+
+## 進化機会
+
+- final `max_generation`
+- same-seed `bmr_core=0` の `max_generation=g0`
+- body_size以外13遺伝子のvariance=0
+
+## 生態
+
 - final / peak population
 - births / deaths / death cause
 - Energy flow by source
-- Matter conservation
+- free nutrient total (`nutrient_total`)
+- total biomass
+- corpse matter
+- `biomass_fraction = total_biomass / total_system_matter`
+- free nutrient fraction
+- Matter保存
 
-### 進化診断
+Matter指標は「Energy側の `bmr_core` が効かなかった場合にMatter制限だったか」を解釈する診断であり、候補選定条件には使わない。
 
-- body_size variance
-- body_size以外13遺伝子の分散=0
-- boundary occupancyのseed間一貫性
-
-populationは重要な副次指標だが、最小populationになるC_coreを選ぶルールにはしない。
-
----
-
-# 判定ルール
-
-## 14. runの分類
-
-### COMPLETE
-
-10,000 tickまでpopulation>0で完走し、population haltなし。
-
-### EXTINCT
-
-10,000 tick前にpopulation=0。
-科学的結果でありworkflow failureではない。
-
-### POP_HALT
-
-population=10,000へ到達して安全停止。
-科学的結果でありworkflow failureではない。
-
-### INVALID
-
-Config不整合、固定遺伝子違反、Energy/Matter破壊、環境不一致、run欠落、timeout等。
-これはworkflow failure。
+POP_HALTと`p_low`はMatter保存下で強く相関しうるため、独立した2証拠として二重に解釈しない。
 
 ---
 
-## 15. B1 主選定Green
+# 11. 事前登録判定
 
-各 `C_core` について8 seed中、以下をすべて満たすこと。
+## 11.1 B1 `bmr_core=0` 対照妥当性
 
-1. **COMPLETE >= 7/8**
-2. **POP_HALT <= 1/8**
-3. **EXTINCT <= 1/8**
-4. final `p_low < 0.25` を **7/8以上**で満たす
-5. final `p_high < 0.25` を **7/8以上**で満たす
+旧Exp10 exploratory B1は複数遺伝子が自由だったため、body_size-onlyでも小型化圧が存在することをまず内部対照で確認する。
 
-意味:
-
-- 下限0.2近傍が集団の主要部分を占めない
-- 上限10近傍にも押し付けない
-- 生態をほぼ維持する
-- 爆発的多数化が再現性高く起きない
-
-「mean body_sizeを1.0へ戻す」は条件にしない。
-
----
-
-## 16. B2/B3 一般化veto
-
-B1 Greenの候補について、B2とB3をそれぞれ評価する。
-各環境4 seedで:
-
-1. COMPLETE >= 3/4
-2. POP_HALT <= 1/4
-3. EXTINCT <= 1/4
-4. `p_high >= 0.50` の**上限支配runが1/4以下**
-
-を満たすこと。
-
-B2/B3では `p_low` をveto条件にしない。
-異なる資源環境で小型が本当に有利なら、下限方向が再び選択されること自体は
-環境依存の自然選択として許容する。
-
-ただしpopulation haltは計算・生態の双方で極端な多数化の信号なのでveto対象とする。
-
----
-
-## 17. C_core恒久値の選定規則
-
-15候補を小さい順に並べ、
+`bmr_core=0` B1について、各seedの最終利用可能snapshotで:
 
 ```text
-B1主選定Green
-AND B2 veto通過
-AND B3 veto通過
+p_low >= 0.50
 ```
 
-を初めて満たす**最小の `C_core`**を恒久値候補として選ぶ。
+を「small-size signal」とする。
 
-これは「効果を出すために必要な最小変更」を選ぶ原則である。
+**8 seed中5 seed以上**でsmall-size signalが出ることを対照妥当性条件とする。POP_HALT seedも最終snapshotが正常ならこの判定には使用できる。
 
-### 17.1 同値・境界
-
-候補格子上で最小値が選ばれるだけで、結果を見て中間値を補間して採用しない。
-より細かい再校正が必要と判断した場合はExp11を変更せず、別実験として事前登録する。
-
-### 17.2 1つも通らなかった場合
-
-**NO SELECTION / REVIEW** とする。
-
-Exp11結果を見てその場で式、body_size範囲、候補値、閾値を変更して再試行しない。
-次の案は別バージョン/別実験として扱う。
-
----
-
-## 18. 補助的な全体診断（選定条件ではない）
-
-以下は解釈用に必ず出す。
-
-- `C_core` とB1 seed中央値body_sizeのSpearman相関
-- `C_core` とpopulationの関係
-- 3環境の最終body_size曲線
-- lower/upper boundary occupancy曲線
-- extinction / POP_HALT heatmap
-- late drift曲線
-- Energy flow / maintenanceの関係
-
-同じ `C_core` で環境ごとに異なるbody sizeが出れば、
-「特定サイズを強制せず、環境依存のサイズ選択が生じた」強い支持材料になる。
-ただし環境間差をGreenの必須条件にはしない。
-
----
-
-# 停止・継続方針
-
-## 19. 途中で人間判断を要求しない
-
-今回の重要原則。
-
-- Phase Aの値を見て候補を削らない
-- B1の途中結果でB2/B3を止めない
-- ある候補が明らかに失敗しても他候補は予定どおり走らせる
-- 科学的STOP/REVIEWはworkflowを赤にしない
-- 240 runすべてを最初から登録する
-
-ただし**実験整合性の破壊**が見つかった場合のみworkflow failureとし、
-そのrun結果を正式解析へ混ぜない。
-
----
-
-# 保存
-
-## 20. 保存物
-
-`docs/実験結果保存方針.md` に従う。
-
-GitHub:
+未達なら:
 
 ```text
-docs/Exp11_結果考察.md
-experiments/<exp11_id>/NOTES.md
-experiments/<exp11_id>/figures/
+CONTROL_NOT_REPRODUCED
+SCIENTIFIC_VERDICT = NO_SELECTION / REVIEW
 ```
 
-最低限の図:
+とし、全255 runは最後まで集約するが恒久 `bmr_core` は選ばない。
 
-1. C_core vs final body_size（3環境）
-2. lower / upper boundary occupancy
-3. final / peak population
-4. extinction / POP_HALT heatmap
-5. Phase A maintenance landscape
-6. birth-state audit
-7. 選定候補の代表body_size時系列
+## 11.2 B1 candidate per-seed Green
 
-生データはGoogle Drive + Actions artifactへ保存する。
+`bmr_core>0` の各B1 seedは、以下を**すべて**満たしたときper-seed Green。
+
+1. `COMPLETE`（10,000 tick到達）
+2. `p_low < 0.25`
+3. `p_high < 0.25`
+4. `max_generation >= max(5, ceil(0.5 * g0))`
+   - `g0` は同一seed・B1・`bmr_core=0` のfinal `max_generation`
+5. `late_drift <= 0.10`
+6. body_size以外13遺伝子variance=0、その他integrity OK
+
+第4条件は「進化が遅すぎて初期値付近に残っただけ」をGreenにしないための相対的な進化機会条件。第5条件のstationarityは「10,000 tick内で明らかな一方向driftが残る状態」をGreenにしないための運用条件であり、永続平衡の証明ではない。
+
+候補の **B1 Green** はper-seed Greenが **7/8以上**。
+
+## 11.3 持続的転換（3-point persistence）
+
+単発のseed運で「最初に通った候補」を選ばない。
+
+候補 `b_i` は、候補列上で:
+
+```text
+b_i, b_(i+1), b_(i+2)
+```
+
+の**連続3水準すべてがB1 Green**のときだけ `TRANSITION_ELIGIBLE` とする。上に2候補が残っていない末端候補はこの規則では選定対象にならない。
+
+「それより大きい全候補Green」は要求しない。極端に大きな `bmr_core` が別の理由で生態を壊しても、妥当な中間転換点を無効化しないためである。
+
+## 11.4 B2/B3 baseline viability
+
+各一般化環境の `bmr_core=0` で、healthy COMPLETE数を確認する。
+
+```text
+B2: >= 3/5
+B3: >= 3/4
+```
+
+healthy COMPLETE = `COMPLETE`かつintegrity OK。
+
+未達ならその一般化環境自体の判定能力が不足しているため、恒久値は選ばず `NO_SELECTION / REVIEW`。
+
+## 11.5 B2/B3 environmental veto
+
+`TRANSITION_ELIGIBLE`候補についてのみ、B2/B3で重大な副作用をvetoする。
+
+環境ごとに `n` をseed数、`H0` を同環境 `bmr_core=0` のhealthy COMPLETE数、`Hc`を候補のhealthy COMPLETE数とする。
+
+次のどちらかでveto:
+
+```text
+A) Hc <= floor(n/2) かつ H0 - Hc >= 2
+B) healthy COMPLETE seedの過半数で p_high >= 0.25
+```
+
+単にpopulationが小さい、1 seedが絶滅した、B1と違うbody sizeへ進化した、という理由ではvetoしない。B2/B3の`p_low`も報告するが、低body sizeがその環境で自然に選択される可能性を残すため必須条件にはしない。
+
+## 11.6 恒久値選定
+
+以下を順番に機械判定する。
+
+1. Phase 0 integrity Green
+2. B1 `bmr_core=0` 対照妥当性 Green
+3. B2/B3 baseline viability Green
+4. `TRANSITION_ELIGIBLE`候補を小さい順に列挙
+5. B2/B3 vetoを受けた候補を除外
+6. **残った最小 `bmr_core` を恒久値候補として選定**
+
+候補が残らない場合:
+
+```text
+SCIENTIFIC_VERDICT = NO_SELECTION / REVIEW
+```
+
+とする。その場で式・候補値・seed・閾値を変更せず、Exp11はその結果で閉じる。
 
 ---
 
-## 21. Exp11で結論できること / できないこと
+# 12. 結論できること / できないこと
 
-### 結論できる
+Exp11で結論できるのは、**他13遺伝子を固定しbody_sizeだけ進化させた条件で**、`bmr_core` が極端な小型化圧へどう作用するか、および一般化3環境で重大な副作用があるかである。
 
-- core maintenance機構がサイズ境界張り付きを弱めるか
-- どの候補が最小変更で主条件を満たすか
-- 強すぎるC_coreが大型化・絶滅を起こすか
-- 複数資源環境で大きな副作用があるか
+以下は結論しない。
 
-### 結論できない
+- 全14遺伝子を共進化させたときの最終body size
+- `bmr_core` が地球生命の実測絶対値と一致すること
+- body_size=1がLUCAそのものを再現すること
+- temperature等を追加した将来世界での最適値
+- 10,000 tickより長期の永続平衡
 
-- 現実のLUCAのmaintenance power
-- `M=1` の実際の細胞サイズ
-- C_coreのSI単位での正確さ
-- 温度を含む現実的なサイズ最適化
-- 多細胞化や巨大化の妥当性
-- C_core自体を進化させるべきか
+---
 
-これらは別軸として扱う。
+# 13. 実装・保存要件
+
+- `exp11.yml` / 45 Config / checker / summarizer / testsを**mainへマージしてから**正式dispatch
+- run単位で seed / Git SHA / 数値環境 / config fingerprint / `bmr_core` / statusを保存
+- 科学的STOP/REVIEWと技術的不完了・integrity failureを分離
+- 全生データ・全画像はGoogle Drive / Actions artifactへ保存
+- GitHubへ `docs/Exp11_結果考察.md`、`experiments/<exp11_id>/NOTES.md`、集計plot、代表図、READMEを保存
+- 途中結果を見て候補・判定基準を変更しない
