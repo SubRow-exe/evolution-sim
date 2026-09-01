@@ -120,10 +120,10 @@ class Config:
     #
     # memory_tau (短期記憶の時定数 [tick]) と
     # response_gain (dQ が曲がり幅へ効く強さ [無次元]) は
-    # **Exp10で校正する暫定値**であり、恒久defaultではない
-    # (docs/Exp10_実験計画案.md §4.3 の候補格子の中央付近を仮置き)。
+    # Exp10 Phase A 事前登録規則で選定・正式Phase Bで機能確認済みの
+    # V1.6恒久default (docs/Exp10_結果考察.md / docs/バージョニング方針.md)。
     memory_tau: float = 10.0
-    response_gain: float = 16.0
+    response_gain: float = 64.0
 
     sense_coef: float = 25.0         # 感覚半径 = k * sensory_range [wu]
     satiety_energy_frac: float = 0.85
