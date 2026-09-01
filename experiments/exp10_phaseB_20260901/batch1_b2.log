@@ -1,0 +1,176 @@
+=== 実行前の停止条件 (workflow setup job 相当) ===
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/make_exp10_configs.py --check
+OK — 10 Config すべて生成結果と一致
+
+$ /home/user/evolution-sim/.venv/bin/python3 -m pytest tests/test_v16_temporal.py -q
+................................                                         [100%]
+32 passed in 11.59s
+
+$ /home/user/evolution-sim/.venv/bin/python3 -m pytest tests/test_conservation.py tests/test_determinism.py -q
+.......                                                                  [100%]
+7 passed in 18.26s
+
+=== Phase B 実行: 2 条件 × seed 1-20 × 10,000 tick ===
+
+--- [1/2] b2_chem_only_chemspec_control  (経過 0.0 分) ---
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/run_batch.py --seeds 1-20 --ticks 10000 --workers 4 --config /home/user/evolution-sim/configs/exp10/exp10_b2_chem_only_chemspec_control.json --out /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_control
+batch: /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_control
+seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]  ticks: 10000  workers: 4
+
+  seed    1: OK  done: 10000 ticks in 28.7s  final pop=134  (33s)
+  seed    2: OK  done: 5409 ticks in 3.2s  final pop=0  (7s)
+  seed    3: OK  done: 10000 ticks in 14.3s  final pop=56  (19s)
+  seed    4: OK  done: 10000 ticks in 15.8s  final pop=49  (21s)
+  seed    5: OK  done: 10000 ticks in 11.5s  final pop=32  (16s)
+  seed    6: OK  done: 5394 ticks in 2.7s  final pop=0  (5s)
+  seed    7: OK  done: 10000 ticks in 12.6s  final pop=46  (17s)
+  seed    8: OK  done: 10000 ticks in 14.1s  final pop=37  (19s)
+  seed    9: OK  done: 10000 ticks in 10.2s  final pop=48  (14s)
+  seed   10: OK  done: 10000 ticks in 21.9s  final pop=89  (26s)
+  seed   11: OK  done: 10000 ticks in 12.6s  final pop=56  (17s)
+  seed   12: OK  done: 10000 ticks in 26.6s  final pop=134  (31s)
+  seed   13: OK  done: 10000 ticks in 21.3s  final pop=102  (25s)
+  seed   14: OK  done: 10000 ticks in 11.9s  final pop=39  (16s)
+  seed   15: OK  done: 10000 ticks in 25.8s  final pop=124  (30s)
+  seed   16: OK  done: 10000 ticks in 9.9s  final pop=24  (14s)
+  seed   17: OK  done: 10000 ticks in 10.6s  final pop=20  (15s)
+  seed   18: OK  done: 10000 ticks in 16.6s  final pop=73  (20s)
+  seed   19: OK  done: 10000 ticks in 7.9s  final pop=15  (12s)
+  seed   20: OK  done: 10000 ticks in 30.7s  final pop=122  (35s)
+
+全 20 run 完了 (119s)
+
+--- 最終時点の主要指標 (seed 20件) ---
+  population                       中央値     48.500   範囲 0.000 〜 134.000
+  n_lineages                       中央値      2.000   範囲 0.000 〜 4.000
+  mean_body_size                   中央値        nan   範囲 0.386 〜 1.152
+  mean_light_absorption            中央値        nan   範囲 0.300 〜 0.300
+  mean_reproduction_investment     中央値        nan   範囲 0.227 〜 0.854
+  mean_mutation_rate               中央値        nan   範囲 0.033 〜 0.109
+aggregate -> /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_control/aggregate
+
+--- [2/2] b2_chem_only_chemspec_treatment  (経過 2.0 分) ---
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/run_batch.py --seeds 1-20 --ticks 10000 --workers 4 --config /home/user/evolution-sim/configs/exp10/exp10_b2_chem_only_chemspec_treatment.json --out /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_treatment
+batch: /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_treatment
+seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]  ticks: 10000  workers: 4
+
+  seed    1: OK  done: 10000 ticks in 32.9s  final pop=103  (37s)
+  seed    2: OK  done: 10000 ticks in 30.5s  final pop=117  (35s)
+  seed    3: OK  done: 10000 ticks in 29.0s  final pop=111  (33s)
+  seed    4: OK  done: 10000 ticks in 30.3s  final pop=105  (35s)
+  seed    5: OK  done: 10000 ticks in 30.2s  final pop=107  (35s)
+  seed    6: OK  done: 10000 ticks in 26.8s  final pop=94  (31s)
+  seed    7: OK  done: 10000 ticks in 25.8s  final pop=82  (30s)
+  seed    8: OK  done: 10000 ticks in 30.5s  final pop=113  (34s)
+  seed    9: OK  done: 10000 ticks in 30.6s  final pop=115  (35s)
+  seed   10: OK  done: 10000 ticks in 33.3s  final pop=126  (37s)
+  seed   11: OK  done: 10000 ticks in 26.7s  final pop=102  (31s)
+  seed   12: OK  done: 10000 ticks in 30.9s  final pop=109  (36s)
+  seed   13: OK  done: 10000 ticks in 29.5s  final pop=121  (34s)
+  seed   14: OK  done: 10000 ticks in 26.4s  final pop=95  (31s)
+  seed   15: OK  done: 10000 ticks in 25.8s  final pop=85  (30s)
+  seed   16: OK  done: 10000 ticks in 27.1s  final pop=93  (32s)
+  seed   17: OK  done: 10000 ticks in 28.7s  final pop=104  (33s)
+  seed   18: OK  done: 10000 ticks in 26.8s  final pop=82  (31s)
+  seed   19: OK  done: 10000 ticks in 25.7s  final pop=83  (30s)
+  seed   20: OK  done: 10000 ticks in 33.5s  final pop=138  (38s)
+
+全 20 run 完了 (177s)
+
+--- 最終時点の主要指標 (seed 20件) ---
+  population                       中央値    104.500   範囲 82.000 〜 138.000
+  n_lineages                       中央値      4.000   範囲 3.000 〜 6.000
+  mean_body_size                   中央値      0.764   範囲 0.568 〜 0.880
+  mean_light_absorption            中央値      0.300   範囲 0.300 〜 0.300
+  mean_reproduction_investment     中央値      0.402   範囲 0.340 〜 0.502
+  mean_mutation_rate               中央値      0.057   範囲 0.042 〜 0.075
+aggregate -> /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_treatment/aggregate
+
+=== 実行完了 (5.0 分) ===
+
+=== 数値実行環境 ===
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/check_env.py /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_control /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_treatment
+[ 40 run] linux-x86_64-glibc2.39-py3.12.3-np2.5.2 | git 64f0b5a99503
+
+同一環境。比較可能。
+
+=== 健全性チェック ===
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/health_check.py /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_control /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b2_chem_only_chemspec_treatment --ticks 10000 --expect-runs 20
+期待tick数: 10,000 / 期待run数: 20 (条件ごと)
+
+条件                                   run数      固定分散max
+b2_chem_only_chemspec_control          20            0
+b2_chem_only_chemspec_treatment        20            0
+
+早期終了run: 2 件 (実行手順書§3により除外せず、早期終了という結果として記録する)
+  b2_chem_only_chemspec_control/20260901_012940_seed2: tick 5,409 で終了 (個体数 0)
+  b2_chem_only_chemspec_control/20260901_012958_seed6: tick 5,394 で終了 (個体数 0)
+固定遺伝子: 全期間で分散0 (正しく固定されている)
+
+数値実行環境: 1 種類
+  [ 40 run] linux-x86_64-glibc2.39-py3.12.3-np2.5.2 | image=-
+
+コード (git SHA): 1 種類
+  [ 40 run] 64f0b5a9950361f71445
+
+警告 (停止しない): 早期終了run
+問題なし。前提は成立している。
+
+=== 診断条件チェック ===
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/check_exp10.py /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs --seeds 1-20
+
+=== b2_chem_only_chemspec_control (20 run / chemspec / control) ===
+  OK  b2_chem_only_chemspec_control: seed [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]   期待 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  (詳細は異常時のみ表示。b2_chem_only_chemspec_control は 20 run 分を確認)
+
+=== b2_chem_only_chemspec_treatment (20 run / chemspec / treatment) ===
+  OK  b2_chem_only_chemspec_treatment: seed [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]   期待 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+  (詳細は異常時のみ表示。b2_chem_only_chemspec_treatment は 20 run 分を確認)
+
+============================================================
+確認項目 702 件
+判定: OK — Exp10 Phase B の診断条件は全て意図どおり
+
+=== Phase B の要約と事前登録判定 ===
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/summarize_exp10_phaseB.py /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs --ticks 10000
+=== 重要停止条件 (§5.5): chemical-only treatment の生存 ===
+  b2_chem_only_chemspec_treatment: 20/20 seed が 10,000 tick まで生存 (必要 18/20)  → OK
+
+=== 条件別サマリ (seed中央値) ===
+条件                                         生存    最終pop    hi_q   vent       移動      |dQ|   sigma  light flow  chem flow
+b2_chem_only_chemspec_control           18/20       48  1.0000  0.780   0.5801  2.97e-02  0.5000           0    208,043
+b2_chem_only_chemspec_treatment         20/20      104  1.0000  0.846   0.6947  2.85e-02  0.5303           0    468,113
+
+=== §8-3: treatment は control より high-Q領域へ偏るか ===
+条件                              改善seed率        改善量中央値[pp]     判定
+b2_chem_only_chemspec              0.10              0.00      -
+
+=== §8-4: mixed generalist の dQ 寄与分解 ===
+
+=== vent距離帯別 (treatment, seed中央値) ===
+条件                                   帯      滞在率  sigma_eff     dQ_chem     chem E     light E
+b2_chem_only_chemspec             d0_1   0.0824     0.5160   -1.05e-03     40,842           0
+                                  d1_2   0.5664     0.5124   -7.38e-04    302,824           0
+                                  d2_4   0.3483     0.5627   -5.59e-03    121,704           0
+                                d4plus   0.0010     0.5264   -1.68e-03          0           0
+
+=== §8-7: control と treatment で光供給が一致するか ===
+  b2_chem_only_chemspec          treatment=0  control=0 → OK
+
+============================================================
+判定: 未達 1 件
+  - §8-3 b2_chem_only_chemspec の high-Q改善
+
+=== 生データのアーカイブ ===
+54M	/tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/archives
+
+生データは Git へ入れない。/tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/archives を Google Drive / Actions artifact へ退避すること (docs/実験結果保存方針.md §1)
+
+★ 診断条件または事前登録判定が停止条件に該当した

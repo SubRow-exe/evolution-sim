@@ -1,7 +1,7 @@
 # Exp10 中間報告 — Phase A完了（Green）と Phase B の前提崩れ
 
-更新: 2026-08-31
-状態: **Phase A完了 / Phase B は前提の再検討が必要。人間判断待ち**
+更新: 2026-09-01
+状態: **Phase A完了 / Phase B を5バッチへ分割して正式実行中（バッチ1完了）**
 
 正本:
 - 条件・判定: `docs/Exp10_実験計画案.md`
@@ -182,18 +182,72 @@ K0 のGreen条件は drift で見ているのでPhase Aの判定には影響し�
 
 ---
 
+## 6.5 Phase B の実行単位分割（人間判断で決定・2026-09-01）
+
+V1.6による個体数増加で当初の計算量見積もりが崩れたため、
+**科学条件を一切変更せず、実行単位だけ 40 run × 5バッチへ分割**した。
+
+分割は計算負荷・Artifact回収・collect処理を安全にするためだけの措置で、
+最終解析では5バッチを合わせて**元の計画どおり1つのPhase B（200 run）**として扱う。
+
+```text
+バッチ1  B2 chemical-only / chemical specialist   control 20 + treatment 20
+バッチ2  B1 light-only    / light specialist      control 20 + treatment 20
+バッチ3  B3 mixed         / light specialist      control 20 + treatment 20
+バッチ4  B4 mixed         / chemical specialist   control 20 + treatment 20
+バッチ5  B5 mixed         / generalist            control 20 + treatment 20
+```
+
+変更していないもの: `response_gain=64` / `memory_tau=10`（Phase A選定値）、
+`fixed_genes`、`body_size`、tick数10,000、seed 1-20、5条件×2行動則の構成。
+`body_size` の小型化と個体数増加は現行世界ルールから生じた結果としてそのまま許容する。
+
+B2を最初に置いたのは、事前登録の重要停止条件（§5.5）を先に確認するためである。
+
+全バッチを同一commit `64f0b5a` / 同一Config / 同一数値実行環境
+`linux-x86_64-glibc2.39-py3.12.3-np2.5.2` で実行する。
+正式実行開始後は科学コード・Configを変更しない。
+§3 で参照した途中実行データは参考扱いとし、正式結果には混ぜない。
+
+### バッチ1（B2 chemical-only）— 完了 / §5.5 クリア
+
+実行commit `64f0b5a`、40 run、所要5分、診断条件チェック702項目すべてOK。
+
+```text
+b2_chem_only_chemspec_treatment: 20/20 seed が 10,000 tick まで生存 (必要 18/20) → OK
+```
+
+| | control (gain=0) | treatment (gain=64) |
+|---|---:|---:|
+| 生存 | 18/20（seed 2, 6 が絶滅） | **20/20** |
+| 最終pop 中央値 | 48 | **104** |
+| vent滞在率 | 0.780 | **0.846** |
+| chemical取得累積 | 208,043 | **468,113** |
+
+**`docs/V1.6_Exp10_レビュー.md` B-4 の懸念は実測で否定された。**
+「定位保持を失うと vent 依存の chemical-only 生態が壊れる」と書いたが、実際には
+temporal sensing の方が vent 近傍に留まり、chemical取得2.25倍・個体数2.2倍・絶滅ゼロだった。
+
+vent距離帯別（treatment）では滞在が d1_2 で最大（0.566）、chemical取得も d1_2 が最大。
+vent直上（d0_1、0.082）より1〜2セル外側に留まるのは、直上ではstockを吸い尽くして
+`dQ` が下がるためで、消費→離脱→回復というstock型資源の性質と整合する。
+
+なお要約ツールは §8-3（high-Q改善）を「未達」と出すが、これは §6 の指標退化そのもので
+b2では `hi_q` が control/treatment とも 1.0000 固定になり改善量が定義上0になるためである。
+V1.6の失敗ではない。判定基準を実行後に変えないため**ツールには手を入れていない**。
+
 ## 7. 要判断項目
 
-### 7.1 Phase B本番の回し方
+### 7.1 Phase B本番の回し方 — **決着済み（§6.5）**
 
-| 案 | 内容 | 実行時間 | 事前登録との関係 |
-|---|---|---|---|
-| A | `exp10.yml` を main へ入れて Actions で回す | 約7時間 | 規模を一切変えない |
-| B | b2 だけローカルで完走させ、light系は保留 | 約20分 | §5.5 のみ確定。他は未了 |
-| C | ローカルで tick を 5,000 へ縮小して200 run | 約8時間 | **§11 に抵触**（結果を見た後の条件変更） |
+科学条件を変えず 40 run × 5バッチへ分割して実行することで決着した。
+経路はローカルに統一する（`workflow_dispatch` は workflow が default branch に
+無いと起動できず、B2をローカルで正式実行した以上、同一環境の要件を守るには
+残りもローカルが一貫するため）。
 
-案Aが事前登録を守れる唯一の方法だが、`exp10.yml` を main へ入れる必要がある。
-PRの作成はご指示をいただいてから行う。
+残る実務課題は**生データのDrive転送**である。ローカル実行では rclone 設定が
+GitHub secret のため転送できない。`archives/` に tar.gz でまとめてあるので、
+最終的に別途退避するか Actions で回収し直す必要がある。
 
 ### 7.2 個体数20倍・小型化の扱い
 
