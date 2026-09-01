@@ -1,0 +1,21 @@
+=== 実行前の停止条件 (workflow setup job 相当) ===
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/make_exp10_configs.py --check
+OK — 10 Config すべて生成結果と一致
+
+$ /home/user/evolution-sim/.venv/bin/python3 -m pytest tests/test_v16_temporal.py -q
+................................                                         [100%]
+32 passed in 11.54s
+
+$ /home/user/evolution-sim/.venv/bin/python3 -m pytest tests/test_conservation.py tests/test_determinism.py -q
+.......                                                                  [100%]
+7 passed in 17.75s
+
+=== Phase B 実行: 2 条件 × seed 1-20 × 10,000 tick ===
+
+--- [1/2] b1_light_only_lightspec_control  (経過 0.0 分) ---
+
+$ /home/user/evolution-sim/.venv/bin/python3 tools/run_batch.py --seeds 1-20 --ticks 10000 --workers 4 --config /home/user/evolution-sim/configs/exp10/exp10_b1_light_only_lightspec_control.json --out /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b1_light_only_lightspec_control
+batch: /tmp/claude-0/-home-user-evolution-sim/4d1a336f-4221-59cf-9693-1f94c8cfb5c9/scratchpad/exp10_official/runs/b1_light_only_lightspec_control
+seeds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]  ticks: 10000  workers: 4
+

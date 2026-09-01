@@ -21,11 +21,15 @@ jobs:
         # 指紋はOS依存のため定数比較はできない。同一マシン上で
         # 参照実装と現在の実装を実際に走らせて比較する。
         #
-        # V1.5は世界ルール変更境界 (行動の異種刺激比較) なので、V1.4以前とは
-        # 意図的に結果が異なる。V1.5内の結果不変変更は、最初のV1.5実装コミット
-        # 8b064ee を基準にする。単独source世界がV1.4と一致することは
-        # verify_vs_ref.py --ref 226a926 --single-source で別途確認する。
+        # V1.6は世界ルール変更境界 (一次Energyの移動則を temporal biased
+        # random walk へ変更) なので、V1.5以前とは意図的に結果が異なる。
+        # V1.6内の結果不変変更は、最初のV1.6実装コミット e15ee67 を基準にする。
+        #
+        # V1.6は移動原理そのものを変えるため、V1.5との単独source一致
+        # (--single-source) は成立しない。その検証はV1.5の停止条件であり、
+        # `v1.5-final` branch が再現手段を持つ。
         # Repository variable が古い値のまま残っていても基準を上書きしないよう、
         # このworkflowではrefを明示的に固定する。
-        # 過去バージョンの再現は v1.2-final / v1.3-final / v1.4-final を使用する。
-        run: uv run python tools/verify_vs_ref.py --ref 8b064ee
+        # 過去バージョンの再現は
+        # v1.2-final / v1.3-final / v1.4-final / v1.5-final を使用する。
+        run: uv run python tools/verify_vs_ref.py --ref e15ee67

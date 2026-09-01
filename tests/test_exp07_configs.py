@@ -24,7 +24,9 @@ DIAGNOSTIC_KEYS = {"chem_vent_flux", "diagnostic_placement",
 # V1.4以降に追加されたConfig項目は当時のファイルに存在しないため、
 # 「後から増えた項目か」だけを確認し、V1.3当時の項目は厳密一致で守る。
 POST_V13_KEYS = {"light_uptake_coef", "light_stimulus_half",
-                 "chemical_stimulus_half", "stimulus_tie_eps"}
+                 "chemical_stimulus_half", "stimulus_tie_eps",
+                 # V1.6 temporal biased random walk
+                 "memory_tau", "response_gain"}
 
 
 def load(flux: float, condition: str) -> dict:

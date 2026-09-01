@@ -20,6 +20,11 @@ from tools.make_exp09_configs import (CONDITIONS, FIXED, OUT_DIR, PHENOTYPES,
 VARIABLE = {"light_pattern", "light_max", "chem_vent_flux",
             "diagnostic_placement", "diagnostic_gene_overrides"}
 
+# `configs/exp09/` は実行済みExp09 (V1.5) の記録なので再生成しない。
+# V1.6以降に追加されたConfig項目は当時のファイルに存在しないため、
+# 「後から増えた項目か」だけを確認し、V1.5当時の項目は厳密一致で守る。
+POST_V15_KEYS = {"memory_tau", "response_gain"}
+
 
 def load(condition: str) -> dict:
     path = OUT_DIR / config_name(condition)
@@ -29,7 +34,17 @@ def load(condition: str) -> dict:
 
 def test_all_configs_exist_and_match_generator():
     for condition in CONDITIONS:
-        assert load(condition) == dataclasses.asdict(build(condition))
+        stored = load(condition)
+        generated = dataclasses.asdict(build(condition))
+        added = set(generated) - set(stored)
+        assert added <= POST_V15_KEYS, (
+            f"{condition}: Exp09当時に無かった項目 {added} は V1.6以降の "
+            "追加分として POST_V15_KEYS へ明示すること")
+        assert set(stored) - set(generated) == set(), (
+            f"{condition}: 現行Configから消えた項目がある")
+        for key, value in stored.items():
+            assert generated[key] == value, (
+                f"{condition}: {key} が生成物と一致しない")
 
 
 def test_condition_count_is_pre_registered():

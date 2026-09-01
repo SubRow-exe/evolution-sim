@@ -26,6 +26,7 @@ from .genome import BODY_SIZE, GENE_NAMES, LIGHT_ABS, MUTATION_RATE, REPRO_INVES
 from .runmeta import run_metadata
 from .spatial import (BAND_NAMES, lineage_spatial, population_spatial,
                       save_environment_snapshot, save_static_environment)
+from .world import VENT_BAND_NAMES
 
 TOP_LINEAGES = 8  # lineages.csv に記録する上位系統数
 
@@ -67,11 +68,20 @@ class Recorder:
             *[f"pop_{b}_band" for b in BAND_NAMES],
             *[f"frac_{b}_band" for b in BAND_NAMES],
             "mean_local_light", "vent_cell_population", "vent_cell_frac",
-            "mean_move_per_org_tick",
-            # 一次Energy刺激の選択統計 (V1.5 観測。区間集計)
-            "sel_light", "sel_chemical", "sel_tie", "sel_walk",
-            "sel_both_events", "sel_agree", "sel_lost_light", "sel_lost_chemical",
-            "sel_light_resp_mean", "sel_chem_resp_mean", "sel_chem_stock_mean",
+            "hi_q_frac", "mean_move_per_org_tick",
+            # V1.6 temporal sensing の観測 (区間集計)。
+            # 平均は「知覚が起きた回数 stim_events」で割る。
+            "sel_walk", "stim_events",
+            "q_mean", "q_mem_mean", "dq_mean", "dq_abs_mean",
+            "dq_light_mean", "dq_chem_mean",
+            "turn_factor_mean", "sigma_eff_mean",
+            "r_light_mean", "r_chem_mean",
+            "dq_pos", "dq_neg", "dq_zero",
+            "turn_factor_pos_mean", "turn_factor_neg_mean",
+            # vent距離帯別 (Exp10 §5.4)。band内の知覚回数で割った平均と累積E
+            *[f"band_{b}_{k}" for b in VENT_BAND_NAMES
+              for k in ("n", "dq_light", "dq_chem", "sigma_eff",
+                        "light_e", "chem_e")],
             *[f"mean_{n}" for n in GENE_NAMES],
             *[f"var_{n}" for n in GENE_NAMES],
         ]
@@ -149,12 +159,34 @@ class Recorder:
         mean_move = (round(sim._move_sum / sim._move_count, 6)
                      if sim._move_count else "")
 
-        # 一次Energy刺激の選択統計 (V1.5 観測)
+        # V1.6 temporal sensing の観測
         obs = sim.stim_obs
-        nb = obs["both_events"]
-        obs_light_resp = round(obs["light_resp_sum"] / nb, 6) if nb else ""
-        obs_chem_resp = round(obs["chem_resp_sum"] / nb, 6) if nb else ""
-        obs_chem_stock = round(obs["chem_stock_sum"] / nb, 6) if nb else ""
+        ns = obs["stim_events"]
+
+        def _mean(key: str, denom: float) -> object:
+            return round(obs[key] / denom, 8) if denom else ""
+
+        stim_cols = [
+            obs["walk"], ns,
+            _mean("q_sum", ns), _mean("q_mem_sum", ns),
+            _mean("dq_sum", ns), _mean("dq_abs_sum", ns),
+            _mean("dq_light_sum", ns), _mean("dq_chem_sum", ns),
+            _mean("turn_factor_sum", ns), _mean("sigma_eff_sum", ns),
+            _mean("r_light_sum", ns), _mean("r_chem_sum", ns),
+            obs["dq_pos"], obs["dq_neg"], obs["dq_zero"],
+            _mean("turn_factor_pos_sum", obs["dq_pos"]),
+            _mean("turn_factor_neg_sum", obs["dq_neg"]),
+        ]
+        for bi in range(len(VENT_BAND_NAMES)):
+            nb = obs["band_n"][bi]
+            stim_cols += [
+                nb,
+                round(obs["band_dq_light"][bi] / nb, 8) if nb else "",
+                round(obs["band_dq_chem"][bi] / nb, 8) if nb else "",
+                round(obs["band_sigma_eff"][bi] / nb, 8) if nb else "",
+                round(obs["band_light_e"][bi], 4),
+                round(obs["band_chem_e"][bi], 4),
+            ]
 
         # 系統別集計 (改善方針 Ver.1.2 §4)
         by_lineage: dict[int, list] = {}
@@ -201,11 +233,8 @@ class Recorder:
             *[sp_pop[f"pop_{b}_band"] for b in BAND_NAMES],
             *[sp_pop[f"frac_{b}_band"] for b in BAND_NAMES],
             sp_pop["mean_local_light"], sp_pop["vent_cell_population"],
-            sp_pop["vent_cell_frac"], mean_move,
-            obs["light"], obs["chemical"], obs["tie"], obs["walk"],
-            obs["both_events"], obs["agree"],
-            obs["lost_light"], obs["lost_chemical"],
-            obs_light_resp, obs_chem_resp, obs_chem_stock,
+            sp_pop["vent_cell_frac"], sp_pop["hi_q_frac"], mean_move,
+            *stim_cols,
             *[round(float(v), 6) for v in gmean],
             *[round(float(v), 6) for v in gvar],
         ]

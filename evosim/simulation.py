@@ -19,7 +19,9 @@ from .genome import (CHEM_ABS, CORPSE_DIG, LIGHT_ABS, MEMBRANE, NUTRIENT_ABS,
                      fixed_mask_from_names, initial_genome, mutate)
 from .organism import Organism
 from .recorder import Recorder
-from .world import World
+from .world import VENT_BAND_NAMES, World
+
+NB = len(VENT_BAND_NAMES)  # vent距離帯の本数 (観測専用)
 
 # これ未満の吸収能力は「器官を持たない」とみなす (V1.3以前と同じ閾値)
 ABILITY_EPS = 1e-6
@@ -75,6 +77,11 @@ class Simulation:
         #   agree          : 無次元scoreの順位と実際の選択が一致した回数
         #   lost_*         : 一次Energy候補が他刺激 (栄養/死骸/捕食) に負けた回数
         self.stim_obs = self._new_stim_obs()
+        # V1.6 短期記憶のEMA更新率。alpha = 1 - exp(-1/tau)。
+        # tick毎に exp を呼ばないよう __init__ で1度だけ求める。
+        # tau <= 0 は「記憶しない」= 常に現在値 (alpha = 1)。
+        tau = cfg.memory_tau
+        self.stim_alpha = 1.0 if tau <= 0.0 else 1.0 - math.exp(-1.0 / tau)
 
         # 移動量の集計 (V1.2.1 観測)。stats記録ごとにリセットされる区間統計。
         # 読み取り専用であり進化ロジックには一切使わない。
@@ -87,16 +94,66 @@ class Simulation:
             Recorder(run_dir, cfg, seed) if run_dir is not None else None)
 
         self._spawn_initial()
+        # high-Q領域マスクは初期個体群の平均能力を使うので、生成後に作る
+        self.hi_q_mask = self._build_hi_q_mask()
         self.initial_system_energy = self.system_energy()
         self.initial_system_matter = self.system_matter()
 
+    def _build_hi_q_mask(self) -> np.ndarray:
+        """high-Q領域 (Qが上位25%のセル) のマスク。**観測専用**。
+
+        Exp10 §4/§5 の「high-Q領域滞在率」をPhase AとPhase Bで同じ定義に
+        するために置く (`docs/Exp10_実験計画案.md`)。
+
+        定義を再現可能に固定するため、次の2点で「生物不在の世界」を使う:
+
+        - chemical は実stockではなく生物不在平衡 `flux / loss_frac`
+        - 能力は初期個体群の平均 light/chemical_absorption
+
+        Phase Bは診断表現型を固定するので、この平均は条件の表現型と一致する。
+        マスクは初期化時に1度だけ作り、以後変えない。RNGを消費しない。
+        """
+        cfg = self.cfg
+        light = self.world.light
+        chem_eq = (self.world.chem_source_flux / cfg.chem_loss_frac
+                   if cfg.chem_loss_frac > 0.0
+                   else np.zeros_like(self.world.chem_source_flux))
+        if self.organisms:
+            g = np.stack([o.genome for o in self.organisms])
+            la = float(g[:, LIGHT_ABS].mean())
+            ca = float(g[:, CHEM_ABS].mean())
+        else:
+            la = ca = 0.0
+        if la + ca <= 0.0:
+            return np.zeros_like(light, dtype=bool)
+        r_l = light / (light + cfg.light_stimulus_half)
+        r_c = chem_eq / (chem_eq + cfg.chemical_stimulus_half)
+        q = (la * r_l + ca * r_c) / (la + ca)
+        return q >= float(np.quantile(q, 0.75))
+
     @staticmethod
-    def _new_stim_obs() -> dict[str, float]:
-        return {"light": 0, "chemical": 0, "tie": 0, "walk": 0,
-                "both_events": 0, "agree": 0,
-                "lost_light": 0, "lost_chemical": 0,
-                "light_resp_sum": 0.0, "chem_resp_sum": 0.0,
-                "chem_stock_sum": 0.0}
+    def _new_stim_obs() -> dict[str, object]:
+        """V1.6 temporal sensing の観測。RNGを消費せず行動へ戻さない。
+
+        `walk` はV1.5から引き継ぎ。それ以外はV1.6で入れ替えた
+        (一次EnergyのWTAが無くなったので light/chemical選択回数は消える)。
+        """
+        return {"walk": 0,
+                "stim_events": 0,
+                "q_sum": 0.0, "q_mem_sum": 0.0,
+                "dq_sum": 0.0, "dq_abs_sum": 0.0,
+                "dq_light_sum": 0.0, "dq_chem_sum": 0.0,
+                "turn_factor_sum": 0.0, "sigma_eff_sum": 0.0,
+                "r_light_sum": 0.0, "r_chem_sum": 0.0,
+                "dq_pos": 0, "dq_neg": 0, "dq_zero": 0,
+                "turn_factor_pos_sum": 0.0, "turn_factor_neg_sum": 0.0,
+                # vent距離帯別 (Exp10 §5.4)。index は world.VENT_BAND_NAMES
+                "band_n": [0] * NB,
+                "band_dq_light": [0.0] * NB,
+                "band_dq_chem": [0.0] * NB,
+                "band_sigma_eff": [0.0] * NB,
+                "band_light_e": [0.0] * NB,
+                "band_chem_e": [0.0] * NB}
 
     # ------------------------------------------------------------------
     # 初期個体群
@@ -321,6 +378,7 @@ class Simulation:
         taken = math.fsum(gains)
         self.energy_in_cum += taken
         self.flows["light"] += taken
+        self.stim_obs["band_light_e"][int(self.world.vent_band[key])] += taken
 
     def _absorb_chemical(self, orgs, phis, areas, key) -> None:
         """化学: 局所stockから吸収 (フィールド→個体の移動なので流入計上なし)。"""
@@ -351,6 +409,7 @@ class Simulation:
         taken = math.fsum(gains)
         self.world.chemical[key] = max(0.0, stock - taken)
         self.flows["chemical"] += taken
+        self.stim_obs["band_chem_e"][int(self.world.vent_band[key])] += taken
 
     def _absorb_nutrient(self, orgs, phis, areas, key) -> None:
         """無機栄養 (物質): 吸収には同化エネルギーコストがかかる。
