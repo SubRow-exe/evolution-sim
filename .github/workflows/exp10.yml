@@ -217,7 +217,13 @@ jobs:
           du -sh runs/exp10
 
       - name: 数値実行環境の同一性を確認
-        run: uv run python tools/check_env.py runs/exp10/* 2>&1 | tee env_check.txt
+        id: env
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          # --strict: 環境が混在していたら整合性違反として非ゼロ終了する
+          # (Issue #41 再トライアル方針 §6: 環境不一致は workflow failure)。
+          uv run python tools/check_env.py --strict runs/exp10/* 2>&1 | tee env_check.txt
 
       - name: 健全性チェック (run数・環境・コード)
         id: health
@@ -245,10 +251,11 @@ jobs:
         continue-on-error: true
         env:
           SEEDS: ${{ needs.setup.outputs.seeds }}
+          CASES: ${{ inputs.cases }}
         run: |
           set -o pipefail
           rc=0
-          uv run python tools/check_exp10.py runs/exp10 --seeds "$SEEDS" 2>&1 | tee conditions.txt || rc=$?
+          uv run python tools/check_exp10.py runs/exp10 --seeds "$SEEDS" --cases "$CASES" 2>&1 | tee conditions.txt || rc=$?
           {
             echo ""
             echo "<details><summary>診断条件チェック</summary>"
@@ -265,10 +272,11 @@ jobs:
         continue-on-error: true
         env:
           TICKS: ${{ inputs.ticks }}
+          CASES: ${{ inputs.cases }}
         run: |
           set -o pipefail
           rc=0
-          uv run python tools/summarize_exp10_phaseB.py runs/exp10 --ticks "$TICKS" 2>&1 | tee summary.txt || rc=$?
+          uv run python tools/summarize_exp10_phaseB.py runs/exp10 --ticks "$TICKS" --cases "$CASES" 2>&1 | tee summary.txt || rc=$?
           {
             echo ""
             echo "## Exp10 Phase B 結果 (GitHub Actions / Linux)"
@@ -369,16 +377,36 @@ jobs:
           path: archives/
           retention-days: 90
 
-      - name: 停止条件の判定
-        if: ${{ steps.health.outcome == 'failure' || steps.conditions.outcome == 'failure' || steps.summary.outcome == 'failure' }}
+      # 整合性違反 (実行失敗) だけを workflow failure にする。
+      # 科学的な STOP/REVIEW (絶滅・低population・§5.5未達・§8-3/§8-4未確認) は
+      # 正常に完走した測定結果なので workflow を落とさない
+      # (Issue #41 再トライアル方針 §6)。
+      #   環境不一致    → steps.env         (check_env --strict)
+      #   run不足・環境  → steps.health      (health_check)
+      #   Config/排他/固定表現型違反 → steps.conditions (check_exp10)
+      #   供給側の物理破壊 → steps.summary   (§8-7。科学判定は exit 0 のまま)
+      - name: 整合性違反の判定 (実行失敗のみ workflow を落とす)
+        if: ${{ steps.env.outcome == 'failure' || steps.health.outcome == 'failure' || steps.conditions.outcome == 'failure' || steps.summary.outcome == 'failure' }}
         run: |
-          echo "::error::健全性・診断条件・事前登録判定のいずれかが停止条件に該当した"
+          echo "::error::整合性違反 (環境不一致・run不足・固定表現型違反・物理破壊のいずれか)"
           {
             echo ""
-            echo "### ★ 停止条件に該当"
-            echo "health.txt / conditions.txt / summary.txt を確認すること。"
-            echo "とくに chemical-only treatment の生存 (§5.5) は"
-            echo "満たさなければ V1.6 default化を止める判断材料になる。"
+            echo "### ★ 整合性違反 — 実行失敗"
+            echo "env_check.txt / health.txt / conditions.txt / summary.txt を確認すること。"
+            echo "これは実験の実行そのものの失敗であり、修正して再実行が必要。"
+            echo "科学的な STOP/REVIEW (§5.5 の生存など) は別扱いで、summary.txt に"
+            echo "「科学的判定」として出る (workflow は落とさない)。"
             echo "生データと成果物は退避済み。"
           } >> $GITHUB_STEP_SUMMARY
           exit 1
+
+      - name: 科学的判定を要約へ明記
+        if: ${{ steps.env.outcome != 'failure' && steps.health.outcome != 'failure' && steps.conditions.outcome != 'failure' && steps.summary.outcome != 'failure' }}
+        run: |
+          {
+            echo ""
+            echo "### 整合性 OK — 実行は成功"
+            echo "科学的な PASS/STOP/REVIEW は summary.txt の「科学的判定」を参照。"
+            echo "とくに chemical-only treatment の生存 (§5.5) が STOP のときは、"
+            echo "V1.6 default化を止める科学的判断材料になる (実行の失敗ではない)。"
+          } >> $GITHUB_STEP_SUMMARY

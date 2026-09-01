@@ -15,11 +15,18 @@ high-Q滞在率や生存率といった科学的結果は判定しない (それ
    `memory_tau` は両者で同一)
 - source排他: light-only は累積 chemical flow=0、chemical-only は
   光供給・累積 light flow がともに0、mixed は両方>0
-- 診断表現型が初期・最終snapshotとも厳密に事前登録値で、全期間で分散0
+- **進化OFF**: 全14遺伝子が fixed_genes に入り、全個体・全期間で分散0
+  (診断表現型2遺伝子は事前登録値、残り12遺伝子は INITIAL_GENOME 据え置き)。
+  初期・最終snapshotとも全遺伝子が個体間で厳密に一定
 - V1.6観測列が欠けていない
 - 帯別観測の内訳が全体と整合する
 
-前提が崩れていれば非ゼロ終了する。
+`--cases` を渡すと、そのバッチで走らせるべき条件だけを必須扱いにする
+(40 run分割実行での「未実行条件」を run不足と誤検知しない)。渡さなければ
+Phase B全10条件を必須扱いにする。
+
+これらは「意図した条件で走ったか」の整合性チェックであり、崩れていれば
+非ゼロ終了する (workflow failure に相当)。生存率などの科学的判定はしない。
 """
 from __future__ import annotations
 
@@ -101,6 +108,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Exp10 Phase B 診断条件チェック")
     ap.add_argument("exp_dir")
     ap.add_argument("--seeds", default="1-20")
+    ap.add_argument("--cases", default="",
+                    help="このバッチで必須の条件 (カンマ区切り。省略で全10条件)")
     args = ap.parse_args()
 
     base = Path(args.exp_dir)
@@ -109,13 +118,28 @@ def main() -> int:
     rep = Report()
 
     names = {f"{c}_{r}": (c, r) for c in CONDITIONS for r in RULES}
+    expected = ([c.strip() for c in args.cases.split(",") if c.strip()]
+                if args.cases else list(names))
+    unknown = [c for c in expected if c not in names]
+    if unknown:
+        print(f"NG  未知の条件が --cases に含まれる: {unknown}")
+        return 1
     conds = sorted(d for d in base.iterdir() if d.is_dir() and d.name in names)
+    present = {d.name for d in conds}
     if not conds:
         print(f"NG  {base} に Exp10 の条件ディレクトリが無い")
         return 1
 
+    # このバッチで走らせるべき条件が揃っているか (run不足の検知)。
+    # バッチ外の条件は N/A として扱い、存在しなくても失敗にしない。
+    for c in expected:
+        rep.check(c in present, f"必須条件 {c} が存在する",
+                  "このバッチで実行予定の条件が見つからない (run不足)")
+    for skipped in sorted(present - set(expected)):
+        print(f"  --  {skipped}: このバッチ外 (N/A)。整合性のみ確認する")
+
     from evosim.config import Config
-    from evosim.genome import CHEM_ABS, LIGHT_ABS
+    from evosim.genome import GENE_NAMES, INITIAL_GENOME  # noqa: E402
     from evosim.simulation import Simulation
     d = Config()
 
@@ -175,26 +199,37 @@ def main() -> int:
                           f"{tag}: mixed で光もchemicalも供給されている",
                           quiet_ok=True)
 
-            # --- 診断表現型の固定 ---
-            rep.check(cfg["diagnostic_gene_overrides"] == want
-                      and set(cfg["fixed_genes"]) == set(want),
-                      f"{tag}: 表現型 {want} を固定", quiet_ok=True)
-            for gene in want:
+            # --- 進化OFF: 全遺伝子が全世代固定 ---
+            # 期待する固定値: 表現型2遺伝子は事前登録値、残りは INITIAL_GENOME。
+            want_gene = {g: float(INITIAL_GENOME[GENE_NAMES.index(g)])
+                         for g in GENE_NAMES}
+            want_gene.update(want)
+            rep.check(cfg["diagnostic_gene_overrides"] == want,
+                      f"{tag}: 表現型 override が {want}", quiet_ok=True)
+            rep.check(set(cfg["fixed_genes"]) == set(GENE_NAMES),
+                      f"{tag}: 全14遺伝子が固定 (進化OFF)",
+                      f"fixed={sorted(cfg['fixed_genes'])}", quiet_ok=True)
+            # (a) stats.csv の分散が全遺伝子・全期間で厳密0
+            for gene in GENE_NAMES:
                 var_max = max(num(r, f"var_{gene}") for r in rows)
-                rep.check(var_max == 0.0, f"{tag}: {gene} の分散が全期間0",
+                rep.check(var_max == 0.0,
+                          f"{tag}: {gene} の分散が全期間0",
                           f"max={var_max}", quiet_ok=True)
+            # (b) 初期個体群が全遺伝子で期待値・個体間一定
             sim = Simulation(Config.from_json(run / "config.json"), seed)
             g0 = np.stack([o.genome for o in sim.organisms])
-            rep.check(bool(np.all(g0[:, LIGHT_ABS] == want["light_absorption"]))
-                      and bool(np.all(g0[:, CHEM_ABS]
-                                      == want["chemical_absorption"])),
-                      f"{tag}: 初期個体が事前登録の表現型", quiet_ok=True)
-            for gene, val in want.items():
+            for gene, val in want_gene.items():
+                col = g0[:, GENE_NAMES.index(gene)]
+                rep.check(bool(np.all(col == val)),
+                          f"{tag}: 初期個体の {gene}={val}",
+                          f"実測 min={col.min()} max={col.max()}", quiet_ok=True)
+            # (c) 最終snapshotも全遺伝子で期待値・個体間一定
+            for gene, val in want_gene.items():
                 vals = snapshot_gene(run, gene)
                 if vals is not None:
                     rep.check(all(v == val for v in vals),
                               f"{tag}: 最終snapshotも {gene}={val}",
-                              quiet_ok=True)
+                              f"min={min(vals)} max={max(vals)}", quiet_ok=True)
 
             # --- 観測列 ---
             missing = [c for c in OBS_COLUMNS if c not in last]

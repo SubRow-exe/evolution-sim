@@ -29,12 +29,15 @@ def collect(root: Path) -> dict[str, list[str]]:
     return groups
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        raise SystemExit("usage: python tools/check_env.py <run_dir> [<run_dir> ...]")
+def main() -> int:
+    args = [a for a in sys.argv[1:] if a != "--strict"]
+    strict = "--strict" in sys.argv[1:]
+    if not args:
+        raise SystemExit(
+            "usage: python tools/check_env.py [--strict] <run_dir> [<run_dir> ...]")
 
     all_groups: dict[str, list[str]] = defaultdict(list)
-    for arg in sys.argv[1:]:
+    for arg in args:
         for k, v in collect(Path(arg)).items():
             all_groups[k].extend(v)
 
@@ -48,11 +51,14 @@ def main() -> None:
 
     if len(all_groups) == 1:
         print("\n同一環境。比較可能。")
-    else:
-        print(f"\n⚠ {len(all_groups)} 種類の環境が混在しています。")
-        print("  異なる数値実行環境のrunを、同一seedだからという理由で直接比較しないこと。")
-        print("  (コード変更を跨ぐ場合は git SHA の差も比較を無効にし得る)")
+        return 0
+    print(f"\n⚠ {len(all_groups)} 種類の数値実行環境が混在しています。")
+    print("  異なる数値実行環境のrunを、同一seedだからという理由で直接比較しないこと。")
+    print("  (コード変更を跨ぐ場合は git SHA の差も比較を無効にし得る)")
+    # --strict では環境不一致を整合性違反として非ゼロ終了する
+    # (Issue #41 再トライアル方針 §6: 環境不一致は workflow failure)。
+    return 2 if strict else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

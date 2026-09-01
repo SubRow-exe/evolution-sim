@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from evosim.config import Config
+from evosim.genome import GENE_NAMES
 
 OUT_DIR = ROOT / "configs" / "exp10"
 SELECTION = ROOT / "configs" / "exp10" / "phaseA_selection.json"
@@ -45,7 +46,15 @@ PHENOTYPES = {
     "chemspec": {"light_absorption": 0.3, "chemical_absorption": 2.0},
     "generalist": {"light_absorption": 1.0, "chemical_absorption": 1.0},
 }
-FIXED = ["light_absorption", "chemical_absorption"]
+
+# 進化OFF: Phase Bは「行動則の軸だけ」を control/treatment で振る診断であり、
+# 表現型は全世代固定でなければならない (Issue #41 「Phase B 正式再トライアル方針」)。
+# 旧実装は light/chemical の2吸収能力しか固定しておらず、body_size 等の
+# 残り12遺伝子が自由進化していた (中間報告の個体数20倍・小型化はその帰結)。
+# 全14遺伝子を固定して、当初事前登録どおりの「進化OFF・固定表現型」へ戻す。
+# diagnostic_gene_overrides は表現型2遺伝子だけ初期値を上書きし、残りは
+# INITIAL_GENOME のまま据え置く (固定遺伝子は初期ばらつきも変異も受けない)。
+FIXED = list(GENE_NAMES)
 
 COMMON = dict(
     fixed_genes=FIXED,

@@ -84,21 +84,23 @@ def main() -> int:
 
     print(f"\n=== 実行完了 ({(time.time() - t0) / 60:.1f} 分) ===")
 
-    print("\n=== 数値実行環境 ===")
-    run(py + ["tools/check_env.py"] + [str(p) for p in sorted(out.iterdir())
-                                       if p.is_dir()], check=False)
+    run_dirs = [str(p) for p in sorted(out.iterdir()) if p.is_dir()]
+    # このバッチで走らせた条件だけを必須扱いにする (分割実行で N/A を誤検知しない)
+    cases_arg = ",".join(cases)
+    print("\n=== 数値実行環境 (--strict: 混在は整合性違反) ===")
+    env_rc = run(py + ["tools/check_env.py", "--strict"] + run_dirs, check=False)
     print("\n=== 健全性チェック ===")
     n_seeds = len(cases) and _seed_count(args.seeds)
-    run(py + ["tools/health_check.py"] + [str(p) for p in sorted(out.iterdir())
-                                          if p.is_dir()]
-        + ["--ticks", str(args.ticks), "--expect-runs", str(n_seeds)],
-        check=False)
-    print("\n=== 診断条件チェック ===")
-    cond_rc = run(py + ["tools/check_exp10.py", str(out), "--seeds", args.seeds],
-                  check=False)
-    print("\n=== Phase B の要約と事前登録判定 ===")
+    health_rc = run(py + ["tools/health_check.py"] + run_dirs
+                    + ["--ticks", str(args.ticks), "--expect-runs", str(n_seeds)],
+                    check=False)
+    print("\n=== 診断条件チェック (整合性) ===")
+    cond_rc = run(py + ["tools/check_exp10.py", str(out), "--seeds", args.seeds,
+                        "--cases", cases_arg], check=False)
+    print("\n=== Phase B の要約と判定 (整合性のみ非ゼロ / 科学判定は報告) ===")
     sum_rc = run(py + ["tools/summarize_exp10_phaseB.py", str(out),
-                       "--ticks", str(args.ticks)], check=False)
+                       "--ticks", str(args.ticks), "--cases", cases_arg],
+                 check=False)
 
     print("\n=== 生データのアーカイブ ===")
     arch = ROOT / args.archive_dir
@@ -113,9 +115,13 @@ def main() -> int:
           "Google Drive / Actions artifact へ退避すること "
           "(docs/実験結果保存方針.md §1)")
 
-    if cond_rc != 0 or sum_rc != 0:
-        print("\n★ 診断条件または事前登録判定が停止条件に該当した")
+    # 整合性違反 (環境不一致・run不足・固定表現型違反・物理破壊) のみ非ゼロ終了。
+    # 科学的な STOP/REVIEW は summarize が終了コード0のまま報告する
+    # (Issue #41 再トライアル方針 §6)。
+    if env_rc != 0 or health_rc != 0 or cond_rc != 0 or sum_rc != 0:
+        print("\n★ 整合性違反 (実行失敗)。env / health / conditions / summary を確認")
         return 1
+    print("\n整合性OK。科学的判定は summarize の出力を参照")
     return 0
 
 
