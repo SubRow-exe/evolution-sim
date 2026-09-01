@@ -27,6 +27,11 @@ VARIABLE = {"light_pattern", "light_max", "chem_vent_flux",
             "diagnostic_placement", "diagnostic_gene_overrides",
             "response_gain", "memory_tau"}
 
+# `configs/exp10/` は実行済みExp10 (V1.6) の記録なので再生成しない。
+# V1.7以降に追加されたConfig項目は当時のファイルに存在しないため、
+# 「後から増えた項目か」だけを確認し、V1.6当時の項目は厳密一致で守る。
+POST_V16_KEYS = {"bmr_core"}  # V1.7 基礎維持代謝 (docs/V1.7_基礎維持代謝仕様案.md)
+
 
 def load(condition: str, rule: str) -> dict:
     path = OUT_DIR / config_name(condition, rule)
@@ -43,8 +48,12 @@ def test_all_configs_exist_and_match_generator():
     for condition, rule in all_cases():
         stored = load(condition, rule)
         generated = dataclasses.asdict(build(condition, rule, sel))
-        assert set(stored) == set(generated), (
-            f"{condition}/{rule}: 生成物と項目集合が違う")
+        added = set(generated) - set(stored)
+        assert added <= POST_V16_KEYS, (
+            f"{condition}/{rule}: Exp10当時に無かった項目 {added} は V1.7以降の "
+            "追加分として POST_V16_KEYS へ明示すること")
+        assert set(stored) - set(generated) == set(), (
+            f"{condition}/{rule}: 現行Configから消えた項目がある")
         for key, value in stored.items():
             assert generated[key] == value, (
                 f"{condition}/{rule}: {key} が生成物と一致しない "

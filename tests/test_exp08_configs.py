@@ -24,7 +24,9 @@ from tools.make_exp08_configs import (CHEM_FLUXES, L2_COEF, LIGHT_COEFS,
 POST_V14_KEYS = {"light_stimulus_half", "chemical_stimulus_half",
                  "stimulus_tie_eps",
                  # V1.6 temporal biased random walk
-                 "memory_tau", "response_gain"}
+                 "memory_tau", "response_gain",
+                 # V1.7 基礎維持代謝 (docs/V1.7_基礎維持代謝仕様案.md)
+                 "bmr_core"}
 
 # Phase A内で条件ごとに変わってよい項目
 A_VARIABLE = {"light_uptake_coef", "diagnostic_gene_overrides"}

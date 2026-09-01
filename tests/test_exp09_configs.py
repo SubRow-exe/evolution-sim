@@ -23,7 +23,9 @@ VARIABLE = {"light_pattern", "light_max", "chem_vent_flux",
 # `configs/exp09/` は実行済みExp09 (V1.5) の記録なので再生成しない。
 # V1.6以降に追加されたConfig項目は当時のファイルに存在しないため、
 # 「後から増えた項目か」だけを確認し、V1.5当時の項目は厳密一致で守る。
-POST_V15_KEYS = {"memory_tau", "response_gain"}
+POST_V15_KEYS = {"memory_tau", "response_gain",
+                 # V1.7 基礎維持代謝 (docs/V1.7_基礎維持代謝仕様案.md)
+                 "bmr_core"}
 
 
 def load(condition: str) -> dict:
