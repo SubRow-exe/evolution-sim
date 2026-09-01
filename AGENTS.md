@@ -5,97 +5,85 @@
 ## 現在の参照順
 
 1. `docs/次の実験計画.md` — 現在の司令塔
-2. `docs/Exp11_実験計画案.md` — **レビュー中の次実験。未承認・未実装**
-3. `docs/V1.7_基礎維持代謝仕様案.md` — **レビュー中の次世界ルール。未承認・未実装**
-4. `docs/Exp10_結果考察.md` — Exp10正式結果・V1.6最終判断
-5. `experiments/exp10_phaseB_20260901/NOTES.md` — Exp10正式Phase B実測
-6. `docs/LUCA参照モデル方針.md` — 今後の祖先・基準生物の現実側アンカー
-7. `docs/V1.6_行動則設計案.md` — 現行行動則
-8. `docs/Exp10_実験計画案.md` — Exp10事前登録
+2. `docs/Exp11_実験計画案.md` — **Exp11事前登録の正本・人間判断確定**
+3. `docs/V1.7_基礎維持代謝仕様案.md` — **V1.7実装仕様の正本・人間判断確定**
+4. `docs/V1.7_Exp11_レビュー判断.md` — Claudeレビューへの採否。レビュー原文より優先
+5. `docs/LUCA参照モデル方針.md`
+6. `docs/Exp10_結果考察.md`
+7. `experiments/exp10_phaseB_20260901/NOTES.md`
+8. `docs/V1.6_行動則設計案.md`
 9. `docs/実験結果保存方針.md`
 10. `docs/バージョニング方針.md`
 
-古い中間報告・過去レビューより、上記の新しい正本を優先する。
+古いExp10中間報告、PRレビュー原文、過去の240-run案より上記を優先する。レビュー原文に別案があっても、人間判断済み正本を独自に変更しない。
+
+---
 
 ## 現在地
 
 ```text
-V1.4 / Exp08                       完了 / Green
-V1.5 / Exp09                       完了 / Green
-V1.6 temporal biased random walk   実装済み
-Exp10 Phase 0 / A / 正式B          完了 / Green
-V1.6行動原理                       人間判断でGO
-Exp10 Phase C                      deferred
-Exp10                              完了
-LUCA-inspired参照方針              採用
-V1.7 / Exp11                       レビュー中・未実装 ← いま
+V1.4 / Exp08                         完了 / Green
+V1.5 / Exp09                         完了 / Green
+V1.6 / Exp10                         完了 / Green
+V1.6行動原理                         GO
+Exp10 Phase C                        deferred
+LUCA-inspired参照方針                採用
+V1.7 bmr_core / Exp11設計            確定
+V1.7 / Exp11実装                     ← 次
 ```
 
-Exp10正式Phase Bは、初回の進化OFF実装漏れを修正後、全14遺伝子固定で200 runを最初から再実行した。
-旧B1/B2は正式結果ではなくreference / exploratory扱い。
+### V1.7着手前の必須処理
 
-正式結果の要点:
-
-- chemical-only treatment 20/20生存（重要停止条件クリア）
-- treatmentは評価可能な全条件でhigh-Q側へ一貫して偏る
-- vent条件でvent滞在増加
-- generalistはlight / chemical双方を行動へ統合
-- Energy / Matter / 固定表現型 / 数値環境の整合性OK
-- V1.6は「生存ボーナス」ではなく環境・表現型に応じた空間選択則として機能
-
-現行参照値:
+Exp10採用値は:
 
 ```text
 memory_tau    = 10
 response_gain = 64
 ```
 
-ただし2026-09-01時点の `evosim/config.py` 通常defaultは `response_gain=16` のまま。
-V1.7へ入る前にV1.6確定処理として64へ反映し、CI基準更新後 `v1.6-final` を保存する。
-この処理はV1.7 / Exp11の変更軸へ混ぜない。
+だが通常defaultの `response_gain` はまだ16。
 
-## Exp10 exploratoryで見えた小型化
-
-進化OFF実装漏れ中の旧B1で:
+V1.7へ混ぜず先に別commitで:
 
 ```text
-mean_body_size 約1.0 -> 約0.226
-population     約300 -> 約6,500
+response_gain 16 -> 64
+-> tests / CI基準更新
+-> v1.6-final保存
+-> その確定commitからV1.7実装
 ```
 
-を観測した。Matterは保存されており、同じ総Matterが多数の小型個体へ分割された。
+を行う。
 
-これはExp10正式結論には使わないが、
+---
 
-- 現行世界に強い小型化選択圧がある可能性
-- 個体数増大で計算コストが急増する
+## V1.7 実装仕様
 
-という次の設計課題を示すexploratory evidenceとして保持する。
-
-## V1.7レビュー案
-
-小型化を止めるためのbody_size下限変更やpopulation制御を直接入れない。
-
-候補:
+パラメータ名は**`bmr_core`に統一**する。
 
 ```text
-BMR = C_core + (bmr_coef - C_core) * M^0.75
+BMR = bmr_core + (bmr_coef - bmr_core) * M^0.75
+bmr_coef = 0.3
+0 <= bmr_core <= 0.3
 ```
 
-`C_core` は細胞生命に共通する縮小不能な基礎維持代謝として扱い、遺伝子にはしない。
+- `bmr_core=0` -> V1.6完全一致
+- `M=1` -> BMR=0.3維持
+- M<1では縮小不能core負担が相対的に重い
+- M>1ではV1.6よりBMRが相対的に低くなりcore償却メリットが生じる。これは意図的
+- 純加算式は検討済みだが、M=1 referenceの総BMRまで上げるため不採用
+- `bmr_core` は遺伝子にしない
 
-重要な性質:
+温度、body_size上下限、繁殖、吸収、行動、捕食、新規遺伝子はV1.7では変更しない。
 
-- `C_core=0` でV1.6完全一致
-- `M=1` でBMR=0.3を維持
-- 小型化しても基礎維持費が0へ消えない
-- 大型側への過剰選択も起こり得るため上下境界を両方検証
+### Config事故防止
 
-**この案はまだ人間承認前。PR #50レビュー完了まで実装しない。**
+非ゼロ `bmr_core` のJSON round-trip test、run summary/fingerprint、保存config、全45 Configの値一致checkerを必須とする。未知キーが黙って落ちて0として走ることを許容しない。
 
-## Exp11レビュー案
+---
 
-15 `C_core`:
+## Exp11 正式事前登録
+
+候補15水準:
 
 ```text
 0.000, 0.005, 0.010, 0.015, 0.020,
@@ -106,18 +94,90 @@ BMR = C_core + (bmr_coef - C_core) * M^0.75
 Phase Bはbody_sizeのみ進化ON、他13遺伝子固定。
 
 ```text
-B1 light-only / lightspec   15 × seed1-8 = 120
-B2 chem-only / chemspec     15 × seed1-4 = 60
-B3 mixed / generalist       15 × seed1-4 = 60
-合計                         240 run
+B1 light-only / lightspec : 15 × seed1-8 = 120
+B2 chem-only  / chemspec  : 15 × seed1-5 =  75
+B3 mixed      / generalist: 15 × seed1-4 =  60
+合計                         255 run
 ```
 
-全run 10,000 tick、`max_population_halt=10,000`、tau=10 / gain=64明示。
-240 jobを1回のworkflow_dispatchで最初から登録し、途中の人間判断を要求しない。
+共通:
 
-選定は「平均サイズ1へ戻す」「population最小」ではなく、
-**上下body_size境界への張り付きと重大な生態破綻を避ける最小C_core**。
-詳細は `docs/Exp11_実験計画案.md`。
+```text
+ticks=10000
+initial_population=100
+initial_energy=50
+initial_matter=0.8
+memory_tau=10
+response_gain=64
+stats_interval=20
+snapshot_interval=1000
+max_population_halt=10000
+```
+
+placement:
+
+```text
+B1 random
+B2 vent
+B3 random
+```
+
+255 matrix jobを1回のworkflow_dispatchで登録し、`max-parallel=20`。途中結果で候補を削らない。
+
+### 判定要点
+
+- B1 `bmr_core=0`: `p_low>=0.50` が5/8以上で対照妥当
+- B1 candidate per-seed Green:
+  - COMPLETE
+  - `p_low<0.25`
+  - `p_high<0.25`
+  - `max_generation >= max(5, ceil(0.5*g0))`
+  - `late_drift<=0.10`
+  - integrity OK
+- 7/8以上で候補B1 Green
+- **連続3候補B1 Green**で最小側をTRANSITION_ELIGIBLE
+- B2 baseline healthy COMPLETE >=3/5、B3 >=3/4
+- B2/B3 vetoは `bmr_core=0` baselineに対する重大悪化のみ
+- vetoされない最小TRANSITION_ELIGIBLEを恒久値候補
+- どれも選べなければ `NO_SELECTION / REVIEW`。後付け変更しない
+
+詳細・正確な式は必ず `docs/Exp11_実験計画案.md` を参照する。
+
+---
+
+## Actions運用
+
+正式dispatch前にV1.7実装・45 Config・`exp11.yml`・checker/summarizer/testsをmainへマージする。
+
+run status:
+
+```text
+COMPLETE
+EXTINCT
+POP_HALT
+INCOMPLETE_RESOURCE
+INTEGRITY_FAIL
+```
+
+- EXTINCT / POP_HALT = 科学的結果
+- timeout / runner中断 / output欠落 = INCOMPLETE_RESOURCE（同一SHA/Configで技術的再実行可）
+- integrity violation = 正式解析から除外
+
+job timeoutは350分を基準。collectorは可能な限り完了済み結果を保持する。
+
+正式run開始後はGit SHA・数値環境・科学コード・Config生成則・判定ロジックを固定する。
+
+---
+
+## 小型化に関する絶対原則
+
+**小型化を抑えるためだけの人工的ペナルティは入れない。**
+
+V1.7 `bmr_core` はbody_sizeへ直接罰点を付けるものではなく、LUCA-inspired参照に基づく全生命共通の一般生理則として導入する。その結果としてサイズ選択圧が変わることを許容する。
+
+`max_population_halt` は計算安全停止であり、生態ルールとして個体を殺したり繁殖を抑えたりしない。
+
+---
 
 ## LUCA-inspired参照方針
 
@@ -129,22 +189,7 @@ LUCAそのものを再現しない。
 - 地球史どおりの進化結果を直接指定しない
 - 現実的な初期・基礎ルールを置いた後の進化は自然選択へ任せる
 
-## 行動の絶対原則
-
-**未来Energy収益を予測させない。**
-
-禁止:
-
-```text
-候補地点ごとの未来Energy獲得量を予測
-→ 移動コストまで含め最適地点へ移動
-```
-
-維持する思想:
-
-> 現在感じる刺激への局所的・反射的な応答。
-
-V1.6一次Energy行動はtemporal biased random walkであり、`dQ`から方向を直接求めない。
+---
 
 ## プロジェクト絶対原則
 
@@ -161,29 +206,16 @@ V1.6一次Energy行動はtemporal biased random walkであり、`dQ`から方向
 11. 比較するEnergy戦略は単独成立性を先に確認する
 12. 行動に暗黙の知能・未来予測を勝手に導入しない
 13. 実験結果を見て同じ実験の候補・閾値を後付け変更しない
-14. 科学的STOP/REVIEWと実行失敗を区別する
+14. 科学的STOP/REVIEWと実行失敗・技術的不完了を区別する
+
+---
 
 ## 実験結果保存
 
-`docs/実験結果保存方針.md`を必ず読む。
+`docs/実験結果保存方針.md`に従う。文字サマリーだけで正式実験を閉じない。
 
-正式実験は文字サマリーだけで終了しない。
-
-GitHub:
-- 結果考察
-- 実測NOTES
-- 集計プロット
-- 代表GIF/PNG
-
-全生データ・全画像はGoogle Drive / Actions artifactへ保存する。
-
-## 世界バージョン境界
-
-世界ルール変更前に直前バージョンを `vX.Y-final` として保存する。
-詳細は `docs/バージョニング方針.md`。
-
-V1.7は生理コストを変更するため世界ルール境界。
-Exp11実装前にV1.6を確定して `v1.6-final` を保存する。
+- GitHub: 結果考察 / NOTES / 集計plot / 代表図 / README
+- 全生データ・全画像: Google Drive / Actions artifact
 
 ## 技術スタック
 
