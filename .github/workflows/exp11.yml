@@ -1,0 +1,363 @@
+name: Exp11
+
+# Exp11 Phase B (V1.7 bmr_core と body_size 進化) を
+# 255 run × 1回の workflow_dispatch で一括実行する。
+#
+# 正本:
+#   docs/Exp11_実験計画案.md    条件・判定
+#   docs/V1.7_基礎維持代謝仕様案.md    V1.7実装仕様
+#   docs/V1.7_Exp11_レビュー判断.md   採否判断
+#
+# 実行前提:
+#   - V1.7 実装 / 45 Config / このファイルが main へマージ済みであること
+#   - workflow_dispatch は main ブランチ上のこのファイルから起動すること
+#     (feature branch 上から起動しない: Exp10 の 404 再発防止)
+#
+# 255 run 内訳 (§8):
+#   B1 light-only / lightspec : 15 bmr_core × seed1-8 = 120
+#   B2 chem-only  / chemspec  : 15 bmr_core × seed1-5 =  75
+#   B3 mixed      / generalist: 15 bmr_core × seed1-4 =  60
+#   合計                                                  255
+#
+# max-parallel: 20
+# timeout-minutes per job: 350
+# 科学的 STOP (EXTINCT / POP_HALT) は workflow failure にしない。
+# 技術的不完了 (timeout / runner 中断 / output 欠落) = INCOMPLETE_RESOURCE。
+# 整合性違反 (INTEGRITY_FAIL) のみ workflow failure。
+#
+# 手動実行のみ。
+
+on:
+  workflow_dispatch:
+    inputs:
+      ticks:
+        description: "1 run の tick 数 (本番 10000 / Pilot 500)"
+        type: string
+        default: "10000"
+      upload_events:
+        description: "events.csv も保存する (死因の内訳を追える。容量大)"
+        type: boolean
+        default: false
+      render_spatial:
+        description: "空間 PNG/GIF を生成する"
+        type: boolean
+        default: true
+
+concurrency:
+  group: exp11
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+      count: ${{ steps.gen.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: Config 整合性確認 (P0-4, P0-5)
+        run: uv run python tools/check_exp11.py
+
+      - name: V1.7 bmr_core テスト (Phase 0 停止条件)
+        run: uv run pytest tests/test_v17_bmr_core.py -q
+
+      - name: 保存則・決定性の確認 (停止条件)
+        run: uv run pytest tests/test_conservation.py tests/test_determinism.py -q
+
+      - name: Phase 0 V1.6 回帰テスト
+        run: uv run pytest tests/test_v16_temporal.py -q
+
+      - name: matrix を生成 (255 job)
+        id: gen
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+
+          # B1: light-only/lightspec, seed 1-8
+          # B2: chem-only/chemspec, seed 1-5
+          # B3: mixed/generalist, seed 1-4
+          BMR_CORES = [
+              0.000, 0.005, 0.010, 0.015, 0.020,
+              0.025, 0.030, 0.040, 0.050, 0.060,
+              0.075, 0.100, 0.150, 0.200, 0.300,
+          ]
+          ENVS = {
+              "B1_lightonly_lightspec": list(range(1, 9)),
+              "B2_chemonly_chemspec":   list(range(1, 6)),
+              "B3_mixed_generalist":    list(range(1, 5)),
+          }
+
+          items = []
+          for env, seeds in ENVS.items():
+              for core in BMR_CORES:
+                  for seed in seeds:
+                      core_str = f"{core:.3f}"
+                      cfg = f"configs/exp11/exp11_{env}_bmr{core_str}.json"
+                      items.append({
+                          "env": env,
+                          "bmr_core": core_str,
+                          "seed": seed,
+                          "config": cfg,
+                      })
+
+          assert len(items) == 255, f"255 run のはずが {len(items)} 個"
+          print("matrix=" + json.dumps({"include": items}))
+          print("count=" + str(len(items)))
+          PY
+
+      - name: 実行計画を表示
+        run: |
+          {
+            echo "### Exp11 Phase B 実行計画"
+            echo "- ticks: ${{ inputs.ticks }}"
+            echo "- 総 run 数: ${{ steps.gen.outputs.count }} (255)"
+            echo "- コード SHA: \`${{ github.sha }}\`"
+            echo "- body_size のみ進化 ON / 他 13 遺伝子固定"
+            echo "- bmr_core 候補: 15 水準 (0.000 ～ 0.300)"
+            echo "- run 状態: COMPLETE / EXTINCT / POP_HALT / INCOMPLETE_RESOURCE / INTEGRITY_FAIL"
+            echo "- EXTINCT / POP_HALT = 科学的結果 (workflow failure にしない)"
+            echo "- 事前登録判定は collect ジョブの summarize_exp11.py が実施"
+          } >> $GITHUB_STEP_SUMMARY
+
+  run:
+    needs: setup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: シミュレーション実行
+        run: |
+          uv run python main.py --headless \
+            --ticks "${{ inputs.ticks }}" \
+            --seed "${{ matrix.seed }}" \
+            --config "${{ matrix.config }}" \
+            --out "runs/exp11_${{ matrix.env }}"
+
+      - name: 空間 PNG/GIF を生成
+        if: ${{ inputs.render_spatial }}
+        continue-on-error: true
+        run: |
+          SRC=$(find "runs/exp11_${{ matrix.env }}" -mindepth 1 -maxdepth 1 -type d \
+                | xargs -I{} ls -dt {} | head -1)
+          case "${{ matrix.env }}" in
+            B1*) BG=light ;;
+            B2*) BG=chemical ;;
+            *)   BG=light ;;
+          esac
+          uv run python tools/render_spatial.py "$SRC" --background "$BG" --gif --fps 4
+
+      - name: 保存対象を整理
+        run: |
+          set -euo pipefail
+          SRC=$(find "runs/exp11_${{ matrix.env }}" -mindepth 1 -maxdepth 1 -type d \
+                | xargs -I{} ls -dt {} | head -1)
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$SRC"/lineages.csv "$DST"/ 2>/dev/null || true
+          if [ -d "$SRC/snapshots" ]; then cp -r "$SRC"/snapshots "$DST"/; fi
+          if [ -d "$SRC/environment" ]; then cp -r "$SRC"/environment "$DST"/; fi
+          if [ -d "$SRC/spatial" ]; then cp -r "$SRC"/spatial "$DST"/; fi
+          if [ "${{ inputs.upload_events }}" = "true" ] && [ -f "$SRC/events.csv" ]; then
+            cp "$SRC"/events.csv "$DST"/
+          fi
+          echo "最終 tick: $(tail -1 "$SRC"/stats.csv | cut -d, -f1 2>/dev/null || echo N/A)"
+          echo "個体数: $(tail -1 "$SRC"/stats.csv | cut -d, -f2 2>/dev/null || echo N/A)"
+          du -sh "$DST"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp11-${{ matrix.env }}-bmr${{ matrix.bmr_core }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  collect:
+    needs: [setup, run]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      RCLONE_CONF: ${{ secrets.RCLONE_CONFIG_BASE64 }}
+      REMOTE_BASE: ${{ vars.RCLONE_REMOTE_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: 全 run の成果物を取得
+        uses: actions/download-artifact@v4
+        with:
+          pattern: exp11-*
+          path: dl
+
+      - name: 条件ごとに再構成
+        run: |
+          mkdir -p runs/exp11
+          for d in dl/exp11-*; do
+            name=$(basename "$d")
+            # exp11-<env>-bmr<core>-seed<N>
+            key=$(echo "$name" | sed -E 's/^exp11-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp11/$key"
+            cp -r "$d"/* "runs/exp11/$key"/ 2>/dev/null || true
+          done
+          echo "=== 条件ごとの run 数 ==="
+          for c in runs/exp11/*; do
+            echo "$(basename $c): $(find $c -mindepth 1 -maxdepth 1 -type d | wc -l) run"
+          done
+          du -sh runs/exp11
+
+      - name: Config 整合性チェック (実行済み run)
+        id: integrity
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run python tools/check_exp11.py runs/exp11 2>&1 | tee integrity.txt
+
+      - name: 数値実行環境の同一性を確認
+        id: env_check
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run python tools/check_env.py --strict runs/exp11/* 2>&1 | tee env_check.txt
+
+      - name: 健全性チェック
+        id: health
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run python tools/health_check.py runs/exp11/* \
+            --ticks "${{ inputs.ticks }}" 2>&1 | tee health.txt
+          {
+            echo "### 健全性チェック"
+            echo '```'
+            tail -40 health.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Phase B 集計と事前登録判定
+        id: summary
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run python tools/summarize_exp11.py runs/exp11 2>&1 | tee summary.txt
+          {
+            echo "## Exp11 Phase B 結果"
+            echo ""
+            echo "> body_size のみ進化 ON / 他 13 遺伝子固定"
+            echo "> 事前登録判定: docs/Exp11_実験計画案.md §11"
+            echo ""
+            echo '```'
+            cat summary.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: 生データを圧縮してマニフェストを生成
+        id: pack
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%d_%H%M%S)"
+          EXP="exp11_actions_${STAMP}"
+          echo "exp=$EXP" >> "$GITHUB_OUTPUT"
+          mkdir -p archives "experiments/$EXP"
+          for c in runs/exp11/*; do
+            name="exp11_$(basename "$c")"
+            tar -czf "archives/${name}.tar.gz" -C "$(dirname "$c")" "$(basename "$c")"
+          done
+          cp summary.txt env_check.txt "experiments/$EXP/" 2>/dev/null || true
+          if [ -f integrity.txt ]; then cp integrity.txt "experiments/$EXP/"; fi
+          if [ -f health.txt ]; then cp health.txt "experiments/$EXP/"; fi
+          echo "=== アーカイブ ==="
+          du -sh archives/
+
+      - name: Google Drive へ生データを転送
+        id: upload
+        if: env.RCLONE_CONF != '' && env.REMOTE_BASE != ''
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" | base64 -d > ~/.config/rclone/rclone.conf
+          rclone copy archives/ "${REMOTE_BASE}/${EXP}/" --progress --stats-one-line
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          rm -f ~/.config/rclone/rclone.conf
+
+      - name: 転送状況を記録
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          if [ "${{ steps.upload.outputs.uploaded }}" = "true" ]; then
+            MSG="生データを外部ストレージへ転送済み"
+          else
+            MSG="外部ストレージ未設定のため、生データは Actions 成果物のみ (90日保持)"
+          fi
+          {
+            echo "### 生データ"
+            echo "- $MSG"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: 要約と成果物を保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp11-summary
+          path: experiments/
+          retention-days: 90
+
+      - name: 生データアーカイブを保存 (転送未設定時の保険)
+        if: ${{ steps.upload.outputs.uploaded != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp11-rawdata
+          path: archives/
+          retention-days: 90
+
+      # 整合性違反のみ workflow failure
+      # EXTINCT / POP_HALT は科学的結果 → failure にしない
+      - name: 整合性違反の判定
+        if: >
+          steps.integrity.outcome == 'failure' ||
+          steps.env_check.outcome == 'failure' ||
+          steps.health.outcome == 'failure'
+        run: |
+          echo "::error::整合性違反 (Config 不一致 / 環境不一致 / 技術的不完了)"
+          {
+            echo "### ★ 整合性違反 — 実行失敗"
+            echo "integrity.txt / env_check.txt / health.txt を確認すること。"
+            echo "科学的 STOP/REVIEW は summary.txt に出る (workflow は落とさない)。"
+          } >> $GITHUB_STEP_SUMMARY
+          exit 1
+
+      - name: 実行完了
+        if: >
+          steps.integrity.outcome != 'failure' &&
+          steps.env_check.outcome != 'failure' &&
+          steps.health.outcome != 'failure'
+        run: |
+          {
+            echo "### 整合性 OK — 実行は成功"
+            echo "科学的判定は summary.txt の SCIENTIFIC_VERDICT を参照。"
+          } >> $GITHUB_STEP_SUMMARY

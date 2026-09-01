@@ -62,7 +62,13 @@ class Config:
     phi_floor: float = 0.1           # 健全度の下限
 
     # --- エネルギー消費 ---
-    bmr_coef: float = 0.3            # 基礎代謝 = bmr * s^0.75
+    # V1.7: BMR = bmr_core + (bmr_coef - bmr_core) * M^0.75
+    # bmr_core: 縮小不能な個体共通基礎維持代謝 [E/tick/個体]
+    # bmr_core=0 -> V1.6 完全一致 / M=1 -> BMR=bmr_coef 常に維持
+    # 0 <= bmr_core <= bmr_coef を検証する (違反は ValueError)
+    # 恒久値は Exp11 で選定。選定前の通常 default は 0.0。
+    bmr_core: float = 0.0            # 縮小不能な基礎維持代謝 [E/tick] (V1.7)
+    bmr_coef: float = 0.3            # 基礎代謝スケーリング係数 (M=1 時の BMR)
     organ_upkeep: float = 0.05       # 栄養獲得5能力の維持費係数
     sense_upkeep: float = 0.02      # 感覚維持 = k * sensory_range^2
     membrane_upkeep: float = 0.03    # 膜維持 = k * mem * sqrt(s)
@@ -120,10 +126,10 @@ class Config:
     #
     # memory_tau (短期記憶の時定数 [tick]) と
     # response_gain (dQ が曲がり幅へ効く強さ [無次元]) は
-    # **Exp10で校正する暫定値**であり、恒久defaultではない
-    # (docs/Exp10_実験計画案.md §4.3 の候補格子の中央付近を仮置き)。
+    # Exp10 Phase A 事前登録規則で選定・正式Phase Bで機能確認済みの
+    # V1.6恒久default (docs/Exp10_結果考察.md / docs/バージョニング方針.md)。
     memory_tau: float = 10.0
-    response_gain: float = 16.0
+    response_gain: float = 64.0
 
     sense_coef: float = 25.0         # 感覚半径 = k * sensory_range [wu]
     satiety_energy_frac: float = 0.85
@@ -176,6 +182,13 @@ class Config:
     # --- 安全装置 (改善方針 Ver.1.2 §9) ---
     # 個体数がこの値に達したら自動保存して停止する。個体を殺す処理ではない。0=無効
     max_population_halt: int = 20000
+
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.bmr_core <= self.bmr_coef):
+            raise ValueError(
+                f"bmr_core={self.bmr_core} が範囲外です。"
+                f"0 <= bmr_core <= bmr_coef={self.bmr_coef} でなければなりません。"
+            )
 
     def to_json(self, path: str | Path) -> None:
         p = Path(path)
