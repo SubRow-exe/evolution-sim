@@ -1,0 +1,109 @@
+name: Exp11 Recollect
+
+# 既存の Exp11 本番run (input run_id) から per-run artifact をダウンロードし、
+# シミュレーションを再実行せずに修正版 check_exp11.py / summarize_exp11.py で
+# 再集計する。
+#
+# 背景: run_id=33506955494 (255 run 完走) は collect側のバグ
+#   (snapshotファイル名パターン誤り / runディレクトリ探索の階層誤り)
+#   により SCIENTIFIC_VERDICT が UNDETERMINED (または偽の CONTROL_NOT_REPRODUCED)
+#   になっていた。生データは正常なため、修正版スクリプトで再集計するだけで良い。
+#
+# 手動実行のみ。
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "再集計対象の Exp11 workflow run ID"
+        type: string
+        default: "33506955494"
+
+jobs:
+  recollect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: 対象run の per-run artifact をダウンロード
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "exp11-B*-bmr*-seed*"
+          path: dl
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 条件ごとに再構成
+        run: |
+          set -euo pipefail
+          mkdir -p runs/exp11
+          for d in dl/exp11-*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/^exp11-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp11/$key"
+            cp -r "$d"/* "runs/exp11/$key"/ 2>/dev/null || true
+          done
+          echo "=== 条件ごとの run 数 ==="
+          for c in runs/exp11/*; do
+            echo "$(basename "$c"): $(find "$c" -mindepth 1 -maxdepth 1 -type d | wc -l) run"
+          done
+          du -sh runs/exp11
+
+      - name: Config 整合性チェック (修正版 check_exp11.py)
+        id: integrity
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run python tools/check_exp11.py runs/exp11 2>&1 | tee integrity.txt
+
+      - name: Phase B 再集計 (修正版 summarize_exp11.py)
+        id: summary
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run python tools/summarize_exp11.py runs/exp11 \
+            --diagnostics-csv exp11_diagnostics.csv 2>&1 | tee summary.txt
+
+      - name: 結果を要約へ出力
+        run: |
+          {
+            echo "## Exp11 再集計結果 (run_id=${{ inputs.run_id }} / 修正版スクリプト)"
+            echo ""
+            echo "> シミュレーションは再実行していない。既存 255 run の生データを"
+            echo "> 修正版 check_exp11.py / summarize_exp11.py で再集計した結果。"
+            echo ""
+            echo "### 整合性チェック"
+            echo '```'
+            cat integrity.txt
+            echo '```'
+            echo ""
+            echo "### 事前登録判定・事後診断"
+            echo '```'
+            cat summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp11-recollect-result
+          path: |
+            summary.txt
+            integrity.txt
+            exp11_diagnostics.csv
+          retention-days: 90
+
+      - name: 判定 (整合性違反 or 集計エラーのみ workflow failure)
+        if: steps.integrity.outcome == 'failure' || steps.summary.outcome == 'failure'
+        run: |
+          echo "::error::再集計エラー — summary.txt / integrity.txt を確認"
+          exit 1
