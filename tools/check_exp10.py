@@ -224,9 +224,11 @@ def main() -> int:
                           f"{tag}: 初期個体の {gene}={val}",
                           f"実測 min={col.min()} max={col.max()}", quiet_ok=True)
             # (c) 最終snapshotも全遺伝子で期待値・個体間一定
+            # 絶滅した run の最終snapshotは個体0で空になる (Exp10では絶滅は
+            # 測定結果)。空なら検証対象が無いのでスキップする。
             for gene, val in want_gene.items():
                 vals = snapshot_gene(run, gene)
-                if vals is not None:
+                if vals:
                     rep.check(all(v == val for v in vals),
                               f"{tag}: 最終snapshotも {gene}={val}",
                               f"min={min(vals)} max={max(vals)}", quiet_ok=True)
