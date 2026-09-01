@@ -30,7 +30,9 @@ def maintenance_and_movement(org: Organism, cfg: Config, v: float) -> float:
     s = org.matter
     m = org.matter
 
-    bmr = cfg.bmr_coef * s ** 0.75
+    # V1.7: BMR = bmr_core + (bmr_coef - bmr_core) * M^0.75
+    # bmr_core=0 のとき V1.6 と完全一致 / M=1 のとき任意の合法 bmr_core で BMR=bmr_coef
+    bmr = cfg.bmr_core + (cfg.bmr_coef - cfg.bmr_core) * s ** 0.75
     organ = cfg.organ_upkeep * s * (
         g[LIGHT_ABS] + g[CHEM_ABS] + g[NUTRIENT_ABS] + g[PREDATION] + g[CORPSE_DIG]
     )
