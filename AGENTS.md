@@ -5,159 +5,129 @@
 ## 現在の参照順
 
 1. `docs/次の実験計画.md` — 現在の司令塔
-1.5. **`docs/Exp10_中間報告.md` — V1.6実装済み / Phase A Green / Phase B前提崩れ・要判断**
-2. **`docs/Exp09_結果考察.md` — Exp09実測と残った論点**
-3. **`experiments/exp09_actions_20260831_085922/NOTES.md` — Exp09実測NOTES**
-3.5. **`docs/V1.6_Exp10_レビュー.md` — V1.6設計案 / Exp10計画案へのレビュー原文（採否は人間判断）**
-4. `docs/V1.5_異種刺激比較仕様.md` — V1.5実装の正本
-5. `docs/V1.5_Exp09_レビュー判断.md` — Claudeレビューへの人間の採否判断。レビュー原文より優先
-6. `docs/V1.4_総括.md` — V1.4最終判断・default
-7. `docs/Exp09_実験計画.md` — Exp09条件の正本
-8. `docs/Exp08_結果考察.md` — V1.4校正の実測
-9. `experiments/exp08_actions_20260831_052756/NOTES.md`
-10. `docs/実験結果保存方針.md`
-11. `docs/バージョニング方針.md`
-12. `docs/V1.4_一次エネルギー吸収仕様.md`
-13. `docs/V1.3_化学資源モデル仕様.md`
+2. `docs/Exp11_実験計画案.md` — **レビュー中の次実験。未承認・未実装**
+3. `docs/V1.7_基礎維持代謝仕様案.md` — **レビュー中の次世界ルール。未承認・未実装**
+4. `docs/Exp10_結果考察.md` — Exp10正式結果・V1.6最終判断
+5. `experiments/exp10_phaseB_20260901/NOTES.md` — Exp10正式Phase B実測
+6. `docs/LUCA参照モデル方針.md` — 今後の祖先・基準生物の現実側アンカー
+7. `docs/V1.6_行動則設計案.md` — 現行行動則
+8. `docs/Exp10_実験計画案.md` — Exp10事前登録
+9. `docs/実験結果保存方針.md`
+10. `docs/バージョニング方針.md`
 
-Claude Codeレビュー原文に提案があっても、`docs/V1.5_Exp09_レビュー判断.md`で不採用とした案を独自に採用しない。
-古い「V1.4 default未決定」「Exp08未実行」「V1.5実装前」「Exp09未実行」の記述より上記正本を優先する。
+古い中間報告・過去レビューより、上記の新しい正本を優先する。
 
 ## 現在地
 
-**V1.6 (temporal biased random walk) は人間判断済み仕様どおり実装済み。
-Phase 0 全通過・Phase A Green。Phase B は計算量の前提が崩れて停止中で、
-人間判断待ち。** 詳細は `docs/Exp10_中間報告.md`。
-
 ```text
-V1.6実装           完了 (e15ee67。CI回帰基準もここへ移行)
-Phase 0 (15項目)   完了 (tests/test_v16_temporal.py 32件)
-Phase A (3,900run) 完了 / Green → tau=10 / gain=64 を事前登録規則で選定
-Phase B (200 run)  中断。§11に従い条件を独断変更せず判断待ち
-Phase C            未着手
+V1.4 / Exp08                       完了 / Green
+V1.5 / Exp09                       完了 / Green
+V1.6 temporal biased random walk   実装済み
+Exp10 Phase 0 / A / 正式B          完了 / Green
+V1.6行動原理                       人間判断でGO
+Exp10 Phase C                      deferred
+Exp10                              完了
+LUCA-inspired参照方針              採用
+V1.7 / Exp11                       レビュー中・未実装 ← いま
 ```
 
-Phase Bを止めた理由 (計画 §7 の前提が実測で崩れた):
+Exp10正式Phase Bは、初回の進化OFF実装漏れを修正後、全14遺伝子固定で200 runを最初から再実行した。
+旧B1/B2は正式結果ではなくreference / exploratory扱い。
 
-- V1.6で個体が動くようになり、光利用率が11.7%→65.5%、
-  **個体数が約300→約6,500 (20倍)**、`mean_body_size` が0.996→0.226へ縮小
-- Matterは3280.00で厳密に保存されておりバグではない
-- 1 runが約40分になり、200 runで**ローカル31時間 / Actions 20並列7時間**
-- `exp10.yml` が default branch に無いため `workflow_dispatch` が404で起動不可
+正式結果の要点:
 
-暫定観測 (確定値ではない): §5.5 の chemical-only は、
-control が20 seed中2 seed絶滅したのに対し treatment は12 seed中0絶滅で
-vent滞在率も高い (0.846 vs 0.782)。レビューB-4の懸念とは逆方向だが、
-treatment が12 seedしか無いので結論にしない。
+- chemical-only treatment 20/20生存（重要停止条件クリア）
+- treatmentは評価可能な全条件でhigh-Q側へ一貫して偏る
+- vent条件でvent滞在増加
+- generalistはlight / chemical双方を行動へ統合
+- Energy / Matter / 固定表現型 / 数値環境の整合性OK
+- V1.6は「生存ボーナス」ではなく環境・表現型に応じた空間選択則として機能
 
-**Exp09→V1.6の経緯 (レビューで実測から判明した2つの前提のずれ) は解消済み:**
-
-1. **V1.5は実世界では既にほぼ動いていなかった** — `sensory_range` 実現値0.29〜0.55で
-   感覚半径10〜13.7 wu < `cell_size` 20 wu のため `cr=0`。
-   → V1.6で一次EnergyのWTAターゲティングと定位保持を廃止し、実際に動くようになった
-2. **場が階段状で `ΔQ` がほぼ常に厳密0だった** — 1セル横断に24.1 tick。
-   → V1.6で知覚のみ双線形補間を導入 (吸収はセル単位のまま)
-
-レビュー原文は `docs/V1.6_Exp10_レビュー.md`、採否は
-`docs/V1.6_行動則設計案.md` §6 にある。
-
-Exp08完了。V1.4の一次Energy/資源吸収則は妥当性確認を通過。
-
-恒久defaultは人間判断で確定済み:
+現行参照値:
 
 ```text
-light_uptake_coef = 2.0
-chem_vent_flux = 16.0
-chem_uptake = 0.5
+memory_tau    = 10
+response_gain = 64
 ```
 
-`light_uptake_coef`は個体の光利用能力を1 tickあたりの実吸収上限へ変換する世界側係数。
+ただし2026-09-01時点の `evosim/config.py` 通常defaultは `response_gain=16` のまま。
+V1.7へ入る前にV1.6確定処理として64へ反映し、CI基準更新後 `v1.6-final` を保存する。
+この処理はV1.7 / Exp11の変更軸へ混ぜない。
 
-`chem_vent_flux`はchemical噴出口1つが1 tickに供給するEnergy量。
+## Exp10 exploratoryで見えた小型化
 
-## 小型化の判断
-
-V1.4では環境直接吸収利益が`matter^(2/3)`、維持費の多くは身体量に強く依存する。
-
-その結果、小型個体が単位身体量あたりの交換効率で有利になることは現時点では**仕様上の自然な選択圧として許容する**。
-
-小型化を抑えるためだけの人工的ペナルティは入れない。
-
-将来、温度・熱損失・備蓄・防御・捕食等から大型化の利点が自然に生じる余地を残す。
-
-## V1.5実装前に必ず行うこと（すべて完了済み。手順の記録として残す）
-
-1. `evosim/config.py`へV1.4恒久defaultを反映
-   - `light_uptake_coef = 2.0`
-   - `chem_vent_flux = 16.0`
-   - `chem_uptake = 0.5`
-2. 暫定defaultコメント・文書を更新
-3. 全test / Energy / Matter / RNG / CI確認
-4. 必要なCI基準更新を行う
-5. **上記default反映済み状態を`v1.4-final` branchへ保存**
-6. その後にV1.5を実装
-
-Claudeレビューの「Exp08実行時mainをそのままv1.4-finalとし、default変更をV1.5側へ送る」案は採用しない。
-V1.4を保存する前にV1.5行動則を混ぜない。
-
-## V1.5の目的
-
-現行行動は光とchemicalを
+進化OFF実装漏れ中の旧B1で:
 
 ```text
-ability × raw field value
+mean_body_size 約1.0 -> 約0.226
+population     約300 -> 約6,500
 ```
 
-で比較するが、光はflow、chemicalはstockで単位・範囲が違う。
+を観測した。Matterは保存されており、同じ総Matterが多数の小型個体へ分割された。
 
-V1.5では異種一次Energy刺激を無次元受容器応答へ変換する。
+これはExp10正式結論には使わないが、
+
+- 現行世界に強い小型化選択圧がある可能性
+- 個体数増大で計算コストが急増する
+
+という次の設計課題を示すexploratory evidenceとして保持する。
+
+## V1.7レビュー案
+
+小型化を止めるためのbody_size下限変更やpopulation制御を直接入れない。
+
+候補:
 
 ```text
-response(x,K) = x / (x + K)
+BMR = C_core + (bmr_coef - C_core) * M^0.75
 ```
 
-確定default:
+`C_core` は細胞生命に共通する縮小不能な基礎維持代謝として扱い、遺伝子にはしない。
+
+重要な性質:
+
+- `C_core=0` でV1.6完全一致
+- `M=1` でBMR=0.3を維持
+- 小型化しても基礎維持費が0へ消えない
+- 大型側への過剰選択も起こり得るため上下境界を両方検証
+
+**この案はまだ人間承認前。PR #50レビュー完了まで実装しない。**
+
+## Exp11レビュー案
+
+15 `C_core`:
 
 ```text
-light_stimulus_half = 1.2
-chemical_stimulus_half = 12.3
+0.000, 0.005, 0.010, 0.015, 0.020,
+0.025, 0.030, 0.040, 0.050, 0.060,
+0.075, 0.100, 0.150, 0.200, 0.300
 ```
 
-`chemical_stimulus_half=12.3`は典型的な完全13セルventの**生物不在平衡stockを基準にした固定値**。Exp08の占有vent stockへ合わせて引き下げない。生物がchemicalを利用するとstockと知覚刺激が低下し、離脱すれば回復する負のフィードバックは、stock型資源の自然な性質として残す。
-
-score:
+Phase Bはbody_sizeのみ進化ON、他13遺伝子固定。
 
 ```text
-light_score
-= light_absorption × response(light, 1.2)
-
-chemical_score
-= chemical_absorption × response(chemical_stock, 12.3)
+B1 light-only / lightspec   15 × seed1-8 = 120
+B2 chem-only / chemspec     15 × seed1-4 = 60
+B3 mixed / generalist       15 × seed1-4 = 60
+合計                         240 run
 ```
 
-## V1.5実装スコープ
+全run 10,000 tick、`max_population_halt=10,000`、tau=10 / gain=64明示。
+240 jobを1回のworkflow_dispatchで最初から登録し、途中の人間判断を要求しない。
 
-変更対象は**light vs chemicalという一次Energy源同士の比較**。
+選定は「平均サイズ1へ戻す」「population最小」ではなく、
+**上下body_size境界への張り付きと重大な生態破綻を避ける最小C_core**。
+詳細は `docs/Exp11_実験計画案.md`。
 
-- light候補を独立抽出
-- chemical候補を独立抽出
-- 両方あるときだけ無次元response scoreで比較
-- 片方だけなら従来のsource内選択を維持
-- nutrient / corpse / predationの全面無次元化は今回しない
-- V1.4の吸収則は変更しない
+## LUCA-inspired参照方針
 
-単独sourceでは「順位が同じ」だけでなく、同一Config・同一seedで`v1.4-final`と**決定的に完全一致**することを停止条件にする。
+LUCAそのものを再現しない。
 
-### tie
-
-同score時にfield走査順だけで常にlightまたはchemicalが勝つ隠れbiasを作らない。
-
-`stimulus_tie_eps`は`1e-9`程度の十分小さい値、または同等に厳しい相対許容差を用いる。
-両score=0ならEnergy源による方向付けを行わず、V1.4と同じ挙動へ戻す。
-
-未来予測や新しい固定source優先順位も導入しない。
-
-詳細は`docs/V1.5_異種刺激比較仕様.md`と`docs/V1.5_Exp09_レビュー判断.md`を正本とする。
+- 現実から構造・因果・スケーリング・比率を主に借りる
+- 未校正のEnergy / Matter / tickへSI絶対値を直接移植しない
+- LUCAらしさへ適応度を与えない
+- 地球史どおりの進化結果を直接指定しない
+- 現実的な初期・基礎ルールを置いた後の進化は自然選択へ任せる
 
 ## 行動の絶対原則
 
@@ -166,123 +136,15 @@ chemical_score
 禁止:
 
 ```text
-候補セルごとの将来Energy獲得量を計算
-→ 移動コスト等まで含め最適地点へ移動
+候補地点ごとの未来Energy獲得量を予測
+→ 移動コストまで含め最適地点へ移動
 ```
 
 維持する思想:
 
-> 現在感じる刺激への反射的走光性・走化性。
+> 現在感じる刺激への局所的・反射的な応答。
 
-V1.5の無次元化は「賢くする」ためではなく、異なる単位の刺激を感覚として比較可能にするため。
-
-## Exp09 **[完了 / Green]**
-
-Exp09はV1.5比較則の診断。
-
-進化競争はまだ評価しない。
-
-### 実測結果 (2026-08-31 / Actions run 33375257275 / 25 run × 5,000 tick)
-
-正本: `docs/Exp09_結果考察.md` / `experiments/exp09_actions_20260831_085922/NOTES.md`
-
-```text
-主判定 (無次元scoreの順位と実際のsource選択の一致): 全5条件 1.0000
-                                    計 24,470,222 回の選択すべて一致
-tie:                                 0 件
-診断条件チェック:                    415 項目すべてOK
-早期終了run:                         なし
-単独source Config の v1.4-final 完全一致: 4ケースすべて一致
-停止条件:                            該当なし
-```
-
-Exp09が残した論点（次の1軸を決める材料。`docs/Exp09_結果考察.md` §7）:
-
-1. `chemical_stimulus_half=12.3` と実測感知stock (0.02〜1.52) の1〜3桁の乖離
-2. 一次Energy候補と他刺激 (栄養/死骸/捕食) の尺度が未統一
-3. Exp07から続く chemical bootstrap の未解決
-
-**Exp09の結果を見てこれらをその場で変更しない（絶対原則9: 原則1軸ずつ）。**
-
-### Phase 0
-
-- response算術
-- half-response
-- 単調性
-- source-only完全一致（`v1.4-final`基準）
-- 等価刺激
-- 表現型・光量ごとの**light/chemical選択交差点stockの事前計算**
-- 能力差による切替
-- 各診断表現型でlight選択・chemical選択の両側を検証
-- tie biasなし
-- 未来予測なし
-- RNG / Energy / Matter健全性
-
-### Phase A
-
-synthetic arenaで:
-
-- light-only
-- chemical-only
-- 等価刺激
-- light specialist
-- chemical specialist
-- generalist
-
-を直接検証。
-
-各表現型について、刺激条件を交差点の両側へ置き、**lightを選ぶケースとchemicalを選ぶケースの双方**を確認する。
-
-### Phase B
-
-標準混合世界の短時間sanity check。
-
-```text
-Light-only control
-Chemical-only control
-Mixed / light specialist
-Mixed / chemical specialist
-Mixed / generalist
-```
-
-Pilot: 各条件seed1、500〜1,000 tick。
-
-本番候補: 5条件 × seed1-5 × 5,000 tick = 25 run。
-
-評価は行動選択回数、Energy flow、vent滞在、明暗帯滞在等。
-単純な「vent滞在率が高い」を合格条件にせず、**選択時stockが理論交差点の上/下にあるかと実際のsource選択が一致すること**を優先する。
-
-追加観測:
-- 選択時のlight / chemical response score
-- 選択時chemical stock
-- 交差点予測との一致率
-- Energy候補がcorpse / predation等に負けた回数（source別）
-
-観測はRNG非消費・分岐不変とする。
-
-Exp09から光/chemicalの進化的優劣を結論しない。
-
-## 実験結果保存
-
-`docs/実験結果保存方針.md`を必ず読む。
-
-正式実験の結果確定時は文字サマリーだけで終了しない。
-
-GitHubへ:
-- 結果考察
-- 実測NOTES
-- 集計プロット
-- 代表GIF/PNG
-
-全生データ・全画像はGoogle Drive / Actions artifactへ保存する。
-
-## 世界バージョン境界
-
-V1.5の行動比較則は結果を変えるため世界ルール変更。
-
-V1.5最初の意図的結果変更commitを新しいCI基準refへ設定する。
-
-V1.4再現用に、恒久default反映済みの`v1.4-final`を必ず先に保存する。
+V1.6一次Energy行動はtemporal biased random walkであり、`dQ`から方向を直接求めない。
 
 ## プロジェクト絶対原則
 
@@ -298,6 +160,30 @@ V1.4再現用に、恒久default反映済みの`v1.4-final`を必ず先に保存
 10. 遺伝子の存在と進化経路の成立を区別する
 11. 比較するEnergy戦略は単独成立性を先に確認する
 12. 行動に暗黙の知能・未来予測を勝手に導入しない
+13. 実験結果を見て同じ実験の候補・閾値を後付け変更しない
+14. 科学的STOP/REVIEWと実行失敗を区別する
+
+## 実験結果保存
+
+`docs/実験結果保存方針.md`を必ず読む。
+
+正式実験は文字サマリーだけで終了しない。
+
+GitHub:
+- 結果考察
+- 実測NOTES
+- 集計プロット
+- 代表GIF/PNG
+
+全生データ・全画像はGoogle Drive / Actions artifactへ保存する。
+
+## 世界バージョン境界
+
+世界ルール変更前に直前バージョンを `vX.Y-final` として保存する。
+詳細は `docs/バージョニング方針.md`。
+
+V1.7は生理コストを変更するため世界ルール境界。
+Exp11実装前にV1.6を確定して `v1.6-final` を保存する。
 
 ## 技術スタック
 
