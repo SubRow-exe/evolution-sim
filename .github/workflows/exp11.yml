@@ -262,7 +262,8 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          uv run python tools/summarize_exp11.py runs/exp11 2>&1 | tee summary.txt
+          uv run python tools/summarize_exp11.py runs/exp11 \
+            --diagnostics-csv exp11_diagnostics.csv 2>&1 | tee summary.txt
           {
             echo "## Exp11 Phase B 結果"
             echo ""
@@ -289,6 +290,7 @@ jobs:
           cp summary.txt env_check.txt "experiments/$EXP/" 2>/dev/null || true
           if [ -f integrity.txt ]; then cp integrity.txt "experiments/$EXP/"; fi
           if [ -f health.txt ]; then cp health.txt "experiments/$EXP/"; fi
+          if [ -f exp11_diagnostics.csv ]; then cp exp11_diagnostics.csv "experiments/$EXP/"; fi
           echo "=== アーカイブ ==="
           du -sh archives/
 
@@ -335,19 +337,26 @@ jobs:
           path: archives/
           retention-days: 90
 
-      # 整合性違反のみ workflow failure
-      # EXTINCT / POP_HALT は科学的結果 → failure にしない
+      # 整合性違反・集計エラーのみ workflow failure
+      # EXTINCT / POP_HALT / CONTROL_NOT_REPRODUCED / NO_SELECTION 等の
+      # 科学的結果は summarize_exp11.py が exit 0 で返すため failure にしない。
+      # summarize_exp11.py が非0終了するのは snapshot欠落・run欠落/重複等の
+      # 技術的集計エラー (AggregationError) があった場合のみ。
       - name: 整合性違反の判定
         if: >
           steps.integrity.outcome == 'failure' ||
           steps.env_check.outcome == 'failure' ||
-          steps.health.outcome == 'failure'
+          steps.health.outcome == 'failure' ||
+          steps.summary.outcome == 'failure'
         run: |
-          echo "::error::整合性違反 (Config 不一致 / 環境不一致 / 技術的不完了)"
+          echo "::error::整合性違反または集計エラー (Config不一致 / 環境不一致 / 技術的不完了 / snapshot欠落等)"
           {
-            echo "### ★ 整合性違反 — 実行失敗"
-            echo "integrity.txt / env_check.txt / health.txt を確認すること。"
-            echo "科学的 STOP/REVIEW は summary.txt に出る (workflow は落とさない)。"
+            echo "### ★ 整合性違反または集計エラー — 実行失敗"
+            echo "integrity.txt / env_check.txt / health.txt / summary.txt を確認すること。"
+            echo "summary.txt に「集計エラー」セクションがあれば、SCIENTIFIC_VERDICT は"
+            echo "確定値ではない (UNDETERMINED)。原因を解消して再集計すること。"
+            echo "データが揃った上での科学的 STOP/REVIEW は summary.txt に"
+            echo "SCIENTIFIC_VERDICT として出る (その場合は workflow を落とさない)。"
           } >> $GITHUB_STEP_SUMMARY
           exit 1
 
@@ -355,7 +364,8 @@ jobs:
         if: >
           steps.integrity.outcome != 'failure' &&
           steps.env_check.outcome != 'failure' &&
-          steps.health.outcome != 'failure'
+          steps.health.outcome != 'failure' &&
+          steps.summary.outcome != 'failure'
         run: |
           {
             echo "### 整合性 OK — 実行は成功"
