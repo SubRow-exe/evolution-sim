@@ -24,17 +24,16 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from evosim.config import Config
-from evosim.genome import (
-    BODY_SIZE, CHEM_ABS, CORPSE_DIG, DAMAGE_RES, LIGHT_ABS,
-    MEMBRANE, MOVE_EFF, NUTRIENT_ABS, PREDATION, REPAIR, SENSORY,
-)
+from evosim.genome import GENE_NAMES, fixed_mask_from_names
 
 OUT_DIR = ROOT / "configs" / "exp11"
 
@@ -66,21 +65,14 @@ PHENOTYPES: dict[str, dict[str, float]] = {
     },
 }
 
-# body_size 以外の 13 遺伝子を固定するリスト (ゲノム名)
-# body_size (BODY_SIZE) は除く
-FIXED_GENES_NAMES: list[str] = [
-    "light_absorption",
-    "chemical_absorption",
-    "nutrient_absorption",
-    "corpse_digestion",
-    "predation",
-    "membrane",
-    "damage_resistance",
-    "move_efficiency",
-    "repair",
-    "sensory_range",
-]
-# genome.py のキー名に合わせる (診断 gene override と fixed_genes は文字列)
+# body_size 以外の 13 遺伝子を固定するリスト (ゲノム名)。
+# 手書きしない: canonical な evosim.genome.GENE_NAMES から body_size だけを
+# 除外して自動生成する。これにより遺伝子名の不整合 (誤字・数の過不足) が
+# 構造的に発生しなくなる。
+FIXED_GENES_NAMES: list[str] = [g for g in GENE_NAMES if g != "body_size"]
+assert len(FIXED_GENES_NAMES) == 13, (
+    f"body_size 以外の遺伝子数が 13 でない: {len(FIXED_GENES_NAMES)}"
+)
 
 # --------------------------------------------------------------------------
 # 環境条件ごとの世界設定
@@ -154,20 +146,27 @@ def all_configs() -> list[tuple[str, float, Config]]:
     return result
 
 
+EXPECTED_FIXED_GENES = set(GENE_NAMES) - {"body_size"}
+
+
 def check_fixed_genes_coverage(cfg: Config) -> list[str]:
-    """body_size 以外の 13 遺伝子が全て fixed_genes に含まれることを確認する。
+    """fixed_genes が GENE_NAMES - {"body_size"} と完全一致することを確認する。
+
+    件数比較やローカル定数との比較ではなく、canonical な GENE_NAMES 由来の
+    集合と直接比較する。不足・過剰・未知の遺伝子名をすべて検出する。
 
     Returns:
-        不足している遺伝子名のリスト (空 = OK)
+        エラーメッセージのリスト (空 = OK)
     """
-    missing = []
-    for name in FIXED_GENES_NAMES:
-        if name not in cfg.fixed_genes:
-            missing.append(name)
-    # body_size が fixed_genes に入っていたら誤り
-    if "body_size" in cfg.fixed_genes:
-        missing.append("ERROR: body_size が fixed_genes に含まれている")
-    return missing
+    actual = set(cfg.fixed_genes)
+    errors = []
+    missing = EXPECTED_FIXED_GENES - actual
+    if missing:
+        errors.append(f"不足: {sorted(missing)}")
+    unexpected = actual - EXPECTED_FIXED_GENES
+    if unexpected:
+        errors.append(f"想定外/未知の遺伝子名: {sorted(unexpected)}")
+    return errors
 
 
 def main() -> int:
@@ -188,20 +187,17 @@ def main() -> int:
         payload = json.dumps(dataclasses.asdict(cfg), indent=2)
 
         # ----- 整合性チェック -----
-        # 1. fixed_genes coverage
-        missing = check_fixed_genes_coverage(cfg)
-        if missing:
-            errors.append(f"{fname}: fixed_genes 不足 {missing}")
+        # 1. fixed_genes が GENE_NAMES - {"body_size"} と完全一致するか
+        fg_errors = check_fixed_genes_coverage(cfg)
+        if fg_errors:
+            errors.append(f"{fname}: fixed_genes 不正 {fg_errors}")
 
         # 2. bmr_core 値の一致
         data = json.loads(payload)
         if data["bmr_core"] != core:
             errors.append(f"{fname}: JSON 内 bmr_core={data['bmr_core']} != {core}")
 
-        # 3. round-trip 確認
-        loaded = Config.from_json_str(payload) if hasattr(Config, "from_json_str") else None
-        # from_json は Path 経由なので tmp で検証
-        import tempfile, os
+        # 3. round-trip 確認 (JSON 保存 -> Config.from_json で同じ値へ戻るか)
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             f.write(payload)
             tmp_path = f.name
@@ -209,6 +205,13 @@ def main() -> int:
             loaded = Config.from_json(tmp_path)
             if loaded.bmr_core != core:
                 errors.append(f"{fname}: round-trip 後 bmr_core={loaded.bmr_core} != {core}")
+            fg_rt_errors = check_fixed_genes_coverage(loaded)
+            if fg_rt_errors:
+                errors.append(f"{fname}: round-trip 後 fixed_genes 不正 {fg_rt_errors}")
+            # fixed_mask_from_names まで実際に通す (未知の遺伝子名は ValueError)
+            fixed_mask_from_names(loaded.fixed_genes)
+        except ValueError as e:
+            errors.append(f"{fname}: fixed_mask_from_names 失敗: {e}")
         finally:
             os.unlink(tmp_path)
 

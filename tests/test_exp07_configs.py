@@ -26,7 +26,9 @@ DIAGNOSTIC_KEYS = {"chem_vent_flux", "diagnostic_placement",
 POST_V13_KEYS = {"light_uptake_coef", "light_stimulus_half",
                  "chemical_stimulus_half", "stimulus_tie_eps",
                  # V1.6 temporal biased random walk
-                 "memory_tau", "response_gain"}
+                 "memory_tau", "response_gain",
+                 # V1.7 基礎維持代謝 (docs/V1.7_基礎維持代謝仕様案.md)
+                 "bmr_core"}
 
 
 def load(flux: float, condition: str) -> dict:
