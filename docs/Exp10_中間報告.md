@@ -1,7 +1,12 @@
 # Exp10 中間報告 — Phase A完了（Green）と Phase B の前提崩れ
 
 更新: 2026-09-01
-状態: **Phase A完了 / Phase B は進化OFF実装漏れが判明し、正式再トライアルへ**
+状態: **Phase A完了 / 正式 Phase B 完了・Green（§5.5クリア）→ `docs/Exp10_結果考察.md`**
+
+> 正式 Phase B（200 run / commit `287dc9b8` / 全 GitHub Actions）は完了し Green。
+> §5.5（chemical-only treatment 20/20 生存）をクリアした。結果の正本は
+> **`docs/Exp10_結果考察.md`** と **`experiments/exp10_phaseB_20260901/`**。
+> 以下 §0〜§9 は再トライアル方針決定〜実行までの経緯記録として残す。
 
 ---
 
