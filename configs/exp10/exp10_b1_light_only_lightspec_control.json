@@ -63,8 +63,20 @@
   "additive_mutation_frac": 0.01,
   "initial_jitter_sigma": 0.02,
   "fixed_genes": [
+    "body_size",
+    "membrane_strength",
+    "movement_power",
+    "movement_efficiency",
+    "sensory_range",
     "light_absorption",
-    "chemical_absorption"
+    "chemical_absorption",
+    "nutrient_absorption",
+    "predation_efficiency",
+    "corpse_digestion",
+    "repair_rate",
+    "damage_resistance",
+    "reproduction_investment",
+    "mutation_rate"
   ],
   "initial_population": 100,
   "initial_energy": 50.0,

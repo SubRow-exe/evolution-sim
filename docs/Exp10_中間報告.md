@@ -1,7 +1,45 @@
 # Exp10 中間報告 — Phase A完了（Green）と Phase B の前提崩れ
 
 更新: 2026-09-01
-状態: **Phase A完了 / Phase B を5バッチへ分割して正式実行中（バッチ1完了）**
+状態: **Phase A完了 / Phase B は進化OFF実装漏れが判明し、正式再トライアルへ**
+
+---
+
+## 0. 正式再トライアル（2026-09-01 人間判断・最新方針）
+
+**§6.5 までに実行した Phase B の旧 B1 / B2 は正式結果ではない。**
+
+当初計画では Phase B は「進化OFF・固定表現型」で行動則のみを比較する設計
+だったが、実際の Config では `light_absorption` / `chemical_absorption` の
+2遺伝子しか固定されておらず、`body_size` など残り12遺伝子が自由進化していた
+（§3 の個体数20倍・小型化はこの実装漏れの帰結）。これは方針変更ではなく
+**実装漏れ**と判断する。Issue #41「Exp10 Phase B 正式再トライアル方針」を正本とする。
+
+- 旧 B1 / B2（commit `64f0b5a`）は正式結果から除外し、参考・exploratory 扱い
+  （`experiments/exp10_phaseB_partial_20260831/` /
+  `experiments/exp10_phaseB_local_reference_20260901/`）
+- **Phase 0 と Phase A は有効。やり直さない。** 選定値 `memory_tau=10` /
+  `response_gain=64` も変更しない
+- Phase B の進化OFF を修正（`fixed_genes` を全14遺伝子へ）し、当初事前登録の
+  「進化OFF・固定表現型」へ戻す
+- 正式 Phase B は修正済み main の同一 commit SHA を固定し、B2→B1→B3→B4→B5 の
+  順で 40 run ずつ **すべて GitHub Actions で最初から再実行**する
+- 旧 `64f0b5a` との数値環境統一は不要（旧結果を正式解析に使わないため）
+
+この再トライアル用に本 PR で入れた修正（正式 run はまだ開始しない）:
+
+1. `tools/make_exp10_configs.py`: `fixed_genes` を全14遺伝子へ（進化OFF）
+2. `tools/check_exp10.py`: 全遺伝子が全個体・全期間で固定されていることを
+   機械的に検証（`--cases` で分割バッチの未実行条件を N/A 扱い）
+3. `tools/summarize_exp10_phaseB.py`: 科学的 STOP/REVIEW と整合性違反を分離
+   （科学判定は終了コード0のまま報告、整合性違反のみ非ゼロ）
+4. `tools/check_env.py`: `--strict` で環境不一致を整合性違反として非ゼロ終了
+5. `.github/workflows/exp10.yml`: 「実行失敗（環境不一致・run不足・固定表現型
+   違反・物理破壊）」だけを workflow failure にし、絶滅や §5.5 未達などの
+   科学的 STOP/REVIEW では落とさない
+6. `tests/test_exp10_configs.py`: 進化OFF（全14遺伝子固定）の回帰テスト
+
+以降の §1〜§9 は再トライアル方針が決まる前の記録として残す。
 
 正本:
 - 条件・判定: `docs/Exp10_実験計画案.md`

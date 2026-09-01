@@ -5,18 +5,27 @@
 Phase Bは「Phase Aで選ばれた1候補を通常simulationへ持ち込み、生態を
 壊さないこと」を見る。行動則の局所的な正しさはPhase Aが担当する。
 
-## 事前登録の判定 (§5.5, §8)
+## 実行失敗 と 科学的判定 の分離 (Issue #41 再トライアル方針 §6)
 
-- **重要停止条件 (§5.5)**: B2 chemical-only の treatment で
-  **20 seed中18 seed以上**が10,000 tickまで生存すること。
-  満たさなければ、Phase Aが正しくてもV1.6 default化は停止する。
-- §8-3: 単一刺激gradient (B1/B2) でrandomより高Q領域へ有意な偏り
-- §8-4: K3相当 (B5 mixed generalist) で両刺激の寄与を受ける
-- §8-7: V1.5の吸収・Energy/Matter物理を壊していない
-  → controlとtreatmentで供給側 (light_supply_cum) が一致することで確認
+このツールの終了コードは **整合性 (integrity)** だけで決める。
+実験が正常に完走したうえでの科学的な STOP/REVIEW は workflow failure に
+しない (絶滅・低populationは測定結果であり、実行の失敗ではない)。
 
-判定の細部はPhase Aと揃える。改善は seed対応で 80%以上 かつ
-中央値 +5 percentage points 以上とする。
+- **整合性違反 → 非ゼロ終了 (workflow failure)**
+  - §8-7: 供給側の物理が control/treatment で食い違う (吸収・Energy/Matter
+    物理が行動則で壊れていないことの確認。壊れていればデータの意味が無い)
+
+- **科学的判定 → 終了コード0のまま報告 (STOP / REVIEW)**
+  - **重要停止条件 STOP (§5.5)**: B2 chemical-only の treatment で
+    20 seed中18 seed以上が10,000 tickまで生存すること。満たさなければ
+    V1.6 default化を止める「科学的な」判断材料になる (実行の失敗ではない)。
+  - **REVIEW (§8-3)**: 単一刺激gradient (B1/B2) でrandomより高Q領域へ偏るか
+  - **REVIEW (§8-4)**: B5 mixed generalist が両刺激の寄与を受けるか
+
+改善は seed対応で 80%以上 かつ 中央値 +5 percentage points 以上とする。
+
+`--cases` を渡すと、そのバッチで走らせた条件だけを判定対象にする
+(40 run分割実行で未実行の条件を「判定不能」ではなく N/A として扱う)。
 """
 from __future__ import annotations
 
@@ -131,6 +140,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Exp10 Phase B の要約と判定")
     ap.add_argument("exp_dir")
     ap.add_argument("--ticks", type=int, default=10000)
+    ap.add_argument("--cases", default="",
+                    help="このバッチで走らせた条件 (カンマ区切り。省略で全10条件)")
     args = ap.parse_args()
 
     base = Path(args.exp_dir)
@@ -139,9 +150,19 @@ def main() -> int:
         print(f"★ {base} に Exp10 Phase B の run が無い")
         return 1
 
-    fails: list[str] = []
+    all_names = [f"{c}_{r}" for c in CONDITIONS for r in RULES]
+    expected = ([c.strip() for c in args.cases.split(",") if c.strip()]
+                if args.cases else all_names)
+    na = [n for n in expected if n not in data]
+    if na:
+        print(f"（このバッチ外 / N/A: {', '.join(sorted(na))}）\n")
 
-    # --- 重要停止条件 (§5.5) ---
+    # 整合性違反 (→ 非ゼロ終了) と 科学的判定 (STOP/REVIEW、→ 終了コード0) を分ける
+    integrity_fails: list[str] = []
+    science_stop: list[str] = []
+    science_review: list[str] = []
+
+    # --- 重要停止条件 (§5.5): 科学的 STOP ---
     print("=== 重要停止条件 (§5.5): chemical-only treatment の生存 ===")
     key = "b2_chem_only_chemspec_treatment"
     if key in data:
@@ -149,12 +170,12 @@ def main() -> int:
         n = len(data[key])
         ok = surv >= SURVIVE_MIN
         print(f"  {key}: {surv}/{n} seed が {args.ticks:,} tick まで生存 "
-              f"(必要 {SURVIVE_MIN}/{SURVIVE_OF})  → {'OK' if ok else 'NG'}")
+              f"(必要 {SURVIVE_MIN}/{SURVIVE_OF})  → {'OK' if ok else 'STOP'}")
         if not ok:
-            fails.append(f"§5.5 chemical-only生存 {surv}/{n}")
+            science_stop.append(f"§5.5 chemical-only生存 {surv}/{n} (必要 "
+                                f"{SURVIVE_MIN}/{SURVIVE_OF})")
     else:
-        print(f"  ★ {key} が無い")
-        fails.append("§5.5 判定不能")
+        print(f"  N/A ({key} はこのバッチ外)")
 
     # --- 生存とpopulation ---
     print("\n=== 条件別サマリ (seed中央値) ===")
@@ -185,9 +206,9 @@ def main() -> int:
         frac = sum(1 for x in d if x > 0) / len(d) if d else 0.0
         pp = med(d) * 100.0
         ok = frac >= SEED_FRAC and pp >= DELTA_HI_Q_PP
-        print(f"{c:<28}{frac:>11.2f}{pp:>18.2f}{'OK' if ok else '-':>7}")
+        print(f"{c:<28}{frac:>11.2f}{pp:>18.2f}{'OK' if ok else 'REVIEW':>7}")
         if c in ("b1_light_only_lightspec", "b2_chem_only_chemspec") and not ok:
-            fails.append(f"§8-3 {c} の high-Q改善")
+            science_review.append(f"§8-3 {c} の high-Q改善")
 
     # --- §8-4: 混合generalist が両刺激の寄与を受けるか ---
     print("\n=== §8-4: mixed generalist の dQ 寄与分解 ===")
@@ -202,9 +223,9 @@ def main() -> int:
         both = sum(1 for s in t
                    if abs(s["dq_light"]) > 0 and abs(s["dq_chem"]) > 0)
         ok = both / len(t) >= SEED_FRAC
-        print(f"  両寄与が非ゼロのseed: {both}/{len(t)} → {'OK' if ok else 'NG'}")
+        print(f"  両寄与が非ゼロのseed: {both}/{len(t)} → {'OK' if ok else 'REVIEW'}")
         if not ok:
-            fails.append("§8-4 generalistの両刺激統合")
+            science_review.append("§8-4 generalistの両刺激統合")
 
     # --- vent距離帯別 (§5.4) ---
     print("\n=== vent距離帯別 (treatment, seed中央値) ===")
@@ -237,15 +258,27 @@ def main() -> int:
         print(f"  {c:<30} treatment={a:,.0f}  control={b:,.0f} "
               f"→ {'OK' if ok else 'NG'}")
     if not all_ok:
-        fails.append("§8-7 供給側の物理")
+        integrity_fails.append("§8-7 供給側の物理が control/treatment で不一致")
 
+    # --- 判定: 整合性 (終了コード) と 科学的判定 (報告のみ) を分けて出す ---
     print("\n" + "=" * 60)
-    if fails:
-        print(f"判定: 未達 {len(fails)} 件")
-        for f in fails:
+    if science_stop:
+        print("科学的判定: STOP — 重要停止条件が未達 (実行の失敗ではない)")
+        for s in science_stop:
+            print(f"  - {s}")
+    if science_review:
+        print("科学的判定: REVIEW — 事前登録の改善が未確認 (要人間判断)")
+        for s in science_review:
+            print(f"  - {s}")
+    if not science_stop and not science_review:
+        print("科学的判定: PASS — Phase B の事前登録条件をすべて満たした")
+
+    if integrity_fails:
+        print(f"\n整合性: NG {len(integrity_fails)} 件 → workflow failure")
+        for f in integrity_fails:
             print(f"  - {f}")
         return 1
-    print("判定: Phase B の事前登録条件をすべて満たした")
+    print("\n整合性: OK — 供給側の物理は保たれている")
     return 0
 
 
