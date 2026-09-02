@@ -5,18 +5,22 @@
 ## 現在の参照順
 
 1. `docs/次の実験計画.md` — 現在の司令塔
-2. `docs/Exp12_実験計画確定.md` — **Exp12事前登録・実装・判定の正本**
-3. `docs/Exp12_レビュー反映判断.md` — Opus 5レビューへの採否
-4. `docs/Exp11_考察.md` — Exp12へ進む科学的理由
-5. `docs/Exp11_結果考察.md` — Exp11正式実測値・正式判定
-6. `docs/V1.7_基礎維持代謝仕様案.md` — V1.7 `bmr_core` 実装仕様
-7. `docs/LUCA参照モデル方針.md`
-8. `docs/実験結果保存方針.md`
-9. `docs/バージョニング方針.md`
+2. `docs/数値再現性・Actions実行環境方針.md` — **Exp12初回Phase 0を受けた技術amendment。再現性gateはこれを優先**
+3. `docs/Exp12_実験計画確定.md` — **Exp12事前登録・科学設計・判定の正本**
+4. `docs/Exp12_実装チェックリスト.md` — **実装品質HARD GATE**
+5. `docs/Exp12_レビュー反映判断.md` — Opus 5レビューへの採否
+6. `docs/Exp11_考察.md` — Exp12へ進む科学的理由
+7. `docs/Exp11_結果考察.md` — Exp11正式実測値・正式判定
+8. `docs/V1.7_基礎維持代謝仕様案.md` — V1.7 `bmr_core` 実装仕様
+9. `docs/LUCA参照モデル方針.md`
+10. `docs/実験結果保存方針.md`
+11. `docs/バージョニング方針.md`
 
-`docs/Exp12_実験計画案.md` はレビュー前の旧ドラフト。正本と矛盾する場合は `Exp12_実験計画確定.md` を優先する。
+`docs/Exp12_実験計画案.md` はレビュー前の旧ドラフト。科学条件・閾値・判定ロジックは `Exp12_実験計画確定.md` を優先する。
 
-レビュー原文に別案があっても、反映判断・確定正本をAIが独自変更しない。
+ただし、同書の旧P0-3および正式run first-10kにある「過去Exp11 artifactとのbit完全一致をHARD GATE」とする部分は、実運用で成立しないことが確認されたため `docs/数値再現性・Actions実行環境方針.md` を優先する。
+
+レビュー原文に別案があっても、反映判断・確定正本・技術amendmentをAIが独自変更しない。
 
 ---
 
@@ -33,7 +37,10 @@ Exp11 collect修正・正式再集計       完了
 Exp11考察                            完了
 Exp12 Opus 5レビュー                 完了・反映済み
 Exp12事前登録                        確定
-Exp12実装・Phase 0                   ← 現在
+Exp12実装                            完了
+Exp12初回Phase 0                     過去artifact bit比較で安全停止
+Exp12 formal 71 run                  未起動
+P0-3 / collect再現性gate修正         ← 現在
 ```
 
 ---
@@ -104,13 +111,53 @@ B3はExp12へ含めない。
 
 ---
 
+# Exp12再現性gate — 技術amendment
+
+2026-09-02のExp12初回Actions run `33585027312` では、過去Exp11 artifactとのfirst-10k bit完全一致をHARD GATEにしたためPhase 0で停止した。正式71 runは1本も起動していない。
+
+今後は再現性を分ける。
+
+## HARD GATE
+
+```text
+現在SHA / 現在runner / 現在numeric environment内で
+同一科学条件・同一seedが完全再現すること
+```
+
+これによりConfig差、harness差、RNG干渉、非決定性を検出する。
+
+## DIAGNOSTIC
+
+```text
+過去日時・別Hosted RunnerのExp11 artifactとのbit比較
+```
+
+は記録するが、bit mismatch単独でformal runを無効化しない。科学コード差、Config差、numeric environment、divergence開始点を合わせて報告する。
+
+正式71 runのintegrityは:
+
+- 71 run完全性
+- Config整合性
+- formal SHA一致
+- numeric environment整合性
+- 出力完全性
+- aggregation errorなし
+
+で判定する。
+
+詳細は `docs/数値再現性・Actions実行環境方針.md`。
+
+**現在mainの `exp12.yml` を再現性gate修正前のまま再dispatchしてはいけない。**
+
+---
+
 # Exp12 Phase 0 HARD GATE
 
 正式71-run dispatch前に以下を全て通す。
 
 1. Config完全性
 2. Simulation smoke
-3. 代表条件first-10kがExp11 same-seedと科学数値一致
+3. 現在環境内の代表条件first-10k完全再現
 4. Matter保存 / Energy台帳 / 決定性 / RNG非干渉
 5. runtime preflight
 6. CI Green
@@ -123,8 +170,6 @@ predicted worst-case 50k <= 300 min を正式dispatch目安
 ```
 
 超える場合、run長をAI判断で短縮せず `RUNTIME_PREFLIGHT_FAIL / REVIEW` として停止する。
-
-正式71 run全てでもfirst-10kをExp11 artifactと比較し、不一致は `INTEGRITY_FAIL`。
 
 ---
 
@@ -218,31 +263,20 @@ INVALID_OR_METHOD_REVIEW
 
 ---
 
-# Exp12実装最低要件
+# Exp12実装修正の最低要件
 
-```text
-tools/exp12_common.py
-tools/make_exp12_configs.py
-tools/check_exp12.py
-tools/summarize_exp12.py
-configs/exp12/*.json
-.github/workflows/exp12.yml
-tests/test_exp12_configs.py
-tests/test_exp12_aggregation.py
-```
+既存実装に対して、formal再dispatch前に最低限:
 
-テストでは最低限:
+- P0-3をcurrent-run同一環境比較へ変更
+- historical Exp11 comparisonをdiagnosticへ降格
+- formal collectorからhistorical bit mismatchによるfailureを除去
+- formal SHA / numeric environment整合性をHARD GATE化
+- 対応回帰tests
+- 要求トレーサビリティ表更新
 
-- 71条件matrix完全性
-- fixed_genes canonical一致
-- bmr_core round-trip
-- snapshot実形式からgeneration median/Q90/max
-- 減速収束trajectoryをdelayへ誤分類しない
-- sustained declineをdelay認識する
-- first-10k mismatchをINTEGRITY_FAILにする
-- 欠落artifact時に科学verdictを確定しない
+を行う。
 
-を検証する。
+`docs/Exp12_実装チェックリスト.md` の全項目を満たすこと。
 
 ---
 
@@ -254,7 +288,7 @@ CIは最終的な独立確認であり、途中実装のデバッグ手段とし
 - 細かな途中経過ごとにpushせず、論理的に一まとまりの変更単位までローカルで完成させる
 - push前に変更範囲に対応するテストをローカルで実行する
 - Pythonコード、Config、集計処理、workflow、依存関係を変更した場合は、原則としてpush前に `uv run pytest tests -q` を通す
-- シミュレーション結果の不変性に関係する変更では、CIと同じ基準refを用いて `tools/verify_vs_ref.py` もローカル確認する
+- シミュレーション結果の不変性に関係する変更では、現在の再現性方針に従って検証する。過去Hosted Runner artifactとのbit mismatch単独を失敗条件にしない
 - ローカルテスト失敗中の状態をCIで原因調査する目的だけでpushしない
 - CI failure修正は原因と影響範囲をローカルで確認し、関連修正をまとめてから再pushする
 - 新Exp、コアロジック、Config、出力形式、集計、CIを変更した場合は、本番dispatch前にCI Greenを必須とする
@@ -266,7 +300,9 @@ AIは作業完了報告時に:
 1. ローカルで実行したテスト
 2. GitHub CI状態
 3. Phase 0結果
-4. 未確認事項
+4. runtime preflight見積もり
+5. formal dispatch状態
+6. 未確認事項
 
 を分けて記載する。
 
@@ -284,8 +320,40 @@ INTEGRITY_FAIL
 
 - EXTINCT / POP_HALT = 科学的結果
 - timeout / runner中断 / artifact欠落 = INCOMPLETE_RESOURCE
-- integrity violation = 正式解析から除外
+- formal内のSHA / Config / numeric environment等のintegrity violation = 正式解析から除外
+- 過去runとのbit mismatch単独はINTEGRITY_FAILにしない
 - 技術的不完了だけ同一SHA/Configで再実行可
+
+---
+
+## 実行時間の見積もり・実績報告
+
+正式実験では、時間報告のためだけの新規instrumentationを追加しない。
+
+既存Actions timestamps、job duration、`done: ... ticks in ...s`、`phase0_timing.txt` を使う。
+
+formal dispatch前に:
+
+- 代表run実測
+- formal ticksへの換算
+- safety factor込みworst-case
+- max-parallel
+- 前提 / 不確実性
+
+を報告する。
+
+Exp12初回Phase 0実測から、B1 bmr=0.000 seed1の50k保守的worst-caseは現行式で約208分。300分safety line内。
+
+formal終了後は:
+
+- workflow wall-clock
+- Phase 0時間
+- formal matrix wall-clock
+- run時間 median / P90 / max（取得できる範囲）
+- collect時間
+- 予測 vs 実績
+
+をNOTESまたは結果考察へ残す。
 
 ---
 
@@ -334,7 +402,7 @@ LUCAそのものを再現しない。
 
 `docs/実験結果保存方針.md`に従う。文字サマリーだけで正式実験を閉じない。
 
-- GitHub: 結果考察 / NOTES / 集計plot / 代表図 / README
+- GitHub: 結果考察 / NOTES / 集計plot / 代表図 / README / 実行時間の予測実績比較
 - 全生データ・全画像: Google Drive / Actions artifact
 
 ## 技術スタック
