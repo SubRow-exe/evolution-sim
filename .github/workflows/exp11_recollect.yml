@@ -36,12 +36,17 @@ jobs:
       - run: uv sync --frozen
 
       - name: 対象run の per-run artifact をダウンロード
-        uses: actions/download-artifact@v4
-        with:
-          pattern: "exp11-B*-bmr*-seed*"
-          path: dl
-          run-id: ${{ inputs.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        # actions/download-artifact@v4 は255個中199個しか取得できない事象を確認した
+        # (2026-09-01 初回recollect run 33573000219。ページネーション欠落と推定)。
+        # gh CLI の run download は全ページを正しく走査するため、こちらを使う。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          gh run download "${{ inputs.run_id }}" --dir dl --pattern "exp11-B*-bmr*-seed*"
+          echo "=== ダウンロードされたartifact数 ==="
+          find dl -mindepth 1 -maxdepth 1 -type d | wc -l
 
       - name: 条件ごとに再構成
         run: |
