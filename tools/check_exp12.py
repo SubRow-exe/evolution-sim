@@ -12,14 +12,19 @@
   - config.json を持つ実 run ディレクトリを再帰的に収集する
   - 合計71 run (B1=7×8seed, B2=3×5seed) が欠落・重複なく揃う
   - 各runの環境・bmr_coreが格納ディレクトリ名・実験計画の想定と一致する
+  - formal run群がすべて同一git_sha・同一numeric_environmentで実行された
+    ことを確認する (docs/数値再現性・Actions実行環境方針.md Level A)
 
 first-10k比較 (`compare_first_10k`):
-  - Exp12 runのtick<=10,000の科学数値 (stats.csv行 / snapshot body_size,
-    generation) と、対応するExp11 runの同一データが完全一致することを検証する
+  - 2つのrunディレクトリの tick<=10,000 の科学数値 (stats.csv行 / snapshot
+    body_size, generation) が完全一致することを検証する汎用関数
   - path/timestamp等の非科学メタデータは比較対象から除外する
-  - 実際の比較実行 (Exp11 reference artifactのダウンロードを含む) は
-    .github/workflows/exp12.yml のPhase 0 / collectジョブで行う。ここでは
-    2つのrunディレクトリを受け取って比較するだけの汎用関数として提供する。
+  - docs/数値再現性・Actions実行環境方針.md により、この関数の用途は
+    「現在SHA・現在runner内の同一条件同seed比較」(HARD GATE) に限定する。
+    過去Hosted Runner artifact (Exp11等) との比較にも同じ関数を使えるが、
+    その結果は診断 (DIAGNOSTIC) 扱いとし、formal verdictを単独では
+    失敗させない。実際の比較実行は .github/workflows/exp12.yml の
+    Phase 0 / collectジョブで行う。
 
 使い方:
     uv run python tools/check_exp12.py              # 全10 Config を検証
@@ -216,6 +221,50 @@ def check_run_completeness(run_dirs: list[Path]) -> list[str]:
     return errors
 
 
+def check_run_environment_integrity(run_dirs: list[Path]) -> list[str]:
+    """formal run群がすべて同一git_sha・同一numeric_environmentで実行された
+    ことを確認する (docs/数値再現性・Actions実行環境方針.md Level A)。
+
+    同一formal実験内でSHAやnumeric environmentが混在した場合は
+    integrity violationとして扱う。過去実験 (Exp11等) との差は対象外。
+    """
+    errors: list[str] = []
+    shas: dict[str | None, list[Path]] = {}
+    env_keys: dict[str | None, list[Path]] = {}
+
+    for run_dir in run_dirs:
+        meta_path = run_dir / "meta.json"
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            errors.append(f"{run_dir}: meta.json 読み込み失敗 (環境整合性チェック): {e}")
+            continue
+
+        sha = meta.get("git_sha")
+        if sha is None:
+            errors.append(f"{run_dir}: meta.json に git_sha がない")
+        shas.setdefault(sha, []).append(run_dir)
+
+        numeric_env = meta.get("numeric_environment") or {}
+        env_key = numeric_env.get("env_key")
+        if env_key is None:
+            errors.append(f"{run_dir}: meta.json に numeric_environment.env_key がない")
+        env_keys.setdefault(env_key, []).append(run_dir)
+
+    if len(shas) > 1:
+        errors.append(
+            "formal run群でgit_shaが混在: "
+            + ", ".join(f"{sha!r}={len(dirs)}件" for sha, dirs in sorted(shas.items(), key=lambda kv: str(kv[0])))
+        )
+    if len(env_keys) > 1:
+        errors.append(
+            "formal run群でnumeric_environment.env_keyが混在: "
+            + ", ".join(f"{k!r}={len(dirs)}件" for k, dirs in sorted(env_keys.items(), key=lambda kv: str(kv[0])))
+        )
+
+    return errors
+
+
 # ---------------------------------------------------------------------------
 # first-10k 再現性比較
 # ---------------------------------------------------------------------------
@@ -328,6 +377,7 @@ def main() -> int:
                 run_dirs.extend(collect_run_dirs(base))
         errors.extend(check_run_configs(run_dirs))
         errors.extend(check_run_completeness(run_dirs))
+        errors.extend(check_run_environment_integrity(run_dirs))
 
     if errors:
         for e in errors:

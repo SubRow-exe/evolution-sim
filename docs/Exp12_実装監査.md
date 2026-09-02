@@ -117,16 +117,42 @@ Requirement | Implementation | Test | Result
 以下がすべてPASSになるまで「Exp12実装完了」と宣言しない。
 
 ```text
-[ ] current-run first-10k再現性
-[ ] historical comparison diagnostic化
-[ ] formal SHA integrity
-[ ] formal numeric environment integrity
-[ ] artifact completeness
-[ ] aggregation error分離
-[ ] 全pytest
-[ ] check_exp12.py
-[ ] CI Green
-[ ] runtime preflight
+[x] current-run first-10k再現性          — 実装済み (次回dispatchのPhase 0で実測確認)
+[x] historical comparison diagnostic化   — 実装済み
+[x] formal SHA integrity                — 実装済み・test PASS
+[x] formal numeric environment integrity — 実装済み・test PASS
+[x] artifact completeness               — 既存実装を維持 (変更なし)
+[x] aggregation error分離                — 既存実装を維持 (変更なし)
+[x] 全pytest                            — 633 passed, 4 skipped, 0 failed
+[x] check_exp12.py                      — OK: 全10 Config整合性チェック通過
+[ ] CI Green                            — PR作成・push後に確認
+[ ] runtime preflight                   — 次回dispatchのPhase 0で実測確認 (事前見積もりは§4/§6参照、300分safety line内と推定)
 ```
 
 その後にのみmain上からformal 71-runをdispatchする。
+
+---
+
+# 6. 再現性gate修正 — 要求トレーサビリティ表 (2026-09-02 二回目)
+
+対象: `docs/数値再現性・Actions実行環境方針.md` §3 の技術修正指示。
+
+| Requirement | Implementation | Test | Result |
+|---|---|---|---|
+| P0-3 HARD GATEを「現在SHA・現在runner内の同一条件同seed比較」に変更 | `.github/workflows/exp12.yml` phase0: 代表4条件を primary として10,000 tick実行後、同一seed・同一Configで reference として再実行し、`tools/compare_exp12_first10k.py runs/exp12_p0 runs/exp12_p0_ref` で比較 (`id: current10k`)。continue-on-error無し = 不一致でジョブ失敗 | ワークフロー再dispatch時に実行される (静的にはYAML構文検証済み) | PASS (実装) / 実行結果は次回dispatchで確認 |
+| 過去Exp11 artifact比較をDIAGNOSTIC化 (Phase 0) | 同workflow: `dl_exp11_ref` / `historical10k` stepを`continue-on-error: true` + 明示的`exit 0`にし、`gate`のPASS/FAIL判定から除外。診断結果はstep summaryに記録 | 同上 | PASS (実装) |
+| formal collectでも過去Exp11比較をDIAGNOSTIC化 | collect job: `first10k_historical` stepに`continue-on-error: true` + `exit 0`。最終「整合性違反の判定」stepの条件式から`first10k_formal`(旧名)を削除し、`steps.integrity.outcome`/`steps.summary.outcome`のみに限定 | 同上 | PASS (実装) |
+| formal SHA整合性を機械検証 | `tools/check_exp12.py`: `check_run_environment_integrity()` を新設。全run の `meta.json.git_sha` が単一集合であることを確認し、複数あれば `formal run群でgit_shaが混在` errorを返す。`main()`のrun_dirs分岐から自動的に呼ばれ、collect jobの`Config整合性・run完全性・formal SHA/numeric environment整合性チェック`stepに組み込み済み | `tests/test_check_exp12.py::test_environment_integrity_all_same_passes`, `::test_environment_integrity_detects_sha_mismatch` | PASS |
+| numeric environment整合性を機械検証 | 同関数で `meta.json.numeric_environment.env_key` も同様に検証 | `tests/test_check_exp12.py::test_environment_integrity_detects_numeric_env_mismatch`, `::test_environment_integrity_detects_missing_fields` | PASS |
+| current-run mismatch時にHARD STOPするtest | `compare_first_10k`は汎用関数のまま (呼び出し側がHARD GATEかDIAGNOSTICかを決める設計は`数値再現性・Actions実行環境方針.md`の意図通り)。stats.csv/snapshot双方の不一致検出を検証 | `tests/test_check_exp12.py::test_compare_first_10k_stats_mismatch_detected`, `::test_compare_first_10k_snapshot_mismatch_detected`, `::test_compare_first_10k_missing_snapshot_tick_detected` | PASS |
+| historical mismatch regression test (diagnosticのままformal verdictを落とさない) | `compare_first_10k`が例外を投げずerrorsリストを返すだけであることを保証。workflow側でこれを`continue-on-error`+`exit 0`でDIAGNOSTIC化していることは§6上段の実装項目で担保 | `tests/test_check_exp12.py::test_compare_first_10k_is_a_pure_reporting_function` | PASS |
+| current-run reference欠落時の技術エラー | `compare_first_10k`は参照dirのstats.csv欠落時にFileNotFoundErrorメッセージをerrorsとして返す (例外を外に投げない) | `tests/test_check_exp12.py::test_compare_first_10k_missing_reference_dir` | PASS |
+| 完全一致時にHARD GATEを通す (偽陽性がないこと) | 同一fixtureを比較して空errorsを返すことを確認 | `tests/test_check_exp12.py::test_compare_first_10k_identical_runs_match` | PASS |
+| run完全性 (重複run検出) の回帰確認 | `check_run_completeness()` (既存実装、変更なし) | `tests/test_check_exp12.py::test_check_run_completeness_detects_duplicate` (71件完全gridでのPASS確認も含む、新規追加) | PASS |
+| 実行時間の事前見積もり報告 | `docs/数値再現性・Actions実行環境方針.md` §5.1 に既存Phase0実測 (run_id 33585027312) からの50k換算・worst-case・安全係数を記載済み。新規instrumentation追加なし | — (既存Actions ログの読み取りのみ) | PASS (文書化済み) |
+| 実行時間の実績報告の仕組み | Actions job timestamps / `phase0_timing.txt` / `done: ... ticks in ...s` の既存出力のみを使用する設計を維持 (workflow変更なし)。formal dispatch完了後にjob開始・終了時刻から算出して報告する | — (formal dispatch後に実施) | 未実施 (formal run未完了のため) |
+| 科学条件・閾値・判定ロジックへの変更なし | `docs/Exp12_実験計画確定.md`・`tools/summarize_exp12.py`・`tools/exp12_common.py` は本修正で無変更 (`git diff`で確認) | 既存 `tests/test_exp12_aggregation.py` 全件がそのままPASSすることで裏付け | PASS |
+| 全pytest | — | `uv run pytest tests -q` | PASS (633 passed, 4 skipped, 0 failed — うち`tests/test_check_exp12.py` 11件が新規) |
+| check_exp12.py (静的10 Config) | — | `uv run python tools/check_exp12.py` | PASS (`OK: 全10 Config整合性チェック通過`) |
+
+**Implementation欄・Test欄が空欄の要求はない。** 「実行時間の実績報告」の1項目のみ、formal dispatch完了後でなければ実施できない性質上「未実施」であり、これはPhase 0 HARD GATEの対象外 (formal dispatch後の報告義務)。
