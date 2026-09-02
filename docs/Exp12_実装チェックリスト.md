@@ -5,11 +5,13 @@
 
 > 本書は `docs/Exp12_実験計画確定.md` の科学設計を変更しない。目的は、Exp11実装時に実際に起きた実装漏れ・checker共倒れ・集計形式誤認・artifact回収漏れをExp12で再発させないこと。
 >
+> 2026-09-02 Exp12初回Phase 0で、過去Hosted Runner artifactとのbit完全一致をHARD GATEにすること自体が不適切と判明した。再現性に関する技術運用は `docs/数値再現性・Actions実行環境方針.md` を本書より優先する。
+>
 > 科学条件・閾値・判定ロジックは `docs/Exp12_実験計画確定.md` が正本。本書は**実装品質のHARD GATE**である。
 
 ---
 
-# 1. Exp11で実際に起きた失敗とExp12での再発防止
+# 1. Exp11/Exp12で実際に起きた失敗と再発防止
 
 ## 1.1 fixed_genes の手書き誤り
 
@@ -69,11 +71,11 @@ Exp12では:
 
 - formal collectorはartifact取得後に**期待run key集合と実取得run key集合を完全一致比較**する
 - B1 56 + B2 15 = **71 run** の欠落・重複を機械検出する
-- Exp11 first-10k参照データ取得でも、必要なsame-seed参照artifact集合が揃ったことを機械検証する
 - 多数artifactの取得はページネーションが保証される方法を使う。過去事故と同じ単一ページ前提を置かない
 - `gh run download` またはページネーションを明示処理するAPI方式を優先する
+- 過去Exp11 artifactを診断用に取得する場合も、取得できた集合を明示して「全件取れた」と思い込まない
 
-**「download stepがsuccess」だけでは完全取得とみなさない。件数・key一致までが成功条件。**
+**「download stepがsuccess」だけではformal artifactの完全取得とみなさない。件数・key一致までが成功条件。**
 
 ## 1.5 集計エラーを科学結果と誤認
 
@@ -81,12 +83,12 @@ Exp11ではsnapshot未検出が科学的FAILとして流れ、偽のverdictに�
 
 Exp12では:
 
-- artifact欠落
+- formal artifact欠落
 - duplicate run
 - snapshot欠落
 - 必須列欠落
 - CSV parse失敗
-- first-10k参照不足
+- current-run再現性reference不足
 - unexpected run key
 
 を `AggregationError` 相当の**技術的集計エラー**として扱う。
@@ -101,7 +103,22 @@ workflowをfailure扱い
 
 とする。
 
+過去Exp11 artifactの診断比較が取得不能・不一致であることだけではformal scientific verdictを失敗扱いにしない。診断未完了として明記する。
+
 `WINDOW_INSUFFICIENT / REVIEW` 等の科学結果とは明確に分離する。
+
+## 1.6 過去Hosted Runnerとのbit完全一致をHARD GATEにした誤り
+
+Exp12初回Actions run `33585027312` では、現在のExp12代表runを過去Exp11 artifactとbit完全比較したため、3/4代表条件が不一致となりPhase 0で停止した。
+
+科学コード・対応Configに差がなくても、Hosted Runnerを跨いだ過去runとのbit完全一致は保証できない。
+
+以後:
+
+- **現在SHA・現在runner内の同一条件同seed比較 = HARD GATE**
+- **過去日時のartifactとの比較 = DIAGNOSTIC**
+
+とする。詳細は `docs/数値再現性・Actions実行環境方針.md` を参照。
 
 ---
 
@@ -173,18 +190,20 @@ test側では、実装のmatrix定数をそのまま期待値として再利用�
 6. run欠落で非0終了
 7. duplicate runで非0終了
 8. unexpected run keyで非0終了
-9. first-10k mismatch -> `INTEGRITY_FAIL`
-10. first-10k reference欠落 -> 技術エラーで停止
-11. tick slopeの符号・正規化
-12. clear decelerationを `DELAY_CONTINUES` に誤分類しない
-13. sustained negative driftを正しく分類
-14. generation-space slope計算
-15. asymptotic fit success / failure / boundary
-16. Matter coupling difference-correlation
-17. B2 method-control pass/fail
-18. per-bmr 6/8集約
-19. global verdictの各主要分岐
-20. 技術エラーがあるとglobal scientific verdictを出さない
+9. **current-run referenceとの** first-10k mismatch -> HARD STOP
+10. current-run reference欠落 -> 技術エラーで停止
+11. **historical Exp11 reference mismatchはdiagnosticでありformal verdictを直接failureにしない**
+12. formal SHA / numeric environment混在をintegrity errorにする
+13. tick slopeの符号・正規化
+14. clear decelerationを `DELAY_CONTINUES` に誤分類しない
+15. sustained negative driftを正しく分類
+16. generation-space slope計算
+17. asymptotic fit success / failure / boundary
+18. Matter coupling difference-correlation
+19. B2 method-control pass/fail
+20. per-bmr 6/8集約
+21. global verdictの各主要分岐
+22. 技術エラーがあるとglobal scientific verdictを出さない
 
 可能な限りtable-driven testにし、判定分岐を網羅する。
 
@@ -192,17 +211,31 @@ test側では、実装のmatrix定数をそのまま期待値として再利用�
 
 # 5. first-10k再現性 HARD GATE
 
-P0代表条件だけでなく、formal 71 runでsame-seed比較できる実装を用意する。
+HARD GATEは**過去Exp11 artifactとのbit一致ではなく、現在の実行環境内での再現性**に対して行う。
+
+P0代表条件について:
+
+```text
+現在SHA / 現在runner / 現在numeric environment
+Exp11相当の参照Config run
+vs
+Exp12 Config run
+same scientific condition / same seed
+```
+
+を比較し完全一致させる。
 
 比較器について:
 
 - scientific列を明示列挙またはschemaから安全に選ぶ
 - path / timestamp / artifact name等の非科学metadataだけを除外する
 - snapshot CSV実形式を比較する
-- float比較の許容差を勝手に広げない。正本が完全一致を要求する範囲は完全一致
+- float比較の許容差を勝手に広げない
 - mismatch時に「どのrun / tick / file / columnが違ったか」を報告する
 
-P0で代表3 B1条件が一致しなければformal dispatchしない。
+P0代表条件が現在環境内で一致しなければformal dispatchしない。
+
+過去Exp11 artifactとのfirst-10k比較は別のdiagnosticとして残してよい。そこではcode / Config / numeric_environment差とdivergence開始点を併記し、bit mismatch単独でHARD STOPしない。
 
 ---
 
@@ -212,16 +245,18 @@ P0で代表3 B1条件が一致しなければformal dispatchしない。
 
 ```text
 setup / static validation
--> Phase 0 gates
+-> Phase 0 current-run determinism gates
+-> historical Exp11 comparison (diagnostic, optional)
+-> runtime preflight
 -> formal 71-run matrix
 -> per-run artifact upload
 -> collector (if: always())
--> completeness / integrity check
+-> completeness / SHA / numeric-environment integrity check
 -> summarizer
 -> final artifact upload
 ```
 
-formal matrixはPhase 0成功後だけ起動する。
+formal matrixはPhase 0 HARD GATE成功後だけ起動する。
 
 collectorは、途中job failureがあっても完了済みartifactを可能な限り回収する。ただし不完全なまま科学verdictを確定しない。
 
@@ -233,6 +268,8 @@ collectorは、途中job failureがあっても完了済みartifactを可能な�
 - 判定ロジック
 
 を固定する。
+
+過去Exp11 artifactとのbit mismatchをformal workflow failure条件に含めない。
 
 ---
 
@@ -251,7 +288,9 @@ real CSV    | ...            | ...      | PASS
 
 対象は:
 
-- `docs/Exp12_実験計画確定.md` のPhase 0
+- `docs/Exp12_実験計画確定.md` の科学設計
+- `docs/数値再現性・Actions実行環境方針.md` の技術amendment
+- Phase 0
 - 保存・測定指標
 - tick-space解析
 - generation-space解析
@@ -259,7 +298,8 @@ real CSV    | ...            | ...      | PASS
 - Matter coupling
 - B2 method control
 - classifier / verdict
-- first-10k integrity
+- current-run first-10k integrity
+- formal SHA / numeric environment integrity
 - artifact completeness
 - 本書の再発防止項目
 
@@ -274,15 +314,16 @@ real CSV    | ...            | ...      | PASS
 ローカルtest Green後、すぐpushしない。
 
 1. `docs/Exp12_実験計画確定.md` を先頭から再読
-2. 本書を再読
-3. `git diff` を先頭から再レビュー
-4. 要求トレーサビリティ表を埋める
-5. 未実装・未test・暗黙仮定を列挙
-6. それらを解消
-7. `uv run pytest tests -q`
-8. `tools/check_exp12.py`
-9. 必要なfirst-10k preflight
-10. その後にPRへpush
+2. `docs/数値再現性・Actions実行環境方針.md` を再読
+3. 本書を再読
+4. `git diff` を先頭から再レビュー
+5. 要求トレーサビリティ表を埋める
+6. 未実装・未test・暗黙仮定を列挙
+7. それらを解消
+8. `uv run pytest tests -q`
+9. `tools/check_exp12.py`
+10. current-run first-10k preflight
+11. その後にPRへpush
 
 CIはこの二巡目レビューの代替ではない。
 
@@ -293,14 +334,15 @@ CIはこの二巡目レビューの代替ではない。
 以下がすべてYESの場合のみ正式71-runをdispatchする。
 
 ```text
-[ ] 正本と実装差分を再確認した
+[ ] 正本と技術amendmentと実装差分を再確認した
 [ ] 必須ファイルが全て存在する
 [ ] 71 matrix集合が完全一致する
 [ ] fixed_genesをcanonical sourceから検証した
 [ ] production-format end-to-end aggregation testが通った
 [ ] 欠落/重複/parse errorでverdictを出さないtestが通った
-[ ] Exp11参照artifactの必要集合が取得できる
-[ ] P0代表first-10kが完全一致した
+[ ] current-run P0代表first-10kが完全一致した
+[ ] 過去Exp11比較をHARD GATEにしていない
+[ ] formal SHA / numeric environment整合性testが通った
 [ ] runtime preflightが基準内
 [ ] 全pytest Green
 [ ] check_exp12.py Green
@@ -320,10 +362,49 @@ CIはこの二巡目レビューの代替ではない。
 2. 要求トレーサビリティ表
 3. ローカルtest結果
 4. checker結果
-5. first-10k preflight結果
-6. runtime preflight結果
-7. GitHub CI結果
-8. formal dispatchを実施したか / していないか
-9. 未確認事項
+5. current-run first-10k preflight結果
+6. 過去Exp11 diagnostic比較結果
+7. runtime preflight結果
+8. GitHub CI結果
+9. formal dispatchを実施したか / していないか
+10. 未確認事項
 
 「CI Greenだったので問題なし」の一文だけで完了扱いにしない。
+
+---
+
+# 11. 実行時間の見積もり / 実績報告
+
+時間報告のためだけに新しいsimulation instrumentationを追加しない。
+
+既存の:
+
+- Actions job start/end
+- workflow start/end
+- `done: ... ticks in ...s`
+- `phase0_timing.txt`
+
+を使う。
+
+formal dispatch前に:
+
+- 代表条件の10k実測
+- 50k単純換算
+- 安全係数を含むworst-case
+- max-parallel
+- 前提 / 不確実性
+
+を報告する。
+
+formal完了後に:
+
+- workflow全体wall-clock
+- Phase 0時間
+- formal matrix wall-clock
+- run時間 median / P90 / max（取得できる範囲）
+- collect時間
+- 事前予測 vs 実績
+
+を結果考察またはNOTESへ残す。
+
+Exp12初回Phase 0の既存実測と現行安全係数では、B1 bmr=0.000 seed1から算出した50k保守的worst-caseは約208分である。詳細は `docs/数値再現性・Actions実行環境方針.md` を参照。
