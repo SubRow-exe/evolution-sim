@@ -5,17 +5,18 @@
 ## 現在の参照順
 
 1. `docs/次の実験計画.md` — 現在の司令塔
-2. `docs/Exp11_実験計画案.md` — **Exp11事前登録の正本・人間判断確定**
-3. `docs/V1.7_基礎維持代謝仕様案.md` — **V1.7実装仕様の正本・人間判断確定**
-4. `docs/V1.7_Exp11_レビュー判断.md` — Claudeレビューへの採否。レビュー原文より優先
-5. `docs/LUCA参照モデル方針.md`
-6. `docs/Exp10_結果考察.md`
-7. `experiments/exp10_phaseB_20260901/NOTES.md`
-8. `docs/V1.6_行動則設計案.md`
-9. `docs/実験結果保存方針.md`
-10. `docs/バージョニング方針.md`
+2. `docs/Exp12_実験計画確定.md` — **Exp12事前登録・実装・判定の正本**
+3. `docs/Exp12_レビュー反映判断.md` — Opus 5レビューへの採否
+4. `docs/Exp11_考察.md` — Exp12へ進む科学的理由
+5. `docs/Exp11_結果考察.md` — Exp11正式実測値・正式判定
+6. `docs/V1.7_基礎維持代謝仕様案.md` — V1.7 `bmr_core` 実装仕様
+7. `docs/LUCA参照モデル方針.md`
+8. `docs/実験結果保存方針.md`
+9. `docs/バージョニング方針.md`
 
-古いExp10中間報告、PRレビュー原文、過去の240-run案より上記を優先する。レビュー原文に別案があっても、人間判断済み正本を独自に変更しない。
+`docs/Exp12_実験計画案.md` はレビュー前の旧ドラフト。正本と矛盾する場合は `Exp12_実験計画確定.md` を優先する。
+
+レビュー原文に別案があっても、反映判断・確定正本をAIが独自変更しない。
 
 ---
 
@@ -25,88 +26,71 @@
 V1.4 / Exp08                         完了 / Green
 V1.5 / Exp09                         完了 / Green
 V1.6 / Exp10                         完了 / Green
-V1.6行動原理                         GO
-Exp10 Phase C                        deferred
-LUCA-inspired参照方針                採用
-V1.7 bmr_core / Exp11設計            確定
-V1.7 / Exp11実装                     ← 次
+V1.7 bmr_core                        実装済み
+Exp11 Phase B                        255 run完了
+Exp11 formal verdict                 NO_SELECTION / REVIEW
+Exp11 collect修正・正式再集計       完了
+Exp11考察                            完了
+Exp12 Opus 5レビュー                 完了・反映済み
+Exp12事前登録                        確定
+Exp12実装・Phase 0                   ← 現在
 ```
-
-### V1.7着手前の必須処理
-
-Exp10採用値は:
-
-```text
-memory_tau    = 10
-response_gain = 64
-```
-
-だが通常defaultの `response_gain` はまだ16。
-
-V1.7へ混ぜず先に別commitで:
-
-```text
-response_gain 16 -> 64
--> tests / CI基準更新
--> v1.6-final保存
--> その確定commitからV1.7実装
-```
-
-を行う。
 
 ---
 
-## V1.7 実装仕様
+# Exp12の目的
 
-パラメータ名は**`bmr_core`に統一**する。
+Exp11 B1では `bmr_core` 増加に伴い10k時点のbody_sizeが大型側へ系統的に移動したが、late driftが残っていた。
+
+Exp12は:
 
 ```text
-BMR = bmr_core + (bmr_coef - bmr_core) * M^0.75
-bmr_coef = 0.3
-0 <= bmr_core <= 0.3
+平衡変更
+vs
+単なる進化速度・世代交代の遅延
 ```
 
-- `bmr_core=0` -> V1.6完全一致
-- `M=1` -> BMR=0.3維持
-- M<1では縮小不能core負担が相対的に重い
-- M>1ではV1.6よりBMRが相対的に低くなりcore償却メリットが生じる。これは意図的
-- 純加算式は検討済みだが、M=1 referenceの総BMRまで上げるため不採用
-- `bmr_core` は遺伝子にしない
+を50k長期runで識別する。
 
-温度、body_size上下限、繁殖、吸収、行動、捕食、新規遺伝子はV1.7では変更しない。
-
-### Config事故防止
-
-非ゼロ `bmr_core` のJSON round-trip test、run summary/fingerprint、保存config、全45 Configの値一致checkerを必須とする。未知キーが黙って落ちて0として走ることを許容しない。
+**Exp12は恒久 `bmr_core` 値を選定する実験ではない。**
 
 ---
 
-## Exp11 正式事前登録
+# Exp12 正式構成
 
-候補15水準:
+## B1主実験
 
 ```text
-0.000, 0.005, 0.010, 0.015, 0.020,
-0.025, 0.030, 0.040, 0.050, 0.060,
-0.075, 0.100, 0.150, 0.200, 0.300
+bmr_core = 0.000, 0.050, 0.075, 0.100, 0.150, 0.200, 0.300
+seed     = 1..8
+56 run
 ```
 
-Phase Bはbody_sizeのみ進化ON、他13遺伝子固定。
+Exp11 B1と同じlight-only / light specialist。
+
+## B2 method positive control
 
 ```text
-B1 light-only / lightspec : 15 × seed1-8 = 120
-B2 chem-only  / chemspec  : 15 × seed1-5 =  75
-B3 mixed      / generalist: 15 × seed1-4 =  60
-合計                         255 run
+bmr_core = 0.000, 0.100, 0.300
+seed     = 1..5
+15 run
+```
+
+Exp11 B2と同じchem-only / chemical specialist。
+
+```text
+総計 = 71 run
 ```
 
 共通:
 
 ```text
-ticks=10000
+ticks=50000
 initial_population=100
 initial_energy=50
 initial_matter=0.8
+body_sizeのみ進化ON
+他13遺伝子固定
 memory_tau=10
 response_gain=64
 stats_interval=20
@@ -114,42 +98,155 @@ snapshot_interval=1000
 max_population_halt=10000
 ```
 
-placement:
+B3はExp12へ含めない。
 
-```text
-B1 random
-B2 vent
-B3 random
-```
-
-255 matrix jobを1回のworkflow_dispatchで登録し、`max-parallel=20`。途中結果で候補を削らない。
-
-### 判定要点
-
-- B1 `bmr_core=0`: `p_low>=0.50` が5/8以上で対照妥当
-- B1 candidate per-seed Green:
-  - COMPLETE
-  - `p_low<0.25`
-  - `p_high<0.25`
-  - `max_generation >= max(5, ceil(0.5*g0))`
-  - `late_drift<=0.10`
-  - integrity OK
-- 7/8以上で候補B1 Green
-- **連続3候補B1 Green**で最小側をTRANSITION_ELIGIBLE
-- B2 baseline healthy COMPLETE >=3/5、B3 >=3/4
-- B2/B3 vetoは `bmr_core=0` baselineに対する重大悪化のみ
-- vetoされない最小TRANSITION_ELIGIBLEを恒久値候補
-- どれも選べなければ `NO_SELECTION / REVIEW`。後付け変更しない
-
-詳細・正確な式は必ず `docs/Exp11_実験計画案.md` を参照する。
+詳細は必ず `docs/Exp12_実験計画確定.md` を参照する。
 
 ---
 
-## Actions運用
+# Exp12 Phase 0 HARD GATE
 
-正式dispatch前にV1.7実装・45 Config・`exp11.yml`・checker/summarizer/testsをmainへマージする。
+正式71-run dispatch前に以下を全て通す。
 
-### CI・push運用
+1. Config完全性
+2. Simulation smoke
+3. 代表条件first-10kがExp11 same-seedと科学数値一致
+4. Matter保存 / Energy台帳 / 決定性 / RNG非干渉
+5. runtime preflight
+6. CI Green
+
+runtime基準:
+
+```text
+job timeout = 350 min
+predicted worst-case 50k <= 300 min を正式dispatch目安
+```
+
+超える場合、run長をAI判断で短縮せず `RUNTIME_PREFLIGHT_FAIL / REVIEW` として停止する。
+
+正式71 run全てでもfirst-10kをExp11 artifactと比較し、不一致は `INTEGRITY_FAIL`。
+
+---
+
+# Exp12解析の絶対要点
+
+単純な「後半傾きが負」だけでdelayと判定しない。
+
+## Tick-space
+
+```text
+20–30k
+30–40k
+40–50k
+```
+
+の3windowで正規化傾き `S1/S2/S3` を測り、減速を明示的に判定する。
+
+```text
+|S3| <= 0.05
+```
+
+はlate stationarity sentinelだが単独判定には使わない。
+
+低下が連続していても傾きが明確に弱まる場合は `CONVERGING_NOT_PROVEN` とし、`DELAY_CONTINUES` へ入れない。
+
+## Generation-space
+
+各snapshotで:
+
+```text
+generation median
+Q90
+max_generation
+```
+
+を計算する。
+
+body_size vs median-generation trajectoryを作り、late generation slope `S_gen` を測る。
+
+`max_generation` 単独で進化機会を判定しない。
+
+## 漸近平衡fit
+
+```text
+b(t) = b_inf + A * exp(-(t-10000)/tau)
+```
+
+を診断として実施するが、fit単独で科学結論を出さない。
+
+## Lower-bound sensitivity
+
+```text
+p_021
+p_023
+p_025
+```
+
+を併記する。0.21だけで長期平衡を判定しない。
+
+## Matter coupling
+
+30–50kのsnapshot差分でbody_sizeとMatter/ecology指標のSpearman相関を計算し、所定条件で `MATTER_COUPLED` を付ける。
+
+詳細な閾値・式・verdictロジックは正本を読むこと。AIが簡略化しない。
+
+---
+
+# Exp12 run科学分類
+
+主分類:
+
+```text
+INTERIOR_EQUILIBRIUM
+LOWER_BOUND_EQUILIBRIUM
+DELAY_CONTINUES
+CONVERGING_NOT_PROVEN
+WINDOW_INSUFFICIENT
+```
+
+全体verdict:
+
+```text
+EQUILIBRIUM_SHIFT_SUPPORTED
+EQUILIBRIUM_SHIFT_SUPPORTED_WITH_ECOLOGICAL_COUPLING
+DELAY_SUPPORTED
+WINDOW_INSUFFICIENT / REVIEW
+INVALID_OR_METHOD_REVIEW
+```
+
+判定閾値を結果確認後に変更しない。
+
+---
+
+# Exp12実装最低要件
+
+```text
+tools/exp12_common.py
+tools/make_exp12_configs.py
+tools/check_exp12.py
+tools/summarize_exp12.py
+configs/exp12/*.json
+.github/workflows/exp12.yml
+tests/test_exp12_configs.py
+tests/test_exp12_aggregation.py
+```
+
+テストでは最低限:
+
+- 71条件matrix完全性
+- fixed_genes canonical一致
+- bmr_core round-trip
+- snapshot実形式からgeneration median/Q90/max
+- 減速収束trajectoryをdelayへ誤分類しない
+- sustained declineをdelay認識する
+- first-10k mismatchをINTEGRITY_FAILにする
+- 欠落artifact時に科学verdictを確定しない
+
+を検証する。
+
+---
+
+## Actions・CI・push運用
 
 CIは最終的な独立確認であり、途中実装のデバッグ手段として繰り返し使用しない。
 
@@ -158,13 +255,22 @@ CIは最終的な独立確認であり、途中実装のデバッグ手段とし
 - push前に変更範囲に対応するテストをローカルで実行する
 - Pythonコード、Config、集計処理、workflow、依存関係を変更した場合は、原則としてpush前に `uv run pytest tests -q` を通す
 - シミュレーション結果の不変性に関係する変更では、CIと同じ基準refを用いて `tools/verify_vs_ref.py` もローカル確認する
-- ローカルテスト失敗中の状態を、CIで原因調査する目的だけでpushしない
+- ローカルテスト失敗中の状態をCIで原因調査する目的だけでpushしない
 - CI failure修正は原因と影響範囲をローカルで確認し、関連修正をまとめてから再pushする
 - 新Exp、コアロジック、Config、出力形式、集計、CIを変更した場合は、本番dispatch前にCI Greenを必須とする
-- Markdown、結果考察、静的plotなど報告物だけの変更ではコードCIの価値が低いため、報告物をまとめて1回だけpushする。文言修正ごとの連続pushを避ける
+- Markdown、結果考察、静的plotだけの変更はまとめてpushし、文言修正ごとの連続pushを避ける
 - CIを省略するために科学コードと文書変更を不自然に混在させない
 
-AIは作業完了報告時に、ローカルで実行したテスト、GitHub CIの状態、未確認事項を分けて記載する。
+AIは作業完了報告時に:
+
+1. ローカルで実行したテスト
+2. GitHub CI状態
+3. Phase 0結果
+4. 未確認事項
+
+を分けて記載する。
+
+正式run開始後はGit SHA・数値環境・科学コード・Config生成則・判定ロジックを固定する。
 
 run status:
 
@@ -177,12 +283,9 @@ INTEGRITY_FAIL
 ```
 
 - EXTINCT / POP_HALT = 科学的結果
-- timeout / runner中断 / output欠落 = INCOMPLETE_RESOURCE（同一SHA/Configで技術的再実行可）
+- timeout / runner中断 / artifact欠落 = INCOMPLETE_RESOURCE
 - integrity violation = 正式解析から除外
-
-job timeoutは350分を基準。collectorは可能な限り完了済み結果を保持する。
-
-正式run開始後はGit SHA・数値環境・科学コード・Config生成則・判定ロジックを固定する。
+- 技術的不完了だけ同一SHA/Configで再実行可
 
 ---
 
@@ -190,7 +293,7 @@ job timeoutは350分を基準。collectorは可能な限り完了済み結果を
 
 **小型化を抑えるためだけの人工的ペナルティは入れない。**
 
-V1.7 `bmr_core` はbody_sizeへ直接罰点を付けるものではなく、LUCA-inspired参照に基づく全生命共通の一般生理則として導入する。その結果としてサイズ選択圧が変わることを許容する。
+V1.7 `bmr_core` はbody_sizeへ直接罰点を付けるものではなく、LUCA-inspired参照に基づく全生命共通の一般生理則として扱う。その結果としてサイズ選択圧が変わることを許容する。
 
 `max_population_halt` は計算安全停止であり、生態ルールとして個体を殺したり繁殖を抑えたりしない。
 
