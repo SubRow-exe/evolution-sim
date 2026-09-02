@@ -149,6 +149,23 @@ B3 random
 
 正式dispatch前にV1.7実装・45 Config・`exp11.yml`・checker/summarizer/testsをmainへマージする。
 
+### CI・push運用
+
+CIは最終的な独立確認であり、途中実装のデバッグ手段として繰り返し使用しない。
+
+- PRへpushするたび通常CIが自動実行されることを前提とする
+- 細かな途中経過ごとにpushせず、論理的に一まとまりの変更単位までローカルで完成させる
+- push前に変更範囲に対応するテストをローカルで実行する
+- Pythonコード、Config、集計処理、workflow、依存関係を変更した場合は、原則としてpush前に `uv run pytest tests -q` を通す
+- シミュレーション結果の不変性に関係する変更では、CIと同じ基準refを用いて `tools/verify_vs_ref.py` もローカル確認する
+- ローカルテスト失敗中の状態を、CIで原因調査する目的だけでpushしない
+- CI failure修正は原因と影響範囲をローカルで確認し、関連修正をまとめてから再pushする
+- 新Exp、コアロジック、Config、出力形式、集計、CIを変更した場合は、本番dispatch前にCI Greenを必須とする
+- Markdown、結果考察、静的plotなど報告物だけの変更ではコードCIの価値が低いため、報告物をまとめて1回だけpushする。文言修正ごとの連続pushを避ける
+- CIを省略するために科学コードと文書変更を不自然に混在させない
+
+AIは作業完了報告時に、ローカルで実行したテスト、GitHub CIの状態、未確認事項を分けて記載する。
+
 run status:
 
 ```text
