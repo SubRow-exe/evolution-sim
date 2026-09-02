@@ -1,0 +1,420 @@
+name: Exp12
+
+# Exp12 長期平衡検証 (docs/Exp12_実験計画確定.md)。
+#
+# bmr_coreによるbody_sizeシフトが「長期平衡の変更」か「単なる世代交代遅延」かを
+# 50,000 tick runで識別する。Exp12は恒久bmr_core値を選定する実験ではない。
+#
+# 正本:
+#   docs/Exp12_実験計画確定.md      条件・判定式・verdictロジック
+#   docs/Exp12_実装チェックリスト.md 実装品質HARD GATE
+#   AGENTS.md
+#
+# Phase 0 HARD GATE (jobs.phase0) を通過した場合のみ正式71-run matrixを
+# 起動する (jobs.run が needs: phase0 で自然にゲートされる)。
+#
+# 手動実行のみ。
+
+on:
+  workflow_dispatch:
+    inputs:
+      exp11_run_id:
+        description: "first-10k再現性比較に使うExp11本番run ID"
+        type: string
+        default: "33506955494"
+      upload_events:
+        description: "events.csv も保存する (容量大)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: exp12
+  cancel-in-progress: false
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Phase 0: 正式71-run matrix起動前のHARD GATE (§5)
+  # -------------------------------------------------------------------------
+  phase0:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      pass: ${{ steps.gate.outputs.pass }}
+      matrix: ${{ steps.gen.outputs.matrix }}
+      count: ${{ steps.gen.outputs.count }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      # --- P0-1/P0-2: Config完全性 + Simulation smoke (静的) ---
+      - name: P0-1/P0-2 Config整合性・Simulationスモーク
+        run: uv run python tools/check_exp12.py
+
+      - name: Exp12 単体テスト (P0-1〜P0-4)
+        run: uv run pytest tests/test_exp12_configs.py tests/test_exp12_aggregation.py -q
+
+      - name: 保存則・決定性の確認
+        run: uv run pytest tests/test_conservation.py tests/test_determinism.py -q
+
+      # --- P0-3: 代表条件を10,000 tickまで実行 (first-10k比較の材料) ---
+      - name: 代表条件を10,000 tickまで実行
+        run: |
+          set -euo pipefail
+          mkdir -p runs/exp12_phase0
+          declare -A CONDS=(
+            ["B1_lightonly_lightspec_bmr0.000"]="configs/exp12/exp12_B1_lightonly_lightspec_bmr0.000.json"
+            ["B1_lightonly_lightspec_bmr0.100"]="configs/exp12/exp12_B1_lightonly_lightspec_bmr0.100.json"
+            ["B1_lightonly_lightspec_bmr0.300"]="configs/exp12/exp12_B1_lightonly_lightspec_bmr0.300.json"
+            ["B2_chemonly_chemspec_bmr0.000"]="configs/exp12/exp12_B2_chemonly_chemspec_bmr0.000.json"
+          )
+          for name in "${!CONDS[@]}"; do
+            cfg="${CONDS[$name]}"
+            t0=$(date +%s)
+            uv run python main.py --headless --ticks 10000 --seed 1 \
+              --config "$cfg" --out "runs/exp12_phase0/${name}"
+            t1=$(date +%s)
+            echo "${name}: 10,000 tick 実測 $((t1-t0)) 秒" | tee -a phase0_timing.txt
+          done
+
+      - name: first-10k比較用 Exp11参照artifactをダウンロード
+        run: |
+          set -euo pipefail
+          mkdir -p dl_exp11_ref
+          for name in \
+            "exp11-B1_lightonly_lightspec-bmr0.000-seed1" \
+            "exp11-B1_lightonly_lightspec-bmr0.100-seed1" \
+            "exp11-B1_lightonly_lightspec-bmr0.300-seed1" \
+            "exp11-B2_chemonly_chemspec-bmr0.000-seed1"; do
+            gh run download "${{ inputs.exp11_run_id }}" --dir dl_exp11_ref --name "$name" || {
+              echo "::error::Exp11参照artifact取得失敗: $name"
+              exit 1
+            }
+          done
+          mkdir -p runs/exp11_ref
+          for d in dl_exp11_ref/*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/^exp11-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp11_ref/$key"
+            cp -r "$d"/* "runs/exp11_ref/$key"/ 2>/dev/null || true
+          done
+
+      - name: 再構成 (exp12 phase0 runをcondition-key階層へ)
+        run: |
+          set -euo pipefail
+          mkdir -p runs/exp12_p0
+          for d in runs/exp12_phase0/*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/_bmr/-bmr/')
+            SRC=$(find "$d" -mindepth 1 -maxdepth 1 -type d | head -1)
+            mkdir -p "runs/exp12_p0/$key"
+            cp -r "$SRC" "runs/exp12_p0/$key"/
+          done
+
+      - name: P0-3 first-10k same-seed再現性比較 (HARD STOP)
+        id: first10k
+        run: |
+          uv run python tools/compare_exp12_first10k.py runs/exp12_p0 runs/exp11_ref
+
+      # --- P0-5: runtime preflight ---
+      - name: P0-5 runtime preflight
+        id: runtime
+        run: |
+          set -euo pipefail
+          cat phase0_timing.txt
+          # bmr_core=0.000 (最大population想定) の実測から50k worst-caseを保守的に見積もる
+          SECONDS_10K=$(grep "B1_lightonly_lightspec_bmr0.000" phase0_timing.txt | grep -oE '[0-9]+ 秒' | grep -oE '[0-9]+')
+          # 5倍 (50k/10k) に、population増加余地を見込んだ2倍の安全係数をかける
+          WORST_CASE_SEC=$((SECONDS_10K * 5 * 2))
+          WORST_CASE_MIN=$((WORST_CASE_SEC / 60))
+          echo "10k実測: ${SECONDS_10K}秒 / 50k保守的worst-case見積: ${WORST_CASE_MIN}分"
+          echo "worst_case_min=${WORST_CASE_MIN}" >> "$GITHUB_OUTPUT"
+          if [ "$WORST_CASE_MIN" -gt 300 ]; then
+            echo "::error::RUNTIME_PREFLIGHT_FAIL — worst-case ${WORST_CASE_MIN}分 > 300分"
+            exit 1
+          fi
+          echo "RUNTIME_PREFLIGHT PASS (${WORST_CASE_MIN}分 <= 300分)"
+
+      - name: matrix生成 (71 job)
+        id: gen
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          B1_BMR = [0.000, 0.050, 0.075, 0.100, 0.150, 0.200, 0.300]
+          B2_BMR = [0.000, 0.100, 0.300]
+          B1_SEEDS = list(range(1, 9))
+          B2_SEEDS = list(range(1, 6))
+
+          items = []
+          for core in B1_BMR:
+              cfg = f"configs/exp12/exp12_B1_lightonly_lightspec_bmr{core:.3f}.json"
+              for seed in B1_SEEDS:
+                  items.append({"env": "B1_lightonly_lightspec", "bmr_core": f"{core:.3f}",
+                               "seed": seed, "config": cfg})
+          for core in B2_BMR:
+              cfg = f"configs/exp12/exp12_B2_chemonly_chemspec_bmr{core:.3f}.json"
+              for seed in B2_SEEDS:
+                  items.append({"env": "B2_chemonly_chemspec", "bmr_core": f"{core:.3f}",
+                               "seed": seed, "config": cfg})
+
+          assert len(items) == 71, f"71 run のはずが {len(items)} 個"
+          print("matrix=" + json.dumps({"include": items}))
+          print("count=" + str(len(items)))
+          PY
+
+      - name: Phase 0 GO判定
+        id: gate
+        if: always()
+        run: |
+          if [ "${{ steps.first10k.outcome }}" = "success" ] && \
+             [ "${{ steps.runtime.outcome }}" = "success" ] && \
+             [ "${{ steps.gen.outcome }}" = "success" ]; then
+            echo "pass=true" >> "$GITHUB_OUTPUT"
+            echo "Phase 0: PASS — 正式71-run matrixを起動する"
+          else
+            echo "pass=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Phase 0 FAIL — 正式71-run matrixを起動しない"
+          fi
+          {
+            echo "## Exp12 Phase 0 結果"
+            echo "- first-10k再現性: ${{ steps.first10k.outcome }}"
+            echo "- runtime preflight: ${{ steps.runtime.outcome }} (worst-case ${{ steps.runtime.outputs.worst_case_min }}分)"
+            echo "- matrix生成: ${{ steps.gen.outcome }} (${{ steps.gen.outputs.count }} run)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # -------------------------------------------------------------------------
+  # 正式71-run matrix (Phase 0 PASS後のみ)
+  # -------------------------------------------------------------------------
+  run:
+    needs: phase0
+    if: needs.phase0.outputs.pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.phase0.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: シミュレーション実行 (50,000 tick)
+        run: |
+          uv run python main.py --headless \
+            --ticks 50000 \
+            --seed "${{ matrix.seed }}" \
+            --config "${{ matrix.config }}" \
+            --out "runs/exp12_${{ matrix.env }}"
+
+      - name: 保存対象を整理
+        run: |
+          set -euo pipefail
+          SRC=$(find "runs/exp12_${{ matrix.env }}" -mindepth 1 -maxdepth 1 -type d \
+                | xargs -I{} ls -dt {} | head -1)
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$SRC"/lineages.csv "$DST"/ 2>/dev/null || true
+          if [ -d "$SRC/snapshots" ]; then cp -r "$SRC"/snapshots "$DST"/; fi
+          if [ "${{ inputs.upload_events }}" = "true" ] && [ -f "$SRC/events.csv" ]; then
+            cp "$SRC"/events.csv "$DST"/
+          fi
+          echo "最終tick: $(tail -1 "$SRC"/stats.csv | cut -d, -f1 2>/dev/null || echo N/A)"
+          du -sh "$DST"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp12-${{ matrix.env }}-bmr${{ matrix.bmr_core }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  # collect: 完全性・first-10k integrity check・事前登録summarizer
+  # -------------------------------------------------------------------------
+  collect:
+    needs: [phase0, run]
+    if: always() && needs.phase0.outputs.pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RCLONE_CONF: ${{ secrets.RCLONE_CONFIG_BASE64 }}
+      REMOTE_BASE: ${{ vars.RCLONE_REMOTE_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - run: uv sync --frozen
+
+      - name: 全71 runのartifactをダウンロード
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp12-B*-bmr*-seed*"
+          echo "=== ダウンロードされたartifact数 ==="
+          find dl -mindepth 1 -maxdepth 1 -type d | wc -l
+
+      - name: 条件ごとに再構成
+        run: |
+          set -euo pipefail
+          mkdir -p runs/exp12
+          for d in dl/exp12-*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/^exp12-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp12/$key"
+            cp -r "$d"/* "runs/exp12/$key"/ 2>/dev/null || true
+          done
+          du -sh runs/exp12
+
+      - name: Config整合性・run完全性チェック
+        id: integrity
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run python tools/check_exp12.py runs/exp12 2>&1 | tee integrity.txt
+
+      - name: first-10k Exp11参照との全run比較
+        id: first10k_formal
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p dl_exp11_all runs/exp11_ref_all
+          for core in 0.000 0.050 0.075 0.100 0.150 0.200 0.300; do
+            for seed in 1 2 3 4 5 6 7 8; do
+              gh run download "${{ inputs.exp11_run_id }}" --dir dl_exp11_all \
+                --name "exp11-B1_lightonly_lightspec-bmr${core}-seed${seed}" || \
+                echo "warn: exp11-B1_lightonly_lightspec-bmr${core}-seed${seed} 取得失敗"
+            done
+          done
+          for core in 0.000 0.100 0.300; do
+            for seed in 1 2 3 4 5; do
+              gh run download "${{ inputs.exp11_run_id }}" --dir dl_exp11_all \
+                --name "exp11-B2_chemonly_chemspec-bmr${core}-seed${seed}" || \
+                echo "warn: exp11-B2_chemonly_chemspec-bmr${core}-seed${seed} 取得失敗"
+            done
+          done
+          for d in dl_exp11_all/*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/^exp11-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp11_ref_all/$key"
+            cp -r "$d"/* "runs/exp11_ref_all/$key"/ 2>/dev/null || true
+          done
+          uv run python tools/compare_exp12_first10k.py runs/exp12 runs/exp11_ref_all 2>&1 | tee first10k.txt
+
+      - name: 長期平衡解析・事前登録判定
+        id: summary
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p exp12_out
+          uv run python tools/summarize_exp12.py runs/exp12 --out-dir exp12_out 2>&1 | tee summary.txt
+          {
+            echo "## Exp12 長期平衡解析 結果"
+            echo ""
+            echo "> シミュレーションはこのrun内で50,000 tick完走。"
+            echo "> 事前登録判定: docs/Exp12_実験計画確定.md"
+            echo ""
+            echo "### 整合性チェック"
+            echo '```'
+            cat integrity.txt
+            echo '```'
+            echo ""
+            echo "### first-10k Exp11参照比較"
+            echo '```'
+            tail -40 first10k.txt
+            echo '```'
+            echo ""
+            echo "### 事前登録判定"
+            echo '```'
+            cat summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 生データを圧縮
+        id: pack
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%d_%H%M%S)"
+          EXP="exp12_actions_${STAMP}"
+          echo "exp=$EXP" >> "$GITHUB_OUTPUT"
+          mkdir -p archives "experiments/$EXP"
+          for c in runs/exp12/*; do
+            name="exp12_$(basename "$c")"
+            tar -czf "archives/${name}.tar.gz" -C "$(dirname "$c")" "$(basename "$c")"
+          done
+          cp summary.txt integrity.txt first10k.txt "experiments/$EXP/" 2>/dev/null || true
+          if [ -d exp12_out ]; then cp -r exp12_out "experiments/$EXP/"; fi
+          du -sh archives/
+
+      - name: Google Drive へ生データを転送
+        id: upload
+        if: env.RCLONE_CONF != '' && env.REMOTE_BASE != ''
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" | base64 -d > ~/.config/rclone/rclone.conf
+          rclone copy archives/ "${REMOTE_BASE}/${EXP}/" --progress --stats-one-line
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          rm -f ~/.config/rclone/rclone.conf
+
+      - name: 要約と成果物を保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp12-summary
+          path: experiments/
+          retention-days: 90
+
+      - name: 生データアーカイブを保存 (転送未設定時の保険)
+        if: ${{ steps.upload.outputs.uploaded != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp12-rawdata
+          path: archives/
+          retention-days: 90
+
+      # 整合性違反・first-10k mismatch・集計エラーのみworkflow failure
+      - name: 整合性違反の判定
+        if: >
+          steps.integrity.outcome == 'failure' ||
+          steps.first10k_formal.outcome == 'failure' ||
+          steps.summary.outcome == 'failure'
+        run: |
+          echo "::error::整合性違反 (Config不一致/run欠落/first-10k不一致/集計エラー)"
+          {
+            echo "### ★ 整合性違反 — 実行失敗"
+            echo "integrity.txt / first10k.txt / summary.txt を確認すること。"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: 実行完了
+        if: >
+          steps.integrity.outcome != 'failure' &&
+          steps.first10k_formal.outcome != 'failure' &&
+          steps.summary.outcome != 'failure'
+        run: |
+          {
+            echo "### 整合性 OK — 実行は成功"
+            echo "科学的判定は summary.txt の SCIENTIFIC_VERDICT を参照。"
+          } >> "$GITHUB_STEP_SUMMARY"
