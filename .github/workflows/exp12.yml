@@ -66,8 +66,11 @@ jobs:
       - name: 保存則・決定性の確認
         run: uv run pytest tests/test_conservation.py tests/test_determinism.py -q
 
-      # --- P0-3: 代表条件を10,000 tickまで実行 (first-10k比較の材料) ---
-      - name: 代表条件を10,000 tickまで実行
+      # --- P0-3 (現在環境内決定性): 代表条件を primary として10,000 tickまで実行 ---
+      # docs/数値再現性・Actions実行環境方針.md Level B: HARD GATEは「過去Hosted
+      # Runner artifactとのbit完全一致」ではなく「現在SHA・現在runner内での
+      # 同一条件同seedの再現性」に対して行う。
+      - name: P0-3 代表条件 (primary) を10,000 tickまで実行
         run: |
           set -euo pipefail
           mkdir -p runs/exp12_phase0
@@ -86,7 +89,46 @@ jobs:
             echo "${name}: 10,000 tick 実測 $((t1-t0)) 秒" | tee -a phase0_timing.txt
           done
 
-      - name: first-10k比較用 Exp11参照artifactをダウンロード
+      - name: P0-3 同条件・同seedを reference として再実行 (現在環境内決定性の材料)
+        run: |
+          set -euo pipefail
+          mkdir -p runs/exp12_phase0_ref
+          declare -A CONDS=(
+            ["B1_lightonly_lightspec_bmr0.000"]="configs/exp12/exp12_B1_lightonly_lightspec_bmr0.000.json"
+            ["B1_lightonly_lightspec_bmr0.100"]="configs/exp12/exp12_B1_lightonly_lightspec_bmr0.100.json"
+            ["B1_lightonly_lightspec_bmr0.300"]="configs/exp12/exp12_B1_lightonly_lightspec_bmr0.300.json"
+            ["B2_chemonly_chemspec_bmr0.000"]="configs/exp12/exp12_B2_chemonly_chemspec_bmr0.000.json"
+          )
+          for name in "${!CONDS[@]}"; do
+            cfg="${CONDS[$name]}"
+            uv run python main.py --headless --ticks 10000 --seed 1 \
+              --config "$cfg" --out "runs/exp12_phase0_ref/${name}"
+          done
+
+      - name: 再構成 (primary/reference をcondition-key階層へ)
+        run: |
+          set -euo pipefail
+          for src_base in exp12_phase0 exp12_phase0_ref; do
+            dst_base="${src_base/exp12_phase0/exp12_p0}"
+            mkdir -p "runs/${dst_base}"
+            for d in "runs/${src_base}"/*; do
+              name=$(basename "$d")
+              key=$(echo "$name" | sed -E 's/_bmr/-bmr/')
+              SRC=$(find "$d" -mindepth 1 -maxdepth 1 -type d | head -1)
+              mkdir -p "runs/${dst_base}/$key"
+              cp -r "$SRC" "runs/${dst_base}/$key"/
+            done
+          done
+
+      - name: P0-3 現在環境内 same-seed再現性比較 (HARD GATE)
+        id: current10k
+        run: |
+          uv run python tools/compare_exp12_first10k.py runs/exp12_p0 runs/exp12_p0_ref
+
+      # --- 過去Exp11 artifactとの比較: DIAGNOSTIC (HARD GATEにしない) ---
+      - name: 過去Exp11参照artifactをダウンロード (診断用)
+        id: dl_exp11_ref
+        continue-on-error: true
         run: |
           set -euo pipefail
           mkdir -p dl_exp11_ref
@@ -95,10 +137,8 @@ jobs:
             "exp11-B1_lightonly_lightspec-bmr0.100-seed1" \
             "exp11-B1_lightonly_lightspec-bmr0.300-seed1" \
             "exp11-B2_chemonly_chemspec-bmr0.000-seed1"; do
-            gh run download "${{ inputs.exp11_run_id }}" --dir dl_exp11_ref --name "$name" || {
-              echo "::error::Exp11参照artifact取得失敗: $name"
-              exit 1
-            }
+            gh run download "${{ inputs.exp11_run_id }}" --dir dl_exp11_ref --name "$name" || \
+              echo "warn: Exp11参照artifact取得失敗 (診断用のため継続): $name"
           done
           mkdir -p runs/exp11_ref
           for d in dl_exp11_ref/*; do
@@ -108,24 +148,17 @@ jobs:
             cp -r "$d"/* "runs/exp11_ref/$key"/ 2>/dev/null || true
           done
 
-      - name: 再構成 (exp12 phase0 runをcondition-key階層へ)
+      - name: 過去Exp11 first-10k比較 (DIAGNOSTIC — 不一致でもHARD STOPしない)
+        id: historical10k
+        if: steps.dl_exp11_ref.outcome == 'success'
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          mkdir -p runs/exp12_p0
-          for d in runs/exp12_phase0/*; do
-            name=$(basename "$d")
-            key=$(echo "$name" | sed -E 's/_bmr/-bmr/')
-            SRC=$(find "$d" -mindepth 1 -maxdepth 1 -type d | head -1)
-            mkdir -p "runs/exp12_p0/$key"
-            cp -r "$SRC" "runs/exp12_p0/$key"/
-          done
+          set +e
+          uv run python tools/compare_exp12_first10k.py runs/exp12_p0 runs/exp11_ref | tee historical10k_diagnostic.txt
+          echo "(診断結果。docs/数値再現性・Actions実行環境方針.md によりformal verdictを左右しない)"
+          exit 0
 
-      - name: P0-3 first-10k same-seed再現性比較 (HARD STOP)
-        id: first10k
-        run: |
-          uv run python tools/compare_exp12_first10k.py runs/exp12_p0 runs/exp11_ref
-
-      # --- P0-5: runtime preflight ---
+      # --- P0-5: runtime preflight (primary run実測を使用) ---
       - name: P0-5 runtime preflight
         id: runtime
         run: |
@@ -175,7 +208,10 @@ jobs:
         id: gate
         if: always()
         run: |
-          if [ "${{ steps.first10k.outcome }}" = "success" ] && \
+          # HARD GATE: 現在環境内 same-seed再現性・runtime preflight・matrix生成
+          # 過去Exp11 artifactとの比較はDIAGNOSTICでありgateに含めない
+          # (docs/数値再現性・Actions実行環境方針.md)
+          if [ "${{ steps.current10k.outcome }}" = "success" ] && \
              [ "${{ steps.runtime.outcome }}" = "success" ] && \
              [ "${{ steps.gen.outcome }}" = "success" ]; then
             echo "pass=true" >> "$GITHUB_OUTPUT"
@@ -186,9 +222,15 @@ jobs:
           fi
           {
             echo "## Exp12 Phase 0 結果"
-            echo "- first-10k再現性: ${{ steps.first10k.outcome }}"
+            echo "- 現在環境内first-10k再現性 (HARD GATE): ${{ steps.current10k.outcome }}"
+            echo "- 過去Exp11 first-10k比較 (DIAGNOSTIC): ${{ steps.historical10k.outcome }} (取得: ${{ steps.dl_exp11_ref.outcome }})"
             echo "- runtime preflight: ${{ steps.runtime.outcome }} (worst-case ${{ steps.runtime.outputs.worst_case_min }}分)"
             echo "- matrix生成: ${{ steps.gen.outcome }} (${{ steps.gen.outputs.count }} run)"
+            echo ""
+            echo "### 過去Exp11 diagnostic詳細"
+            echo '```'
+            cat historical10k_diagnostic.txt 2>/dev/null || echo "(取得できず。診断未完了)"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
   # -------------------------------------------------------------------------
@@ -285,18 +327,20 @@ jobs:
           done
           du -sh runs/exp12
 
-      - name: Config整合性・run完全性チェック
+      - name: Config整合性・run完全性・formal SHA/numeric environment整合性チェック
         id: integrity
         continue-on-error: true
         run: |
           set -o pipefail
           uv run python tools/check_exp12.py runs/exp12 2>&1 | tee integrity.txt
 
-      - name: first-10k Exp11参照との全run比較
-        id: first10k_formal
+      # 過去Exp11 artifactとの比較はDIAGNOSTIC (docs/数値再現性・Actions実行環境方針.md)。
+      # Hosted Runnerを跨いだbit不一致だけではformal verdictを失敗させない。
+      - name: 過去Exp11参照との全run first-10k比較 (DIAGNOSTIC)
+        id: first10k_historical
         continue-on-error: true
         run: |
-          set -euo pipefail
+          set +e
           mkdir -p dl_exp11_all runs/exp11_ref_all
           for core in 0.000 0.050 0.075 0.100 0.150 0.200 0.300; do
             for seed in 1 2 3 4 5 6 7 8; do
@@ -319,6 +363,8 @@ jobs:
             cp -r "$d"/* "runs/exp11_ref_all/$key"/ 2>/dev/null || true
           done
           uv run python tools/compare_exp12_first10k.py runs/exp12 runs/exp11_ref_all 2>&1 | tee first10k.txt
+          echo "(診断結果。過去Hosted Runnerとのbit不一致単独ではINTEGRITY_FAILにしない)"
+          exit 0
 
       - name: 長期平衡解析・事前登録判定
         id: summary
@@ -338,9 +384,9 @@ jobs:
             cat integrity.txt
             echo '```'
             echo ""
-            echo "### first-10k Exp11参照比較"
+            echo "### 過去Exp11参照 first-10k比較 (DIAGNOSTIC — formal verdictを左右しない)"
             echo '```'
-            tail -40 first10k.txt
+            tail -40 first10k.txt 2>/dev/null || echo "(取得できず。診断未完了)"
             echo '```'
             echo ""
             echo "### 事前登録判定"
@@ -394,27 +440,28 @@ jobs:
           path: archives/
           retention-days: 90
 
-      # 整合性違反・first-10k mismatch・集計エラーのみworkflow failure
+      # 整合性違反 (Config不一致/run欠落重複/formal SHA・numeric environment混在)・
+      # 集計エラーのみworkflow failure。過去Exp11 first-10k比較はDIAGNOSTICであり
+      # 単独ではfailureにしない (docs/数値再現性・Actions実行環境方針.md)。
       - name: 整合性違反の判定
         if: >
           steps.integrity.outcome == 'failure' ||
-          steps.first10k_formal.outcome == 'failure' ||
           steps.summary.outcome == 'failure'
         run: |
-          echo "::error::整合性違反 (Config不一致/run欠落/first-10k不一致/集計エラー)"
+          echo "::error::整合性違反 (Config不一致/run欠落/formal SHA・numeric environment混在/集計エラー)"
           {
             echo "### ★ 整合性違反 — 実行失敗"
-            echo "integrity.txt / first10k.txt / summary.txt を確認すること。"
+            echo "integrity.txt / summary.txt を確認すること。"
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
       - name: 実行完了
         if: >
           steps.integrity.outcome != 'failure' &&
-          steps.first10k_formal.outcome != 'failure' &&
           steps.summary.outcome != 'failure'
         run: |
           {
             echo "### 整合性 OK — 実行は成功"
             echo "科学的判定は summary.txt の SCIENTIFIC_VERDICT を参照。"
+            echo "過去Exp11 first-10k比較 (診断): ${{ steps.first10k_historical.outcome }}"
           } >> "$GITHUB_STEP_SUMMARY"
