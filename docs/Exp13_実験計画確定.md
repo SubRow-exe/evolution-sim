@@ -1,20 +1,25 @@
 # Exp13 実験計画確定 — V1.8 一次Energy生態非対称
 
 更新: 2026-09-03
-状態: **人間方針確定 / 実装後そのまま実行可能**
+状態: **人間方針確定 / Sonnet 5実装・実行可能**
 
 目的:
 
-> V1.8で導入する一次Energyの物理差が、
-> **light = renewable / broad / low-average / day-night**
-> **chemical = localized / stock / high-burst / depletable / competitive**
-> という異なる生活条件を実際に作れているか確認し、必要な恒久パラメータを事前規則で選定する。
+> V1.8で導入する一次Energy物理が、
+> **light = broad / renewable / day-night / low-average**
+> **chemical = localized / stock / depletable / competitive / high-local-return potential**
+> という異なる生活条件を作れているか確認する。
+>
+> 一点を決め打ちせず、光量とchemical uptake特性を広く地図化し、現在の世界で使うworking referenceを選ぶ。
 
-正本:
-- `docs/V1.8_一次Energy生態非対称仕様.md`
-- `docs/V1.8_実装チェックリスト.md`
-- `docs/Exp12_結果考察.md`
-- `docs/数値再現性・Actions実行環境方針.md`
+最優先正本:
+1. `docs/V1.8_Exp13_レビュー判断.md`
+2. `docs/V1.8_一次Energy生態非対称仕様.md`
+3. 本書
+4. `docs/V1.8_実装チェックリスト.md`
+5. `docs/数値再現性・Actions実行環境方針.md`
+
+旧Exp13案・Opusレビュー原文より上記を優先する。
 
 ---
 
@@ -22,97 +27,143 @@
 
 ## 決める
 
-1. V1.8のlight day/night + density-dependent uptakeが成立するか
-2. 現行 `light_max=1.2` でlight specialistが周期環境を成立できるか
-3. 不成立時のlight peak最小救済値
-4. chemicalの高burstを作る恒久 `chem_uptake`
-5. chemical stockが消費で減り、密度競争が成立するか
-6. V1.8を恒久defaultへできるか
+1. day/night + density-dependent uptake実装が物理・台帳上正しいか
+2. light-only世界の「絶滅域 → 境界域 → 頑健成立域 → 豊富域」の地図
+3. 現世界におけるworking `light_max`
+4. chemicalの`chemical_uptake_half × chem_uptake`生態地図
+5. 現世界におけるworking `chemical_uptake_half / chem_uptake`
+6. chemical stock depletion / recovery / density competitionが成立するか
+7. light-only / chemical-only双方が長期成立できるか
+8. mixed worldで両Energy routeに実利用価値が残るかを探索
+9. day/nightがbody_sizeへ新しい選択圧を作るか診断
 
 ## 決めない
 
+- 自然界の普遍的な絶対光量
 - phototrophyの進化起源
-- 初期LUCAのlight_absorption=0化
+- INITIAL_GENOME.light_absorption=0化
 - cyanobacteria / chloroplast / plastid
-- vent sourceの有限寿命
-- 季節変動
-- body_size再校正
+- vent source有限寿命
+- 季節
+- 温度
 - bmr_core再選定
-- 「光型とchemical型のどちらが優れているか」という単一順位
+- 「lightとchemicalのどちらが優れているか」という単一順位
 
-これらはV1.9以降へ送る。
+selected値は将来environment physics追加時に再校正可能な**working reference**。
 
 ---
 
-# 2. 全Phase共通
+# 2. 共通条件
+
+V1.7 close後の値:
 
 ```text
 bmr_core = 0.15
 memory_tau = 10
 response_gain = 64
-primary_energy_density_response = True
-light_cycle_enabled = True（light条件）
 light_cycle_period_ticks = 200
 light_day_fraction = 0.5
 light_uptake_half = 0.6
-chemical_uptake_half = 6.15
-nutrient / reproduction / movement / damage等 = V1.7-final
 ```
 
-light/chemicalの知覚response halfは変更しない:
+Exp13の一次Energy条件は原則:
+
+```text
+primary_energy_density_response = True
+light_cycle_enabled = True  # lightがある条件
+```
+
+知覚responseは変更しない:
 
 ```text
 light_stimulus_half = 1.2
 chemical_stimulus_half = 12.3
 ```
 
-`max_population_halt=10000` を科学結果変更ではなく計算安全装置として使用する。
+nutrient / reproduction / movement / damage / vent source/loss等はV1.7-finalを維持。
+
+`max_population_halt=10000`は計算安全装置であり、生態制御ではない。
 
 ---
 
-# 3. 実行前Phase 0
+# 3. Phase 0 — 実装・再現性・runtime HARD GATE
 
-Exp12のような10k×2の重いpreflightを毎回行わない。
+Exp12の10k×2のような重いpreflightは行わない。
 
-V1.8は科学コード変更を含むため、以下だけをHARD GATEとする。
+必須:
 
 ```text
-P0-1 全Config schema / round-trip / checker
+P0-1 Config schema / JSON round-trip / manifest checker
 P0-2 V1.8 unit tests
-P0-3 conservation / Energy ledger
-P0-4 同一current runner内 2,000 tick representative determinism ×2
-P0-5 workflow directory E2E smoke
-P0-6 runtime preflight
-P0-7 CI Green
+P0-3 Energy/Matter conservation / ledger
+P0-4 feature flags 2×2短時間E2E
+P0-5 current-run determinism 2,000 tick ×2
+P0-6 workflow/collector E2E smoke
+P0-7 runtime preflight
+P0-8 full pytest / CI Green
 ```
 
-2,000 tick determinism代表条件:
+### P0-4 feature flags
+
+同一代表light-only条件で短時間:
 
 ```text
-mixed light+chemical
+density OFF / cycle OFF
+density ON  / cycle OFF
+density OFF / cycle ON
+density ON  / cycle ON
+```
+
+を各1本以上。
+
+OFF/OFFはV1.7回帰。
+
+### P0-5 determinism
+
+```text
+mixed environment
 seed=1
 primary_energy_density_response=True
 light_cycle_enabled=True
+light_max=2.1
+chemical_uptake_half=1.5
 chem_uptake=2.0
+2,000 tick ×2
 ```
 
-同一current runner内でbit完全一致必須。
+同一current runner内bit完全一致。
 
-過去V1.7 Actions artifactとのbit一致は要求しない。科学コードが意図的に変わるため比較対象外。
+過去Hosted Runner artifactとのbit完全一致はHARD GATEにしない。
 
 ---
 
-# 4. Phase A — 生理・資源物理の校正
+# 4. 実行前runtime予測 — Sonnet 5必須報告
 
-Phase Aは**進化OFF**。
+**Phase A正式matrixをdispatchする前に、Exp13全体が終了するwall-clock概算をユーザーへ報告する。**
 
-目的はパラメータを進化結果から選ばないこと。
+新規計測instrumentationは追加しない。短い代表run、既存`performance.csv`、Actions timestamps/logsを使う。
 
-原則、全14遺伝子を固定する。
+報告必須:
+- formal simulation総run数（予定143 run）
+- phase別run数・tick数
+- max-parallel
+- 代表short-run実測
+- single-run最大時間概算
+- phaseごとのwave数を考慮したmatrix wall-clock
+- Phase 0 / selection / collectを含む**Exp13全体合計wall-clock概算**
+- 安全率・不確実性
 
-## phenotype
+`single-run timeout`と`experiment total wall-clock`を混同しない。
 
-### Light specialist
+Phase Aでselected値が確定した後、Phase B開始前に予測を更新してよいが、**最初の合計予測を省略しない。**
+
+---
+
+# 5. Phase A1 — light量を広く地図化
+
+Phase A1は進化OFF。初期個体を各光量へ合わせて人為的に救済しない。
+
+phenotype:
 
 ```text
 light_absorption = 2.0
@@ -121,7 +172,98 @@ chemical_absorption = 0.3
 全14遺伝子固定
 ```
 
-### Chemical specialist
+environment:
+
+```text
+light-only
+light_pattern=vertical
+chem_vent_flux=0
+placement=random
+cycle ON
+density response ON
+```
+
+候補:
+
+```text
+light_max = 0.8, 1.2, 1.5, 1.8, 2.1, 2.4, 3.0, 4.0
+```
+
+各:
+
+```text
+seed=1..5
+ticks=10,000
+```
+
+総run:
+
+```text
+8 × 5 = 40 run
+```
+
+### 5.1 必須観測
+
+各水準で:
+- COMPLETE / EXTINCT / POP_HALT
+- population trajectory / late median
+- births / deaths / starvation
+- births in final 2,000 tick
+- generation
+- flow_light / org-tick
+- daytime Energy gain
+- night Energy decline / survival
+- light utilization fraction
+- mean_move_per_org_tick
+- body energy distribution
+- cycle phase別population/Energy
+
+### 5.2 robust viability
+
+1つのlight水準を`ROBUST_LIGHT_VIABLE`とする条件:
+
+```text
+A. COMPLETE >= 4/5
+B. EXTINCT <= 1/5
+C. POP_HALT = 0/5
+D. final 2,000 tick内にbirth > 0 のseed >= 4/5
+E. late population median >= 25 (= initial_populationの25%) のseed >= 4/5
+F. night light gain = exactly 0
+G. conservation/integrity OK
+```
+
+25は「1〜数個体が残っただけ」を頑健成立と誤認しないための事前 operational floor。自然界の適正個体数を意味しない。
+
+### 5.3 selected light
+
+全8水準を必ず最後まで地図化する。途中PASSで上位水準を省略しない。
+
+`selected_light_max`は:
+
+> **ROBUST_LIGHT_VIABLEを満たす最小水準**
+
+とする。
+
+理由:
+- light-onlyが成立する
+- その中で過度に豊富なlightを避け、chemical nicheの価値を残しやすい
+- 絶対値を「正解」とは主張しない
+
+候補なし:
+
+```text
+LIGHT_CALIBRATION_FAIL / REVIEW
+```
+
+Phase Bへ進まない。
+
+---
+
+# 6. Phase A2 — chemical uptake 2次元地図
+
+Phase A2も進化OFF。
+
+phenotype:
 
 ```text
 light_absorption = 0.3
@@ -130,297 +272,199 @@ chemical_absorption = 2.0
 全14遺伝子固定
 ```
 
----
-
-## A1. light cycle成立確認
-
-### A1-main
+environment:
 
 ```text
-environment = light-only
-light_pattern = vertical
-light_max = 1.2
-chem_vent_flux = 0
-phenotype = light specialist
-placement = random
-seed = 1..5
-ticks = 10,000
+chemical-only
+light_max=0
+chem_vent_flux=16
+placement=vent
 ```
 
-### A1-static control
-
-同じ条件で:
+候補格子:
 
 ```text
-light_cycle_enabled = False
-seed = 1..5
-ticks = 10,000
+chemical_uptake_half = 0.5, 1.5, 3.0, 6.15
+chem_uptake          = 0.5, 1.0, 2.0, 4.0
 ```
 
-目的:
-- nightでlight gainが0になること
-- daylightで再び供給されること
-- cycleがEnergy予算・populationへ意味のある負荷を与えること
-- 現行peak 1.2で完全絶滅しないこと
-
-### A1 HARD criteria
-
-`light_max=1.2`をそのまま採用する条件:
+全組合せ:
 
 ```text
-COMPLETE >= 4/5
-EXTINCT <= 1/5
-POP_HALT = 0/5
-night flow_light increment = exactly 0
-light_supply_cum = effective light積算と一致
+4 × 4 = 16 combinations
+seed=1..3
+ticks=5,000
+48 run
 ```
 
-さらにstatic controlよりcycle条件で:
-- 1 cycleあたりlight取得が低いこと
-- night中にEnergyがlight由来で増えないこと
+### 6.1 必須観測
 
-をsanity確認する。
+- COMPLETE / EXTINCT / POP_HALT
+- population / births / starvation
+- chemical gain / org-tick
+- vent stock distribution
+- vent occupancy
+- `H(C,K)` realized distribution on occupied vent cells
+- depletion depth
+- recovery after local use falls
+- source / loss / uptake ledger
+- Energy capacity clipping fraction
 
-population大小そのものには合否閾値を置かない。
+### 6.2 grid admissibility
 
-### A1 rescue ladder
-
-`1.2`でCOMPLETE <4/5なら、結果を見て自由に値を作らず事前登録済みの順に:
+combinationを`CHEM_GRID_ADMISSIBLE`とする条件:
 
 ```text
-light_max = 1.5
-            1.8
-            2.4
+A. COMPLETE >= 2/3
+B. final 1,000 tick内にbirth > 0 のseed >= 2/3
+C. POP_HALT = 0/3
+D. occupied-vent organism-timeでのgroup median H(C,K) が 0.10〜0.90
+E. min median vent stock <= 0.7 * biological-free C_eq をseed >=2/3で満たす
+F. conservation/integrity OK
 ```
 
-を各5 seedで試す。
+Dはhalf-saturation responseが実運転点から完全に外れていないことを見る。
 
-**4/5以上成立する最小値**をV1.8候補とする。
+### 6.3 selected chemical pair
 
-2.4でも成立しなければ:
+admissible combinationの中から:
+
+1. **最小`chem_uptake`**を優先
+2. 同じ`chem_uptake`内では、occupied ventのgroup median `H(C,K)`が0.5に最も近い`chemical_uptake_half`
+3. tieは小さい`chemical_uptake_half`
+
+を選ぶ。
+
+これは「chemicalを最大強化する」のではなく、**成立する最小処理能力と、実濃度帯に合うhalf-saturation**を選ぶ規則。
+
+候補なし:
 
 ```text
-LIGHT_CALIBRATION_FAIL / REVIEW
+CHEMICAL_CALIBRATION_FAIL / REVIEW
 ```
-
-で停止し、chemical校正・正式Phase Bへ進まない。
 
 ---
 
-## A2. chemical高burst値の選定
+# 7. Phase A2b — selected chemical pairの長期/探索検証
 
-candidate:
-
-```text
-chem_uptake = 1.0, 2.0, 4.0
-```
-
-各candidateで2配置:
+A2で選ばれたpairを固定し:
 
 ### vent placement
 
 ```text
-environment = chemical-only
-light_max = 0
-chem_vent_flux = 16
-phenotype = chemical specialist
-diagnostic_placement = vent
-seed = 1..5
-ticks = 10,000
+seed=1..5
+ticks=10,000
 ```
 
 ### random placement
 
-同じだが:
-
 ```text
-diagnostic_placement = random
-seed = 1..5
-ticks = 10,000
+seed=1..5
+ticks=10,000
 ```
 
 総run:
 
 ```text
-3 candidate × 2 placement × 5 seed = 30 run
+10 run
 ```
+
+vent側HARD:
+
+```text
+COMPLETE >=4/5
+birth in final 2k >=4/5
+clear depletion >=4/5
+integrity OK
+```
+
+random placementはHARD gateにしない。探索コスト診断:
+- time_to_first_birth
+- starvation deaths
+- movement
+- vent_cell_frac
+- chemical gain/org-tick
+
+を記録する。
+
+### BURST_RATIOについて
+
+`chemical / light = X倍`というratioを選定HARD GATEにしない。
+
+同じ最初1,000 tick窓でのper-org gainや、単独個体理論最大取得速度を**診断値**として出してよいが、selected pairは生態成立・depletion・実運転点から決める。
 
 ---
 
-# 5. A2で使うEnergy取得指標
+# 8. Phase A3 — chemical密度競争mechanism check
 
-populationが変わるので単純なflow総量では比較しない。
-
-stats intervalごとにorganism-timeを近似:
-
-```text
-org_ticks ~= ((N_prev + N_now) / 2) * delta_tick
-route_gain_per_org_tick = delta_flow_route / org_ticks
-```
-
-population=0 intervalは除外。
-
-### Light reference
-
-A1 selected light条件について、`light_cycle_factor > 0` のdaylight intervalのみから:
-
-```text
-LIGHT_DAY_GAIN
-= median(route_gain_per_org_tick)
-```
-
-をseedごとに求める。
-
-### Chemical burst
-
-vent placementの最初の1,000 tickから:
-
-```text
-CHEM_BURST_GAIN
-= median(route_gain_per_org_tick)
-```
-
-をseedごとに求める。
-
-ratio:
-
-```text
-BURST_RATIO = CHEM_BURST_GAIN / LIGHT_DAY_GAIN
-```
-
----
-
-# 6. A2 chemical選定規則
-
-候補値は小さい順に評価する。
-
-選定条件:
-
-```text
-A. vent placement COMPLETE >= 4/5
-B. POP_HALT = 0/5
-C. group median BURST_RATIO >= 2.0
-D. 5 seed中4 seed以上で BURST_RATIO >= 1.5
-E. chemical stockが生物不在平衡から明瞭にdepleteする
-```
-
-Eの定義:
-
-標準vent生物不在stockを `C_eq` とし、vent cellsの環境snapshotから:
-
-```text
-min_median_vent_stock_0_2k <= 0.7 * C_eq
-```
-
-を5 seed中4 seed以上で満たす。
-
-選定:
-
-> A〜Eを満たす**最小 `chem_uptake`**。
-
-1.0が満たせば1.0、そうでなければ2.0、次に4.0。
-
-4.0でも満たさなければ:
-
-```text
-CHEMICAL_CALIBRATION_FAIL / REVIEW
-```
-
-とし、結果を見て5.0等を追加しない。
-
----
-
-# 7. random placementは選定gateではなく生態診断
-
-random placementは:
-- 資源を見つけるまでの探索コスト
-- vent placementとの差
-- seed依存性
-
-を見る。
-
-比較:
-
-```text
-time_to_first_birth
-starvation deaths
-mean_move_per_org_tick
-vent_cell_frac
-chemical gain per org-tick
-```
-
-期待はvent placementの方が初期収益が良いことだが、**randomが必ず不利であることをV1.8採用HARD GATEにはしない**。
-
-理由:
-- V1.6 chemotaxis性能
-- seedごとのvent配置
-- 初期位置
-
-も混ざるため。
-
----
-
-# 8. A3 密度競争mechanism check
-
-長期進化runではなく短いmechanism check。
-
-selected `chem_uptake` を使い、同一vent cell付近の需要を増やしたとき:
+selected chemical pairを使用。
 
 ```text
 initial_population = 1, 10, 50
-placement = vent
-seed = 1..3
-ticks = 2,000
+placement=vent
+seed=1..3
+ticks=2,000
 ```
 
 9 run。
 
-確認:
+PASS方向:
+- 密度増加でper-capita chemical gainが低下
+- 総gainはstock/source制約を超えない
+- 高密度ほどvent stockが低下
+- conservation OK
 
-```text
-population密度増加に伴い
-per-capita chemical gainが低下すること
-
-総chemical gainがstock/source制約を超えないこと
-vent stockがより低くなること
-```
-
-方向性が逆なら実装または集計をレビューする。
-
-lightについては同一cell供給の公平配分unit testで競争機構を確認し、A3相当の追加9 runは必須としない。
+方向が逆なら`INTEGRITY_OR_MECHANISM_REVIEW`としてPhase Bへ進まない。
 
 ---
 
-# 9. Phase A verdict
+# 9. Phase A run数
+
+正式simulation:
+
+```text
+A1 light map               40
+A2 chemical grid           48
+A2b selected validation    10
+A3 density                  9
+--------------------------------
+Phase A total             107 run
+```
+
+Phase 0の短時間testは別。
+
+A1/A2はそれぞれmatrix並列化可能だが、selected値依存のA2b/A3はA2終了後に実行する。
+
+---
+
+# 10. Phase A verdict
 
 ```text
 A_PASS
 LIGHT_CALIBRATION_FAIL / REVIEW
 CHEMICAL_CALIBRATION_FAIL / REVIEW
-INTEGRITY_FAIL
+INTEGRITY_OR_MECHANISM_REVIEW
 ```
 
-`A_PASS` のときのみPhase Bへ進む。
-
-Phase A終了時点で:
+`A_PASS`のときのみ:
 
 ```text
 selected_light_max
+selected_chemical_uptake_half
 selected_chem_uptake
 ```
 
-を固定し、Phase B開始後に変更しない。
+を機械可読artifactへ固定しPhase Bへ渡す。
+
+Phase B開始後に候補値・選定規則を変更しない。
 
 ---
 
-# 10. Phase B — 生態的成立確認
-
-Phase Bではselected V1.8 parametersを固定する。
-
-## B1 light-only specialist
+# 11. Phase B1 — light-only長期成立
 
 ```text
 light-only
+selected_light_max
 light specialist
 全14遺伝子固定
 random placement
@@ -428,15 +472,24 @@ seed=1..8
 ticks=20,000
 ```
 
-目的:
-- 周期light環境で長期成立可能か
-- nightを跨いだEnergy budget
-- population / starvation / movement
+8 run。
 
-## B2 chemical-only specialist
+見るもの:
+- COMPLETE
+- ongoing birth
+- population
+- starvation
+- night survival
+- flow/light utilization
+- movement
+
+---
+
+# 12. Phase B2 — chemical-only長期成立
 
 ```text
 chemical-only
+selected chemical pair
 chemical specialist
 全14遺伝子固定
 random placement
@@ -444,19 +497,26 @@ seed=1..8
 ticks=20,000
 ```
 
-目的:
-- 局所stockを探索して長期成立できるか
-- vent占有・depletion・competition
-- seed依存性
+8 run。
 
-B1/B2は「どちらが強いか」をpopulationだけで順位付けしない。
+見るもの:
+- COMPLETE
+- ongoing birth
+- vent discovery/occupancy
+- stock depletion/recovery
+- population
+- chemical flow
+- starvation/movement
+
+B1/B2のpopulation絶対値を「どちらが優秀か」の順位には使わない。
 
 ---
 
-## B3 mixed-world exploratory evolution
+# 13. Phase B3 — mixed-world exploratory evolution
 
 ```text
-light + chemical both ON
+light + chemical ON
+selected parameters
 initial genome = current generalist (light=0.3 / chemical=0.3)
 進化ON = light_absorption, chemical_absorption の2遺伝子のみ
 その他12遺伝子固定
@@ -465,167 +525,184 @@ seed=1..12
 ticks=30,000
 ```
 
-目的:
+12 run。
 
-> 同一世界でlightとchemicalの両方に進化価値が残るか、資源利用戦略の分化兆候が現れるかを探索する。
+目的:
+- 両routeに実利用価値が残るか
+- 片方へ完全に一方向化するか
+- 資源利用戦略の分化兆候
 
 観測:
-- mean / variance light_absorption
-- mean / variance chemical_absorption
-- lineage別両遺伝子
-- lineage別light/chemical Energy flow
-- vent distance帯占有
-- daylight/nightの活動
-- top lineage share
-- 2遺伝子散布図
-- phenotype clustering（事後診断のみ）
+- light/chemical absorption mean/variance
+- lineage別Energy flow
+- late primary-Energy source share
+- vent占有
+- daylight/night activity
+- lineage share
+- 2遺伝子scatter / clustering（診断のみ）
 
-### B3はV1.8採用のHARD GATEではない
-
-B3で明確な二峰性・共存が出なくてもV1.8を失敗としない。
-
-V1.8の主目的はsource物理の非対称性を作ること。
-
-多様化・phototrophyの新規出現はV1.9以降で検証する。
+二峰性や共存をV1.8 ACCEPTの必須条件にはしない。ただし、片routeが実質利用されない場合は`SOURCE_BALANCE_REVIEW`として次チャットで人間判断する。
 
 ---
 
-# 11. V1.8採用判定
+# 14. Phase B4 — day/nightによるbody_size圧の診断
 
-## `V1_8_ACCEPT`
+V1.8 ACCEPTのHARD GATEではないが必須診断。
 
-以下を全て満たす:
+## B4a Exp12平衡付近の固定小型個体
+
+```text
+light-only
+selected_light_max
+light specialist
+body_size = 0.246 fixed
+全遺伝子固定
+initial_matter = 0.8 * 0.246 = 0.1968
+initial_energy = 標準初期状態と同じEnergy-capacity fractionになる値
+seed=1..3
+ticks=5,000
+```
+
+3 run。
+
+目的:
+- Exp12で成立した小型側が100 tick night下で生存可能か直接確認
+
+## B4b body_size-only evolution
+
+```text
+light-only
+selected_light_max
+light specialist
+initial body_size=1.0
+進化ON=body_sizeのみ
+他13遺伝子固定
+seed=1..5
+ticks=20,000
+```
+
+5 run。
+
+目的:
+- day/night導入でbody_sizeがどの方向へ動くか
+- Exp12の0.2459平衡がV1.8でも維持されるか
+
+---
+
+# 15. Phase B run数 / Exp13総run数
+
+```text
+B1 light-only       8
+B2 chemical-only    8
+B3 mixed           12
+B4a small fixed     3
+B4b body evolution  5
+----------------------
+Phase B total       36
+
+Phase A            107
+Phase B             36
+----------------------
+Formal simulation  143 run
+```
+
+Phase 0短時間E2Eはこの143に含めない。
+
+---
+
+# 16. Exp13判定
+
+## `V1_8_ACCEPT_CANDIDATE`
+
+少なくとも:
 
 ```text
 1. Phase 0全Green
-2. A1 light calibration PASS
-3. A2 chemical calibration PASS
-4. A3 chemical competition direction PASS
-5. B1 COMPLETE >= 6/8
+2. Phase A = A_PASS
+3. A3 competition direction PASS
+4. B1 COMPLETE >= 6/8
+5. B1 final 4kでbirthあり >= 6/8
 6. B2 COMPLETE >= 6/8
-7. conservation / integrity violation 0
+7. B2 final 4kでbirthあり >= 6/8
+8. conservation / Config / SHA / numeric environment / artifact integrity violation 0
 ```
+
+を満たす。
 
 ## `V1_8_RECALIBRATE / REVIEW`
 
-mechanism自体は正しいが:
-- lightが全体的に成立しない
-- chemical burstが事前候補内で不足
 - B1/B2どちらかが5/8以下
+- selected pairが長期で成立しない
+- density competitionが想定方向に出ない
+- mixed worldで片routeが実質無意味になる
 
-の場合。
+場合。
 
-**Phase B結果を見て同じExp13内で新しい候補値を追加しない。**
+## `INTEGRITY_FAIL`
 
-## `V1_8_INVALID`
+- expected run欠落/重複
+- Config不整合
+- SHA/numeric environment混在
+- ledger/conservation violation
+- aggregation failure
 
-- Energy/Matter台帳破綻
-- density responseが非単調
-- nightにlight流入
-- chemical stock以上を吸収
-- Config/collector/integrity不整合
+技術的不完了と科学的REVIEWを混同しない。
 
----
-
-# 12. Exp13後の恒久default反映
-
-`V1_8_ACCEPT` の場合、別commitで:
-
-```text
-bmr_core = 0.15
-primary_energy_density_response = True
-light_cycle_enabled = True
-light_cycle_period_ticks = 200
-light_day_fraction = 0.5
-light_uptake_half = 0.6
-chemical_uptake_half = 6.15
-light_max = selected_light_max
-chem_uptake = selected_chem_uptake
-```
-
-へ確定する。
-
-そのcommitで:
-1. full tests
-2. conservation
-3. determinism
-4. CI Green
-5. V1.8 CI基準ref更新
-6. `v1.8-final` branch保存
-
-を行う。
+B3/B4の詳細解釈とV1.8恒久採用の人間判断は、Exp13完了後の**V1.8チャット**で行う。
 
 ---
 
-# 13. 必須成果物
+# 17. workflow設計
+
+推奨依存:
 
 ```text
-exp13_runs.csv
-exp13_phaseA_light.csv
-exp13_phaseA_chemical.csv
-exp13_density_competition.csv
-exp13_phaseB_summary.csv
-exp13_mixed_lineages.csv
-SCIENTIFIC_VERDICT.txt
-NOTES.md
+phase0
+  -> A1_light_map
+  -> A2_chemical_grid
+  -> select_A
+  -> A2b_selected_validation + A3_density
+  -> phaseA_collect
+  -> phaseB (B1/B2/B3/B4)
+  -> final_collect
 ```
 
-plot:
-- light cycle factor / light flow / population / Energy
-- static vs cycle light comparison
-- chemical burst ratio by candidate
-- vent stock trajectory
-- chemical density vs per-capita gain
-- B1/B2 population and route flow
-- B3 light_absorption vs chemical_absorption trajectory/scatter
+A1とA2はPhase 0後に並列開始してよい。
+
+requirements:
+- generated manifest
+- human-handwritten Config複製禁止
+- selected parameter artifactをBへ渡す
+- selected artifact空ならfail-fast
+- many-artifact取得は完全性を保証する方法（`gh run download`等）
+- expected key完全一致
+- timeout / max-parallelはruntime preflight後に設定
+- Drive転送はcollect成功後
 
 ---
 
-# 14. 実行時間
+# 18. 実装・集計で必ず残す値
 
-Phase A / B実行前に既存performance.csvと短期preflightから見積もる。
+Phase A/B共通:
+- run status
+- Config hash
+- git SHA
+- numeric environment key
+- wall time / existing performance data
+- population / births / deaths / generation
+- Energy/Matter ledger
+- flow_light / flow_chemical
+- light_supply actual integral
+- vent stock / occupancy
+- realized H values
 
-必ず:
+Exp13結果では:
+- 全light sweep表
+- chemical 2D grid表/heatmap
+- selected valuesと選定根拠
+- B1/B2 long-term
+- B3 exploratory
+- B4 body_size diagnostic
+- runtime prediction vs actual
 
-```text
-single-run predicted max
-matrix total run count
-max-parallel
-matrix wall-clock estimate
-```
-
-を分ける。
-
-新しい時間計測instrumentationは不要。既存Actions timestamps / performance.csv / done logを使用する。
-
-formal終了後に予測と実績をNOTESへ記録する。
-
----
-
-# 15. Claudeへの実行順
-
-Claudeは次の順を変更しない。
-
-```text
-0. V1.7 bmr_core=0.15確定・v1.7-final保存
-1. V1.8実装
-2. V1.8実装チェックリスト全項目
-3. local full tests
-4. CI Green
-5. Exp13 Phase 0
-6. A1 light calibration
-7. A2 chemical calibration
-8. A3 density check
-9. Phase A verdict
-10. A_PASSならselected parameters固定
-11. B1/B2
-12. B3 exploratory
-13. collect / integrity
-14. V1.8 verdict
-15. ACCEPTなら恒久default反映
-16. tests / CI
-17. v1.8-final保存
-18. 結果・考察をGitHubへ記録
-```
-
-途中で科学条件・候補値・閾値を独自変更しない。
+をGitHubへ保存する。
