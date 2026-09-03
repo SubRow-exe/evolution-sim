@@ -1,314 +1,323 @@
 # AI協働開発ガイドライン (AGENTS.md)
 
-本リポジトリは複数AIと人間で共同開発する。コード変更前に本書と正本を必ず読むこと。
-
-## 現在の参照順
-
-1. `docs/次の実験計画.md` — 現在の司令塔
-2. `docs/数値再現性・Actions実行環境方針.md` — **Exp12初回Phase 0を受けた技術amendment。再現性gateはこれを優先**
-3. `docs/Exp12_実験計画確定.md` — **Exp12事前登録・科学設計・判定の正本**
-4. `docs/Exp12_実装チェックリスト.md` — **実装品質HARD GATE**
-5. `docs/Exp12_レビュー反映判断.md` — Opus 5レビューへの採否
-6. `docs/Exp11_考察.md` — Exp12へ進む科学的理由
-7. `docs/Exp11_結果考察.md` — Exp11正式実測値・正式判定
-8. `docs/V1.7_基礎維持代謝仕様案.md` — V1.7 `bmr_core` 実装仕様
-9. `docs/LUCA参照モデル方針.md`
-10. `docs/実験結果保存方針.md`
-11. `docs/バージョニング方針.md`
-
-`docs/Exp12_実験計画案.md` はレビュー前の旧ドラフト。科学条件・閾値・判定ロジックは `Exp12_実験計画確定.md` を優先する。
-
-ただし、同書の旧P0-3および正式run first-10kにある「過去Exp11 artifactとのbit完全一致をHARD GATE」とする部分は、実運用で成立しないことが確認されたため `docs/数値再現性・Actions実行環境方針.md` を優先する。
-
-レビュー原文に別案があっても、反映判断・確定正本・技術amendmentをAIが独自変更しない。
+本リポジトリは複数AIと人間で共同開発する。コード変更前に本書と現在の正本を必ず読むこと。
 
 ---
 
-## 現在地
+# 1. 現在の最優先参照順
+
+1. `docs/次の実験計画.md` — **現在の司令塔**
+2. `docs/Exp12_結果考察.md` — **Exp12正式結果 / V1.7 `bmr_core=0.15`判断**
+3. `docs/V1.8_一次Energy生態非対称仕様.md` — **V1.8科学・実装仕様の正本**
+4. `docs/Exp13_実験計画確定.md` — **Exp13条件・選定規則・判定の正本**
+5. `docs/V1.8_実装チェックリスト.md` — **実装品質HARD GATE**
+6. `docs/メインストリーム開発ストーリー.md` — **V1.9以降の更新前提ロードマップ**
+7. `docs/数値再現性・Actions実行環境方針.md`
+8. `docs/LUCA参照モデル方針.md`
+9. `docs/実験結果保存方針.md`
+10. `docs/バージョニング方針.md`
+
+Exp11/Exp12の事前登録・レビュー文書は履歴として保存する。
+
+**現在の実装・次実験について古いExp12司令より本書と上記1〜5を優先する。**
+
+---
+
+# 2. 現在地
 
 ```text
 V1.4 / Exp08                         完了 / Green
 V1.5 / Exp09                         完了 / Green
 V1.6 / Exp10                         完了 / Green
-V1.7 bmr_core                        実装済み
-Exp11 Phase B                        255 run完了
-Exp11 formal verdict                 NO_SELECTION / REVIEW
-Exp11 collect修正・正式再集計       完了
-Exp11考察                            完了
-Exp12 Opus 5レビュー                 完了・反映済み
-Exp12事前登録                        確定
-Exp12実装                            完了
-Exp12初回Phase 0                     過去artifact bit比較で安全停止
-Exp12 formal 71 run                  未起動
-P0-3 / collect再現性gate修正         ← 現在
+V1.7 bmr_core実装                    完了
+Exp11                               完了 / 再集計・考察済み
+Exp12初回Phase0                     過去artifact bit比較で安全停止（履歴）
+Exp12再現性gate修正                  完了
+Exp12 formal run 33592901348          71/71 / workflow success
+Exp12考察                             完了
+V1.7恒久値                            bmr_core=0.15 人間判断確定
+V1.7 default反映 / v1.7-final        ← 最初に実施
+V1.8実装                             ← V1.7 close後
+Exp13                               ← V1.8実装後
 ```
 
 ---
 
-# Exp12の目的
+# 3. Exp12最終解釈
 
-Exp11 B1では `bmr_core` 増加に伴い10k時点のbody_sizeが大型側へ系統的に移動したが、late driftが残っていた。
-
-Exp12は:
+B1 = light-only / light specialist / body_sizeのみ進化。
 
 ```text
-平衡変更
-vs
-単なる進化速度・世代交代の遅延
+bmr_core 0.00〜0.10 -> lower-bound equilibrium
+0.15                -> interior equilibrium 8/8
+0.20                -> interior 7/8 + converging 1
+0.30                -> interior 6/8 + converging 2
 ```
 
-を50k長期runで識別する。
+B1で `DELAY_CONTINUES` は0 run。
 
-**Exp12は恒久 `bmr_core` 値を選定する実験ではない。**
+したがって `bmr_core` は極端小型化を抑制する機能を持つと判断し、**目的を達成する最小側の試験値 `0.15` を恒久採用**する。
+
+B2 = chemical-only / chemical specialist は事前登録method positive controlを満たさなかったが、50kでもB2自体が変化していた。
+
+したがって:
+
+```text
+B2 = METHOD CONTROL ASSUMPTION INVALID / NOT A KNOWN STATIONARY CONTROL
+```
+
+と扱う。
+
+B2科学run自体を失敗扱いしない。V1.7の目的達成に追加100k等は不要。
 
 ---
 
-# Exp12 正式構成
+# 4. V1.7 closeをV1.8より先に行う
 
-## B1主実験
-
-```text
-bmr_core = 0.000, 0.050, 0.075, 0.100, 0.150, 0.200, 0.300
-seed     = 1..8
-56 run
-```
-
-Exp11 B1と同じlight-only / light specialist。
-
-## B2 method positive control
+V1.8変更前に:
 
 ```text
-bmr_core = 0.000, 0.100, 0.300
-seed     = 1..5
-15 run
+Config.bmr_core default = 0.15
 ```
 
-Exp11 B2と同じchem-only / chemical specialist。
+へ変更する。
 
-```text
-総計 = 71 run
-```
+必須:
+1. full pytest
+2. conservation
+3. determinism
+4. CI Green
+5. V1.7 CI基準ref更新
+6. `v1.7-final` branch保存
 
-共通:
-
-```text
-ticks=50000
-initial_population=100
-initial_energy=50
-initial_matter=0.8
-body_sizeのみ進化ON
-他13遺伝子固定
-memory_tau=10
-response_gain=64
-stats_interval=20
-snapshot_interval=1000
-max_population_halt=10000
-```
-
-B3はExp12へ含めない。
-
-詳細は必ず `docs/Exp12_実験計画確定.md` を参照する。
+V1.7 default確定とV1.8科学ロジックを1つの曖昧な差分へ混ぜない。
 
 ---
 
-# Exp12再現性gate — 技術amendment
+# 5. V1.8絶対方針
 
-2026-09-02のExp12初回Actions run `33585027312` では、過去Exp11 artifactとのfirst-10k bit完全一致をHARD GATEにしたためPhase 0で停止した。正式71 runは1本も起動していない。
-
-今後は再現性を分ける。
-
-## HARD GATE
+V1.8は一次Energy sourceの生態的非対称性を作る。
 
 ```text
-現在SHA / 現在runner / 現在numeric environment内で
-同一科学条件・同一seedが完全再現すること
+light
+- broad
+- renewable flow
+- low-average instantaneous input
+- day/night
+- surface area + intensity dependent
+
+chemical
+- localized stock
+- high burst potential
+- consumption depletes stock
+- competition
+- vent source replenishes
 ```
 
-これによりConfig差、harness差、RNG干渉、非決定性を検出する。
+## 実装原則
 
-## DIAGNOSTIC
+共通飽和response:
 
 ```text
-過去日時・別Hosted RunnerのExp11 artifactとのbit比較
+H(x,K)=x/(x+K)
 ```
 
-は記録するが、bit mismatch単独でformal runを無効化しない。科学コード差、Config差、numeric environment、divergence開始点を合わせて報告する。
+をlight/chemicalの最大要求量へ入れる。
 
-正式71 runのintegrityは:
+light effective flux:
 
-- 71 run完全性
-- Config整合性
-- formal SHA一致
-- numeric environment整合性
-- 出力完全性
-- aggregation errorなし
+```text
+base_light * daylight_factor(tick)
+```
 
-で判定する。
+nightは厳密0。
+
+### 絶対にしない
+
+- lightへ直接penalty
+- chemicalへ固定Energy bonus
+- light userだけmovement強制OFF
+- chloroplast専用維持費
+- cyanobacteria class
+- vent source有限寿命
+- V1.8でINITIAL_GENOME.light_absorptionを0化
+- bmr_coreの再調整
+
+phototrophyの進化起源はV1.9事項。
+
+---
+
+# 6. V1.8 Config予定
+
+Exp13選定前はV1.7互換feature flags:
+
+```text
+primary_energy_density_response = False
+light_cycle_enabled = False
+```
+
+新項目:
+
+```text
+light_uptake_half = 0.6
+chemical_uptake_half = 6.15
+light_cycle_period_ticks = 200
+light_day_fraction = 0.5
+```
+
+feature OFFでV1.7-final bit完全回帰をHARD GATEとする。
+
+Exp13はfeature ON Configで実行。
+
+---
+
+# 7. Recorderで特に注意する点
+
+昼夜導入後、現在の:
+
+```text
+static light supply per tick * tick
+```
+
+では `light_supply_cum` が誤る。
+
+必ず実効供給をtickごとに積算する。
+
+追加観測:
+
+```text
+light_cycle_factor
+light_supply_rate
+```
+
+`World.light` static snapshotはpeak/base habitat fieldとして残す。
+
+既存指標の意味を黙って変更しない。
+
+---
+
+# 8. Exp13の順序
+
+```text
+Phase 0
+  ↓
+A1 light calibration
+  ↓
+A2 chemical calibration
+  ↓
+A3 density competition
+  ↓
+Phase A verdict
+  ↓ A_PASSのみ
+selected parameters固定
+  ↓
+B1 light-only
+B2 chemical-only
+B3 mixed exploratory evolution
+  ↓
+collect / verdict
+```
+
+A1 light:
+
+```text
+light_max=1.2
+```
+
+から始める。不成立時のみ事前登録rescue:
+
+```text
+1.5 -> 1.8 -> 2.4
+```
+
+4/5以上成立する最小値。
+
+A2 chemical:
+
+```text
+chem_uptake=1.0,2.0,4.0
+```
+
+から事前条件を満たす最小値。
+
+結果を見て新しい候補値を同じExp13へ追加しない。
+
+詳細はExp13正本。
+
+---
+
+# 9. Exp13 Phase 0は軽量化
+
+Exp12の10k×2再現試験を毎回繰り返さない。
+
+V1.8は科学コード変更なので:
+
+```text
+representative 2,000 tick ×2
+same current runner / same seed / same config
+```
+
+をbit完全一致HARD GATEとする。
+
+その他:
+- Config schema/manifest
+- unit tests
+- conservation
+- workflow E2E
+- CI Green
+
+必須。
+
+---
+
+# 10. 数値再現性
+
+過去Hosted Runner artifactとのbit mismatch単独をFAILにしない。
+
+HARD GATE:
+
+```text
+現在SHA / 現在runner / 現在numeric environment内の再現性
+```
+
+正式runでは:
+- expected run完全性
+- Config
+- SHA
+- numeric environment
+- artifact
+- aggregation
+
+を確認する。
 
 詳細は `docs/数値再現性・Actions実行環境方針.md`。
 
-**現在mainの `exp12.yml` を再現性gate修正前のまま再dispatchしてはいけない。**
-
 ---
 
-# Exp12 Phase 0 HARD GATE
+# 11. Actions・CI・push運用
 
-正式71-run dispatch前に以下を全て通す。
+CIは最終独立確認。途中実装のデバッグ目的でpushを乱発しない。
 
-1. Config完全性
-2. Simulation smoke
-3. 現在環境内の代表条件first-10k完全再現
-4. Matter保存 / Energy台帳 / 決定性 / RNG非干渉
-5. runtime preflight
-6. CI Green
+- 論理的変更単位までローカルで完成させる
+- Python/Config/collector/workflow変更は原則 `uv run pytest tests -q` をpush前に通す
+- 新Exp・科学ロジック・Config・出力形式・workflow変更はformal前CI Green必須
+- local failureをCIで原因調査するだけのpushは禁止
+- Markdownのみの修正はまとめる
+- 科学コードと文書をCI回避目的で不自然に混ぜない
 
-runtime基準:
-
-```text
-job timeout = 350 min
-predicted worst-case 50k <= 300 min を正式dispatch目安
-```
-
-超える場合、run長をAI判断で短縮せず `RUNTIME_PREFLIGHT_FAIL / REVIEW` として停止する。
-
----
-
-# Exp12解析の絶対要点
-
-単純な「後半傾きが負」だけでdelayと判定しない。
-
-## Tick-space
-
-```text
-20–30k
-30–40k
-40–50k
-```
-
-の3windowで正規化傾き `S1/S2/S3` を測り、減速を明示的に判定する。
-
-```text
-|S3| <= 0.05
-```
-
-はlate stationarity sentinelだが単独判定には使わない。
-
-低下が連続していても傾きが明確に弱まる場合は `CONVERGING_NOT_PROVEN` とし、`DELAY_CONTINUES` へ入れない。
-
-## Generation-space
-
-各snapshotで:
-
-```text
-generation median
-Q90
-max_generation
-```
-
-を計算する。
-
-body_size vs median-generation trajectoryを作り、late generation slope `S_gen` を測る。
-
-`max_generation` 単独で進化機会を判定しない。
-
-## 漸近平衡fit
-
-```text
-b(t) = b_inf + A * exp(-(t-10000)/tau)
-```
-
-を診断として実施するが、fit単独で科学結論を出さない。
-
-## Lower-bound sensitivity
-
-```text
-p_021
-p_023
-p_025
-```
-
-を併記する。0.21だけで長期平衡を判定しない。
-
-## Matter coupling
-
-30–50kのsnapshot差分でbody_sizeとMatter/ecology指標のSpearman相関を計算し、所定条件で `MATTER_COUPLED` を付ける。
-
-詳細な閾値・式・verdictロジックは正本を読むこと。AIが簡略化しない。
-
----
-
-# Exp12 run科学分類
-
-主分類:
-
-```text
-INTERIOR_EQUILIBRIUM
-LOWER_BOUND_EQUILIBRIUM
-DELAY_CONTINUES
-CONVERGING_NOT_PROVEN
-WINDOW_INSUFFICIENT
-```
-
-全体verdict:
-
-```text
-EQUILIBRIUM_SHIFT_SUPPORTED
-EQUILIBRIUM_SHIFT_SUPPORTED_WITH_ECOLOGICAL_COUPLING
-DELAY_SUPPORTED
-WINDOW_INSUFFICIENT / REVIEW
-INVALID_OR_METHOD_REVIEW
-```
-
-判定閾値を結果確認後に変更しない。
-
----
-
-# Exp12実装修正の最低要件
-
-既存実装に対して、formal再dispatch前に最低限:
-
-- P0-3をcurrent-run同一環境比較へ変更
-- historical Exp11 comparisonをdiagnosticへ降格
-- formal collectorからhistorical bit mismatchによるfailureを除去
-- formal SHA / numeric environment整合性をHARD GATE化
-- 対応回帰tests
-- 要求トレーサビリティ表更新
-
-を行う。
-
-`docs/Exp12_実装チェックリスト.md` の全項目を満たすこと。
-
----
-
-## Actions・CI・push運用
-
-CIは最終的な独立確認であり、途中実装のデバッグ手段として繰り返し使用しない。
-
-- PRへpushするたび通常CIが自動実行されることを前提とする
-- 細かな途中経過ごとにpushせず、論理的に一まとまりの変更単位までローカルで完成させる
-- push前に変更範囲に対応するテストをローカルで実行する
-- Pythonコード、Config、集計処理、workflow、依存関係を変更した場合は、原則としてpush前に `uv run pytest tests -q` を通す
-- シミュレーション結果の不変性に関係する変更では、現在の再現性方針に従って検証する。過去Hosted Runner artifactとのbit mismatch単独を失敗条件にしない
-- ローカルテスト失敗中の状態をCIで原因調査する目的だけでpushしない
-- CI failure修正は原因と影響範囲をローカルで確認し、関連修正をまとめてから再pushする
-- 新Exp、コアロジック、Config、出力形式、集計、CIを変更した場合は、本番dispatch前にCI Greenを必須とする
-- Markdown、結果考察、静的plotだけの変更はまとめてpushし、文言修正ごとの連続pushを避ける
-- CIを省略するために科学コードと文書変更を不自然に混在させない
-
-AIは作業完了報告時に:
-
-1. ローカルで実行したテスト
-2. GitHub CI状態
-3. Phase 0結果
-4. runtime preflight見積もり
-5. formal dispatch状態
+作業完了報告は:
+1. local tests
+2. CI
+3. Phase 0
+4. runtime estimate
+5. formal dispatch
 6. 未確認事項
 
-を分けて記載する。
+を分ける。
 
-正式run開始後はGit SHA・数値環境・科学コード・Config生成則・判定ロジックを固定する。
+---
 
-run status:
+# 12. run status
 
 ```text
 COMPLETE
@@ -318,93 +327,142 @@ INCOMPLETE_RESOURCE
 INTEGRITY_FAIL
 ```
 
-- EXTINCT / POP_HALT = 科学的結果
-- timeout / runner中断 / artifact欠落 = INCOMPLETE_RESOURCE
-- formal内のSHA / Config / numeric environment等のintegrity violation = 正式解析から除外
-- 過去runとのbit mismatch単独はINTEGRITY_FAILにしない
+- EXTINCT / POP_HALT = 科学結果
+- timeout / runner interruption / artifact欠落 = INCOMPLETE_RESOURCE
+- SHA / Config / numeric environment等のformal integrity違反 = INTEGRITY_FAIL
 - 技術的不完了だけ同一SHA/Configで再実行可
 
 ---
 
-## 実行時間の見積もり・実績報告
+# 13. 実行時間
 
-正式実験では、時間報告のためだけの新規instrumentationを追加しない。
+時間測定専用instrumentationを追加しない。
 
-既存Actions timestamps、job duration、`done: ... ticks in ...s`、`phase0_timing.txt` を使う。
+既存Actions timestamps / performance.csv / done logsを使う。
 
-formal dispatch前に:
-
-- 代表run実測
-- formal ticksへの換算
-- safety factor込みworst-case
+formal前:
+- single-run max予測
+- run数
 - max-parallel
-- 前提 / 不確実性
+- matrix wall-clock概算
+- safety margin / uncertainty
 
-を報告する。
-
-Exp12初回Phase 0実測から、B1 bmr=0.000 seed1の50k保守的worst-caseは現行式で約208分。300分safety line内。
-
-formal終了後は:
-
+formal後:
 - workflow wall-clock
-- Phase 0時間
-- formal matrix wall-clock
-- run時間 median / P90 / max（取得できる範囲）
-- collect時間
-- 予測 vs 実績
+- phase別wall-clock
+- run median/P90/max
+- prediction vs actual
 
-をNOTESまたは結果考察へ残す。
+を残す。
+
+**single-run timeout予測とmatrix全体wall-clockを混同しない。**
 
 ---
 
-## 小型化に関する絶対原則
+# 14. V1.8実装品質HARD GATE
+
+`docs/V1.8_実装チェックリスト.md` を全項目確認する。
+
+要求トレーサビリティ:
+
+| Requirement | Implementation | Test | Result |
+|---|---|---|---|
+
+をformal dispatch前に作り、空欄が1つでもあれば未完成。
+
+特に:
+- day/night
+- effective light sensing
+- density-dependent light uptake
+- density-dependent chemical uptake
+- stock depletion
+- fair sharing
+- actual light ledger
+- V1.7 regression
+- Config validation
+- Phase A selection
+- artifact completeness
+
+を漏らさない。
+
+---
+
+# 15. 小型化に関する絶対原則
 
 **小型化を抑えるためだけの人工的ペナルティは入れない。**
 
-V1.7 `bmr_core` はbody_sizeへ直接罰点を付けるものではなく、LUCA-inspired参照に基づく全生命共通の一般生理則として扱う。その結果としてサイズ選択圧が変わることを許容する。
+V1.7 `bmr_core` はbody_sizeへの直接罰ではなく、全生命共通の基礎維持代謝。
 
-`max_population_halt` は計算安全停止であり、生態ルールとして個体を殺したり繁殖を抑えたりしない。
+`max_population_halt` は計算安全停止であり生態ルールではない。
 
 ---
 
-## LUCA-inspired参照方針
+# 16. LUCA-inspired参照方針
 
 LUCAそのものを再現しない。
 
-- 現実から構造・因果・スケーリング・比率を主に借りる
-- 未校正のEnergy / Matter / tickへSI絶対値を直接移植しない
+- 現実から構造・因果・scaling・比率を主に借りる
+- 未校正Energy/Matter/tickへSI絶対値を直結しない
 - LUCAらしさへ適応度を与えない
-- 地球史どおりの進化結果を直接指定しない
-- 現実的な初期・基礎ルールを置いた後の進化は自然選択へ任せる
+- 地球史どおりの結果を直接指定しない
+- その後の進化は自然選択へ任せる
 
 ---
 
-## プロジェクト絶対原則
+# 17. プロジェクト絶対原則
 
 1. 適応度を直接計算しない
-2. 種クラスを作らない
+2. 完成した種classを作らない
 3. 寿命値を直接作らない
 4. コストは物理・生理則から導く
 5. Matter保存・Energy台帳を守る
-6. 乱数系列と決定性を意識する
+6. RNG系列・決定性を意識する
 7. 想定外戦略を許容する
-8. 特定生態型へ直接ボーナスを与えない
+8. 特定生態型へ直接bonusを与えない
 9. 原則1軸ずつ変更する
 10. 遺伝子の存在と進化経路の成立を区別する
-11. 比較するEnergy戦略は単独成立性を先に確認する
-12. 行動に暗黙の知能・未来予測を勝手に導入しない
-13. 実験結果を見て同じ実験の候補・閾値を後付け変更しない
-14. 科学的STOP/REVIEWと実行失敗・技術的不完了を区別する
+11. 比較Energy戦略は単独成立性を先に確認
+12. 行動へ暗黙の未来予測/知能を入れない
+13. 結果を見て同じ実験の候補・閾値を後付け変更しない
+14. 科学STOP/REVIEWと技術FAILを区別する
 
 ---
 
-## 実験結果保存
+# 18. V1.9以降
 
-`docs/実験結果保存方針.md`に従う。文字サマリーだけで正式実験を閉じない。
+近未来mainstream:
 
-- GitHub: 結果考察 / NOTES / 集計plot / 代表図 / README / 実行時間の予測実績比較
-- 全生データ・全画像: Google Drive / Actions artifact
+```text
+V1.8  light/chemical source物理の分化
+  ↓
+V1.9  chemical-first祖先からphototrophy創発
+  ↓
+動的vent / resource turnover
+  ↓
+HGT / primitive recombination
+  ↓
+engulfment / intracellular symbiosis
+  ↓
+plastid-like integration
+  ↓
+oxygenic photosynthesis / planetary feedback
+```
 
-## 技術スタック
+詳細は `docs/メインストリーム開発ストーリー.md`。
 
-Python 3.12 / uv / numpy / pygame-ce / matplotlib / pytest。
+遠未来ほど更新前提。AIはこのroadmapを勝手に固定仕様扱いしない。
+
+---
+
+# 19. 実験結果保存
+
+`docs/実験結果保存方針.md` に従う。
+
+文字サマリーだけでformal experimentを閉じない。
+
+- GitHub: 結果考察 / NOTES / aggregate plots / representative figures / runtime prediction-vs-actual
+- raw data / 全画像: external storage / Actions artifact
+
+## 技術stack
+
+Python 3.12 / uv / numpy / pygame-ce / matplotlib / pytest
