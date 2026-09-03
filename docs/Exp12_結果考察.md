@@ -1,7 +1,7 @@
 # Exp12 結果・考察
 
 更新: 2026-09-03
-状態: **正式71 run完了 / 技術的Green / V1.7判断確定**
+状態: **正式71 run完了 / 技術的Green / V1.7人間判断確定**
 
 正式Actions run:
 - Exp12 run `33592901348`
@@ -13,6 +13,7 @@
 - `docs/Exp12_実験計画確定.md`
 - `docs/数値再現性・Actions実行環境方針.md`
 - `docs/Exp11_考察.md`
+- `docs/V1.7_総括.md`
 - 本書
 
 ---
@@ -66,7 +67,7 @@ Exp11の10k時点で見えていた大型側シフトは長期にはかなり縮
 
 ---
 
-## 3. B2 method controlの扱い
+## 3. B2 method controlと事前登録verdict
 
 B2 = **光なし / chemicalのみ / chemical specialist**。
 
@@ -82,13 +83,22 @@ seed2: 10k 0.840 -> 20k 0.688 -> 30k 0.589 -> 40k 0.492 -> 50k 0.432
 seed5: 10k 0.755 -> 20k 0.563 -> 30k 0.432 -> 40k 0.409 -> 50k 0.405
 ```
 
-これは「判定器がstationaryを見逃した」というより、**B2を既知のstationary positive controlと置いた前提そのものが成立していなかった**と解釈するのが自然である。
+### 3.1 事前登録機械判定
 
-### 正式な表現
+事前登録 §15–16に従う機械判定は:
 
-事前登録上、B2 gateを満たさなかったという履歴は消さない。
+```text
+SCIENTIFIC_VERDICT = INVALID_OR_METHOD_REVIEW
+reason = B2 method-control gate未達
+```
 
-ただしV1.7の人間判断では:
+である。この履歴は消さず、正式記録として保持する。
+
+### 3.2 人間判断
+
+B2実測は「判定器がstationaryを見逃した」というより、**B2を既知のstationary positive controlと置いた前提そのものが成立していなかった**と解釈するのが自然である。
+
+したがって人間判断では:
 
 ```text
 B2 = METHOD CONTROL ASSUMPTION INVALID / NOT A KNOWN STATIONARY CONTROL
@@ -96,9 +106,13 @@ B2 = METHOD CONTROL ASSUMPTION INVALID / NOT A KNOWN STATIONARY CONTROL
 
 と扱う。
 
+これは機械判定を事後に消すことではない。機械verdictと、人間によるmethod assumptionの再解釈を分けて記録する。
+
 **B2の科学run自体を「失敗」とは扱わない。**
 
 また、B2を100k等へ延長して最終平衡を証明する追加実験は、V1.7の目的達成には不要と判断する。B2の遅い収束は、小個体群・少ない世代交代、局所chemical資源構造などによる可能性があり、今後の別テーマとして残す。
+
+今後、stationarity classifierそのものの正当性確認は既知形状の合成軌跡unit testを用い、自然runを「既知stationary」と仮定した陽性対照へ依存しない。
 
 ---
 
@@ -113,8 +127,8 @@ V1.7の目的は特定のbody_sizeを人為的に作ることではなく、
 Exp12 B1では:
 
 ```text
-0.10 -> 8/8 lower-bound equilibrium
-0.15 -> 8/8 interior equilibrium
+0.10 -> 8/8 lower-bound equilibrium / median 0.2238
+0.15 -> 8/8 interior equilibrium    / median 0.2459
 ```
 
 となった。
@@ -134,6 +148,12 @@ bmr_core = 0.15
 4. 実験前から採用原則としていた「目的を達成する最小側」を満たす
 5. 特定のbody_size値へ合わせるための事後調整ではない
 
+### 境界値の注意
+
+`INTERIOR_EQUILIBRIUM`のsentinelは0.23であり、0.10の中央値0.2238は境界を0.0062下回る。
+
+したがって0.15は「自然界の物理的相転移点」ではなく、**事前登録したsentinelを最初に超えた試験格子点**である。連続量としてのbody_size応答は滑らかであり、将来V1.8等で新しい選択圧が入った後にはbody_size平衡を再確認しうる。
+
 V1.7では追加長期実験を行わず、この値で閉じる。
 
 ---
@@ -148,7 +168,7 @@ Exp12により:
 
 - `bmr_core` の効果は単なる遅延だけではない
 - ただし10kで見えた効果量は過大
-- 0.15が「極端小型化を解除する最小側」の候補
+- 0.15が「極端小型化を解除する最小側」のworking value
 
 まで確認できた。
 
@@ -165,11 +185,12 @@ Exp12 workflow全体wall-clockは約7時間59分。
 ```text
 A. 単一run最大時間の予測
 B. matrix全体wall-clockの予測
+C. phase依存を含む実験全体wall-clockの予測
 ```
 
 を分ける。
 
-またpopulation推移により1 tickの計算量は大きく変わるため、10k実測の単純線形外挿には不確実性を明記する。
+またpopulation推移により1 tickの計算量は大きく変わるため、短時間実測の単純線形外挿には不確実性を明記する。
 
 ---
 
@@ -187,10 +208,10 @@ Exp12のB1/B2比較から、lightとchemicalで収束速度・個体数・body_s
 
 次のV1.8では、結果を人工的に指定せず:
 
-> **light = 広く・低い瞬間収益・周期的・再生するflow**
+> **light = 広く・低い平均収益・周期的・再生するflow**
 >
-> **chemical = 局所的・高い瞬間収益・消費でstockが減る・競争されるresource**
+> **chemical = 局所的・高い局所収益ポテンシャル・消費でstockが減る・競争されるresource**
 
 という一次Energy源の生態的非対称性を、環境物理と吸収則から表現する。
 
-詳細は `docs/V1.8_一次Energy生態非対称仕様.md` と `docs/Exp13_実験計画確定.md`。
+詳細は `docs/V1.8_Exp13_レビュー判断.md`、`docs/V1.8_一次Energy生態非対称仕様.md`、`docs/Exp13_実験計画確定.md`。
