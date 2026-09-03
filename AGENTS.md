@@ -7,21 +7,24 @@
 # 1. 現在の最優先参照順
 
 1. `docs/次の実験計画.md` — **現在の司令塔**
-2. `docs/環境因子追加・校正方針.md` — **プロジェクト全体の環境追加・parameter校正の恒久方針**
-3. `docs/V1.8_現状総括_Exp14結果.md` — **Exp13/Exp14結果・現在解釈・次チャット引継ぎ正本**
-4. `docs/V1.8_一次Energy生態非対称仕様.md` — V1.8物理仕様
-5. `docs/Exp14_実験計画確定.md` — Exp14事前登録履歴。**再dispatchしない**
-6. `docs/Exp14_レビュー判断.md` — Exp14レビュー採否履歴
-7. `docs/Exp13_結果考察_中間.md` — Exp13実測/原因考察履歴
-8. `docs/V1.8_Exp13_レビュー判断.md`
-9. `docs/Exp13_実験計画確定.md` — Exp13事前登録履歴。**再dispatchしない**
-10. `docs/V1.7_総括.md`
-11. `docs/メインストリーム開発ストーリー.md`
-12. `docs/数値再現性・Actions実行環境方針.md`
-13. `docs/実験結果保存方針.md`
-14. `docs/バージョニング方針.md`
+2. `docs/Exp15_実験計画確定.md` — **Exp15科学条件の正本**
+3. `docs/Exp15_実装チェックリスト.md` — **Sonnet実装仕様の正本**
+4. `docs/Exp14_表現型プロベナンス訂正.md` — **Exp14結果解釈への正式訂正**
+5. `docs/環境因子追加・校正方針.md` — プロジェクト全体の恒久校正方針
+6. `docs/V1.8_現状総括_Exp14結果.md` — Exp13/14結果・背景
+7. `docs/V1.8_一次Energy生態非対称仕様.md` — V1.8物理仕様
+8. `docs/Exp14_実験計画確定.md` — 履歴。**再dispatchしない**
+9. `docs/Exp14_レビュー判断.md`
+10. `docs/Exp13_結果考察_中間.md`
+11. `docs/V1.8_Exp13_レビュー判断.md`
+12. `docs/Exp13_実験計画確定.md` — 履歴。**再dispatchしない**
+13. `docs/V1.7_総括.md`
+14. `docs/メインストリーム開発ストーリー.md`
+15. `docs/数値再現性・Actions実行環境方針.md`
+16. `docs/実験結果保存方針.md`
+17. `docs/バージョニング方針.md`
 
-過去レビュー原文より、必ず人間採否文書と現在の司令塔を優先する。
+過去レビュー原文より、人間採否文書と現在の司令塔を優先する。
 
 ---
 
@@ -35,16 +38,50 @@ V1.7 / Exp11 / Exp12          完了 / bmr_core=.15
 V1.8実装                      完了 / main merge済み
 Exp13                         完了 / light calibration scientific STOP
 Exp13 chemical grid           完了 / 暫定候補あり
-Exp14                         完了 / 116/116 run回収
-Exp15                         設計中 / V1.8新機構切り分け・working reference選定
+Exp14                         完了 / 116/116 raw回収
+Exp14 phenotype provenance    訂正済み
+Exp15科学設計                 確定
+Exp15実装                     現在の最優先作業
+Exp15 preflight/formal        未実行
 V1.8 final acceptance         未完了
 ```
 
-Exp13/Exp14をそのまま再dispatchしない。
+**現在AIが行うべきことはExp15 harness実装・test・実装監査まで。formalを勝手に開始しない。**
 
 ---
 
-# 3. V1.8絶対方針
+# 3. Exp14 provenance訂正
+
+Exp14計画はlight specialist:
+
+```text
+light_absorption=2.0
+chemical_absorption=.3
+```
+
+を意図したが、`make_exp14_configs.py`に`diagnostic_gene_overrides`が無かった。
+formal workflowはそのgeneratorを直接使ったため、実際の116 runは:
+
+```text
+INITIAL_GENOME
+light_absorption=.3
+chemical_absorption=.3
+```
+
+で走った。
+
+したがって:
+- raw実測事実は保存
+- Exp14内の相対傾向はactual phenotype=.3条件の探索的証拠
+- Exp13/V1.7 light specialistとの定量比較には使わない
+- Exp14から恒久parameterを選ばない
+- Exp14を再dispatchせずExp15で正しい表現型を使う
+
+詳細は`docs/Exp14_表現型プロベナンス訂正.md`。
+
+---
+
+# 4. V1.8絶対方針
 
 ```text
 light
@@ -85,104 +122,168 @@ phototrophy起源はV1.9事項。
 
 ---
 
-# 4. プロジェクト全体の校正原則
+# 5. プロジェクト全体の校正原則
 
 `docs/環境因子追加・校正方針.md`を恒久方針とする。
 
 長期目標はiLUCA（LUCA-inspired）から多様な生物戦略、陸上移動、飛翔まで進化可能な世界を段階的に作ること。
-今後、気温・重力・水深/水圧・酸素・pH・放射線・毒物など多数の環境因子追加を予定するため、各段階で少数因子だけを前提に厳密なglobal optimumを探さない。
-
-新機構ごとの標準:
+今後、気温・重力・水深/水圧・酸素・pH・放射線・毒物など多数の環境因子を追加するため、各段階で少数因子だけを前提に厳密なglobal optimumを探さない。
 
 ```text
 1. 原因・寄与を単独で切り分ける
 2. 即死でも無影響でもない粗い成立域を見つける
-3. 複数世代成立・意味ある選択圧・非支配的であることを確認
+3. 複数世代成立・意味ある選択圧・非支配的を確認
 4. knife-edgeでないworking referenceを暫定採用
 5. 最小限のinteraction確認後、次の環境因子へ進む
 6. 多数因子が揃った段階で全体balanceを再調整
 ```
 
-精密threshold探索は、それ自体が科学的に必要、成立域が極端に狭い、後続開発のbottleneck、またはversion final acceptance時などに限定する。
+精密threshold探索は必要な場合だけ行う。
 
 ---
 
-# 5. Exp14で確定した主要結果
+# 6. Exp15科学条件 — 変更禁止
+
+## Phase A
 
 ```text
-116/116 run 最終絶滅
-死亡原因 = starvation
-Generation 2 = 0
+light specialist: light_absorption=2.0 / chemical_absorption=.3
+全14遺伝子固定
+light-only
+light_max=1.2
+seed=1..5
+ticks=5,000
+
+A0 cycle OFF / density OFF
+A1 cycle OFF / density ON
+A2 cycle ON  / density OFF
+A3 cycle ON  / density ON
+A4 A0完全duplicate sentinel
 ```
 
-支持された要因:
+A0-A3はfeature flag以外を変更しない。
+A0/A4はConfig完全一致・同seed科学出力一致を要求する。
 
-1. continuous nightは大きな負荷
-2. storage capacity不足も存在
-3. tick1一斉繁殖は増悪因子
-4. light_maxを2倍にするだけではほぼ解決しない
-5. R_refは一晩越しの診断には有用だが、長期成立を説明しない
+A0が成立しなければ`BASELINE_NOT_VIABLE`で科学STOP。Phase Bへ自動遷移しない。
 
-詳細は`docs/V1.8_現状総括_Exp14結果.md`。
+## Phase B
+
+combined固定で`light_max`のみ:
+
+```text
+1.2 / 2.4 / 4.0 / 6.0 / 8.0 / 12.0
+seed=1..3
+ticks=10,000
+```
+
+他の固定値:
+
+```text
+light_uptake_half=.6
+period=200
+day_fraction=.5
+energy_capacity=100
+```
+
+隣接2 tested levelが連続VIABLEになった最初のpairの低い側をworking reference候補とする。
+成立しなければ`NO_ROBUST_LIGHT_REFERENCE`。Exp15へ追加sweepを後付けしない。
+
+詳細は`docs/Exp15_実験計画確定.md`。
 
 ---
 
-# 6. 最重要の現在解釈
+# 7. Exp15最重要HARD GATE
 
-Exp14 A1はV1.7回帰ではない。
+Exp14再発防止としてConfig検査だけでは不十分。
 
-A1:
-
-```text
-cycle OFF
-primary_energy_density_response ON
-light_max=4/pi
-```
-
-V1.7型:
+必ず`Simulation(cfg, seed)`を初期化し、初期100個体全て:
 
 ```text
-cycle OFF
-primary_energy_density_response OFF
-static light
+light_absorption == 2.0
+chemical_absorption == 0.3
 ```
 
-したがって、A1の絶滅を根拠に「V1.7型の昼だけでもEnergy赤字」と断定してはいけない。
+を独立testする。
 
-次の最優先課題は、V1.8で同時導入した2機構を独立比較すること。
+formal前に:
+- fixed_genes canonical 14
+- overrides actual organism E2E
+- A0-A3 flag-only diff
+- A0=A4
+- Phase B light_max-only diff
+- chemical OFF
+- observation noninterference
+- conservation/determinism
+- full pytest
 
-```text
-cycle OFF / density OFF
-cycle OFF / density ON
-cycle ON  / density OFF
-cycle ON  / density ON
-```
-
-Exp15ではこの切り分けを主目的とし、唯一の厳密最適値ではなくV1.8のworking referenceを決める。
-formal条件は人間判断前に勝手に確定しない。
+をGREENにする。
 
 ---
 
-# 7. 次の診断で見る量
+# 8. Exp15観測
 
 最低限:
 
 ```text
 realized light gain / organism-tick
-maintenance + movement + repair / organism-tick
-net Energy balance
+maintenance+movement / organism-tick
+repair / organism-tick
+birth overhead / organism-tick
+core net Energy / organism-tick
 Energy/capacity distribution
+light H(I,K) distribution
 birth timing
 population
 survival/extinction
+max generation
+sunset/dawn reserve
 ```
 
-`light_max`や時間平均供給量を何に揃えるかは実験前に人間と合意する。
-結果を見た後で同一experimentの比較条件を追加しない。
+H観測ではnight I=0を分布へ混ぜない。
+
+観測counterはsimulationへフィードバックしない。RNG/state/update orderを変えない。
 
 ---
 
-# 8. Chemical
+# 9. Exp15 Actions構造
+
+```text
+mode=preflight
+mode=phase_a
+mode=phase_b
+```
+
+を別dispatchとして実装する。
+
+禁止:
+- preflight成功→formal自動開始
+- Phase A成功→Phase B自動開始
+
+formal前にphase全体wall-clockを予測。
+10時間超なら条件をAI判断で削らず人間へ報告。
+
+詳細は`docs/Exp15_実装チェックリスト.md`。
+
+---
+
+# 10. 実装・実験品質HARD RULE
+
+- requirement → implementation → independent test → resultを追跡
+- ConfigだけでなくSimulation実個体までE2E検証
+- generator/checker/testが同じ誤定数を自己検証しない
+- Config / fixed_genes / collector / artifact keyを独立test
+- preflightとformalを分離
+- scientific STOPとtechnical FAILを分離
+- scientific STOPでもartifact/reportを保存
+- late window未到達はN/A
+- recorder/analysis追加はRNG/state/update orderへ影響させない
+- full pytest / conservation / determinism / CI Greenを正式実験前に確認
+- 途中デバッグpushを乱発しない
+- artifact完全性を機械検証する
+
+---
+
+# 11. Chemical
 
 Exp13暫定候補:
 
@@ -191,29 +292,11 @@ chemical_uptake_half=1.5
 chem_uptake=.5
 ```
 
-Exp14はlight-onlyなので、この候補を否定しない。
-Light側の基礎Energy収支整理後に長期/探索/density validationへ戻る。
+Exp15 light整理後に長期/探索/density validationへ戻る。
 
 ---
 
-# 9. 実装・実験品質HARD RULE
-
-- requirement → implementation → independent test → resultを追跡
-- Config / fixed_genes / collector / artifact keyを独立test
-- preflightとformalを分離
-- preflight成功後にformalへ自動遷移しない
-- formal前に**実験全体**wall-clock予測を報告
-- scientific STOPとtechnical FAILを分離
-- scientific STOPでもartifact/reportを保存
-- late window未到達はN/A
-- recorder/analysis追加はRNG/state/update orderへ影響させない
-- full pytest / conservation / determinism / CI Greenを正式実験前に確認
-- 途中デバッグpushを乱発しない
-- checkerとgeneratorが同じ誤った手書き定数を共有しない
-
----
-
-# 10. プロジェクト絶対原則
+# 12. プロジェクト絶対原則
 
 - 適応度を直接計算しない
 - 完成した種classを作らない
@@ -232,11 +315,12 @@ Light側の基礎Energy収支整理後に長期/探索/density validationへ戻�
 
 ---
 
-# 11. V1.8をfinalizeしない条件
+# 13. V1.8をfinalizeしない条件
 
 未完了:
 
 ```text
+Exp15
 light working reference
 chemical long-term validation
 light-only long-term viability
@@ -248,9 +332,11 @@ v1.8-final保存
 
 これらが終わるまでV1.8をfinal扱いしない。
 
+V1.8導入済み機構のworking parameter調整はV1.8 finalizationであり、V1.9へ前倒ししない。
+
 ---
 
-# 12. V1.9以降
+# 14. V1.9以降
 
 ```text
 V1.8 source物理分化
@@ -262,22 +348,19 @@ V1.8 source物理分化
  -> oxygenic photosynthesis/planetary feedback
 ```
 
-V1.8で導入済み機構のworking parameter調整はV1.8 finalizationであり、V1.9へ前倒ししない。
-メインストリーム方針は現時点で変更しない。
-
 ---
 
-# 13. 実験結果保存
+# 15. Exp15実装完了条件
 
-`docs/実験結果保存方針.md`に従う。
+AIは以下まで行う:
 
-GitHub:
-- 結果考察
-- aggregate plot/table
-- runtime prediction vs actual
-- scientific/technical verdict
+```text
+- harness実装
+- tests GREEN
+- docs/Exp15_実装監査.md作成
+- preflight実行可能状態
+```
 
-raw:
-- Actions artifact / external storage
+**preflight/formalを勝手にdispatchしない。**
 
 技術stack: Python 3.12 / uv / numpy / pygame-ce / matplotlib / pytest
