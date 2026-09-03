@@ -291,3 +291,131 @@ def r_ref_for_arm(arm_overrides: dict) -> float:
 # Exp14では「選定」はない。runtime profile記録用のみ)
 # ---------------------------------------------------------------------------
 RUNTIME_REPORT_FILE_NAME = "exp14_runtime_report.json"
+
+
+# ---------------------------------------------------------------------------
+# 昼夜由来の事後集計 (recorder非改変で済ませる観測)
+#
+# stats.csv (tick, population, light_cycle_factor) と events.csv
+# (tick, event, cause) と Config だけから、sunset/dawn population・
+# daytime peak・night minimum・daylight_births_cum・
+# night_starvation_deaths_cum を再構成する。recorder/simulationへ新規
+# stateを足さないため、観測非干渉の対象そのものが存在しない
+# (実装チェックリスト.md §6)。
+# ---------------------------------------------------------------------------
+
+def is_night_tick(tick: int, cfg: Config) -> bool:
+    """evosim.daynight.daylight_factorと同じ判定 (factor==0.0が厳密night)。"""
+    from evosim.daynight import daylight_factor
+    return daylight_factor(tick, cfg) == 0.0
+
+
+def cycle_observation_from_rows(stats_rows: list[dict], cfg: Config) -> dict:
+    """stats.csvの行列 (tick昇順) からday/night遷移由来の指標を作る。
+
+    各行の `light_cycle_factor` を使い、0.0<->0.0でない、の遷移を
+    sunset(day->night)/dawn(night->day)とみなす。
+    """
+    sunset_pops: list[int] = []
+    dawn_pops: list[int] = []
+    day_peaks: list[int] = []
+    night_mins: list[int] = []
+    cur_day_peak = None
+    cur_night_min = None
+    prev_night = None
+    for row in stats_rows:
+        night = float(row["light_cycle_factor"]) == 0.0
+        pop = int(row["population"])
+        if prev_night is None:
+            prev_night = night
+            if night:
+                cur_night_min = pop
+            else:
+                cur_day_peak = pop
+        if night != prev_night:
+            if prev_night is False and night is True:
+                # day -> night: sunset
+                sunset_pops.append(pop)
+                if cur_day_peak is not None:
+                    day_peaks.append(cur_day_peak)
+                cur_day_peak = None
+                cur_night_min = pop
+            else:
+                # night -> day: dawn
+                dawn_pops.append(pop)
+                if cur_night_min is not None:
+                    night_mins.append(cur_night_min)
+                cur_night_min = None
+                cur_day_peak = pop
+            prev_night = night
+        else:
+            if night:
+                cur_night_min = pop if cur_night_min is None else min(cur_night_min, pop)
+            else:
+                cur_day_peak = pop if cur_day_peak is None else max(cur_day_peak, pop)
+    return {
+        "sunset_population": sunset_pops,
+        "dawn_population": dawn_pops,
+        "daytime_peak_population": day_peaks,
+        "night_minimum_population": night_mins,
+    }
+
+
+def daylight_births_and_night_starvation(events_rows: list[dict], cfg: Config) -> dict:
+    births_day = 0
+    deaths_night_starvation = 0
+    for row in events_rows:
+        tick = int(row["tick"])
+        night = is_night_tick(tick, cfg)
+        if row["event"] == "birth" and not night:
+            births_day += 1
+        elif row["event"] == "death" and row["cause"] == "starvation" and night:
+            deaths_night_starvation += 1
+    return {
+        "daylight_births_cum": births_day,
+        "night_starvation_deaths_cum": deaths_night_starvation,
+    }
+
+
+# ---------------------------------------------------------------------------
+# late window N/A semantics (Exp13バグ修正: 実装チェックリスト.md §5)
+# ---------------------------------------------------------------------------
+
+def late_window_metric(rows: list[dict], final_tick: int, window: int, key: str,
+                        agg="mean"):
+    """final_tick < window なら late window未到達 -> None (N/A)。
+
+    Exp13では cutoff = final_tick - window が負になり、window条件を
+    満たさない行まで平均に混ざって early-extinction runが誤って
+    late_pop_ok=True になるバグがあった。ここでは final_tick < window の
+    場合を明示的にNoneで返し、呼び出し側がPASS/FAIL集計へ混入させない
+    ことを強制する。
+    """
+    if final_tick < window:
+        return None
+    cutoff = final_tick - window
+    vals = [float(r[key]) for r in rows if int(r["tick"]) >= cutoff]
+    if not vals:
+        return None
+    if agg == "mean":
+        return sum(vals) / len(vals)
+    if agg == "max":
+        return max(vals)
+    if agg == "min":
+        return min(vals)
+    raise ValueError(agg)
+
+
+def classify_phase_a_arm(seed_results: list[dict]) -> str:
+    """SURVIVES_SHORT(3/3) / MARGINAL(2/3) / COLLAPSE(0-1/3)。
+
+    seed_results 各要素は {"reached_full_ticks": bool, "final_population": int}。
+    N/A値はここに来ない (呼び出し側でN/Aはこの判定に混ぜない)。
+    """
+    n_survive = sum(1 for r in seed_results
+                    if r["reached_full_ticks"] and r["final_population"] > 0)
+    if n_survive >= SURVIVES_SHORT_MIN_SEEDS:
+        return "SURVIVES_SHORT"
+    if n_survive >= MARGINAL_MIN_SEEDS:
+        return "MARGINAL"
+    return "COLLAPSE"

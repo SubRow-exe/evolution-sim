@@ -1,0 +1,301 @@
+name: Exp14
+
+# Exp14 light day/night extinction mechanism diagnostic
+# (docs/Exp14_実験計画確定.md / docs/Exp14_実装チェックリスト.md)。
+#
+# 正本:
+#   docs/Exp14_レビュー判断.md
+#   docs/Exp14_実験計画確定.md
+#   docs/Exp14_実装チェックリスト.md
+#   AGENTS.md
+#
+# HARD RULE (AGENTS.md §7 / 実装チェックリスト.md §3, Exp13再発防止):
+#   preflightはformalを絶対に自動開始しない。preflightは
+#   runtime全体予測レポートを作って終了する。formalは
+#   `mode: formal` を明示指定した**別のworkflow_dispatch**でのみ開始する
+#   (このworkflow内にpreflight成功からformalへ繋がるjob依存/if条件は
+#   一切存在しない — 構造的に分離する)。
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preflight (representative benchmark + report) か formal (116 run本番)"
+        type: choice
+        options: [preflight, formal]
+        default: preflight
+      profile:
+        description: "formal専用。preflightのruntime報告に基づき人間が選ぶ"
+        type: choice
+        options: [FULL, COMPACT]
+        default: FULL
+
+concurrency:
+  group: exp14
+  cancel-in-progress: false
+
+jobs:
+  # ===========================================================================
+  # preflight: config/checker/unit/integration -> deterministic smoke ->
+  #            representative runtime benchmark -> report-only で終了。
+  #            formalへの自動遷移は一切しない。
+  # ===========================================================================
+  preflight:
+    if: ${{ inputs.mode == 'preflight' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+
+      - name: Config整合性・unit/integration test
+        run: |
+          uv run python tools/check_exp14.py --profile FULL
+          uv run python tools/check_exp14.py --profile COMPACT
+          uv run pytest tests/test_exp14_common.py tests/test_exp14_configs.py \
+            tests/test_check_exp14.py tests/test_summarize_exp14.py \
+            tests/test_exp14_observation_noninterference.py -q
+
+      - name: 保存則・決定性
+        run: uv run pytest tests/test_conservation.py tests/test_determinism.py -q
+
+      - name: 現在環境内 2,000 tick×2 決定性 (Phase A代表条件)
+        run: |
+          set -euo pipefail
+          uv run python -c "
+          import sys; sys.path.insert(0, '.')
+          from tools.make_exp14_configs import build_phase_a
+          build_phase_a('A0', 2000).to_json('/tmp/preflight_a0.json')
+          "
+          for rep in primary reference; do
+            t0=$(date +%s)
+            uv run python main.py --headless --ticks 2000 --seed 1 \
+              --config /tmp/preflight_a0.json --out "runs/exp14_preflight_${rep}"
+            t1=$(date +%s)
+            echo "${rep}: 2,000 tick(Phase A代表) 実測 $((t1-t0)) 秒" | tee -a preflight_timing.txt
+          done
+          SRC_P=$(find runs/exp14_preflight_primary -mindepth 1 -maxdepth 1 -type d | head -1)
+          SRC_R=$(find runs/exp14_preflight_reference -mindepth 1 -maxdepth 1 -type d | head -1)
+          uv run python -c "
+          import sys; sys.path.insert(0, '.')
+          from pathlib import Path
+          from tools.check_exp14 import compare_first_nk
+          errs = compare_first_nk(Path('$SRC_P'), Path('$SRC_R'), max_tick=2000)
+          for e in errs:
+              print('ERROR:', e)
+          raise SystemExit(1 if errs else 0)
+          "
+
+      - name: collector E2E smoke
+        run: |
+          set -euo pipefail
+          SRC=$(find runs/exp14_preflight_primary -mindepth 1 -maxdepth 1 -type d | head -1)
+          mkdir -p runs/exp14_p0_smoke/exp14_A_A0_seed1
+          cp -r "$SRC"/* runs/exp14_p0_smoke/exp14_A_A0_seed1/
+          uv run python tools/check_exp14.py runs/exp14_p0_smoke
+
+      - name: Phase B代表runtime benchmark (5,000 tick)
+        id: bench_b
+        run: |
+          set -euo pipefail
+          uv run python -c "
+          import sys; sys.path.insert(0, '.')
+          from tools.make_exp14_configs import build_phase_b
+          build_phase_b(200, 100.0, 5000).to_json('/tmp/preflight_b.json')
+          "
+          t0=$(date +%s)
+          uv run python main.py --headless --ticks 5000 --seed 1 \
+            --config /tmp/preflight_b.json --out runs/exp14_preflight_b
+          t1=$(date +%s)
+          echo "phase_b_5k_sec=$((t1-t0))" >> "$GITHUB_OUTPUT"
+          echo "Phase B代表 (5,000 tick) 実測: $((t1-t0)) 秒"
+
+      - name: Phase C代表runtime benchmark (2,000 tick partial -> 外挿)
+        id: bench_c
+        run: |
+          set -euo pipefail
+          uv run python -c "
+          import sys; sys.path.insert(0, '.')
+          from tools.make_exp14_configs import build_phase_c
+          build_phase_c('C4', 20000).to_json('/tmp/preflight_c.json')
+          "
+          t0=$(date +%s)
+          uv run python main.py --headless --ticks 2000 --seed 1 \
+            --config /tmp/preflight_c.json --out runs/exp14_preflight_c
+          t1=$(date +%s)
+          echo "phase_c_2k_sec=$((t1-t0))" >> "$GITHUB_OUTPUT"
+          echo "Phase C代表 (最初の2,000 tick、進化ON) 実測: $((t1-t0)) 秒"
+
+      - name: Exp14全体wall-clock予測レポート作成
+        id: report
+        run: |
+          set -euo pipefail
+          cat preflight_timing.txt
+          A_SEC=$(grep "primary:" preflight_timing.txt | grep -oE '[0-9]+ 秒' | grep -oE '[0-9]+')
+          B_5K_SEC=${{ steps.bench_b.outputs.phase_b_5k_sec }}
+          C_2K_SEC=${{ steps.bench_c.outputs.phase_c_2k_sec }}
+          uv run python tools/exp14_runtime_report.py \
+            --a-2k-sec "$A_SEC" --b-5k-sec "$B_5K_SEC" --c-2k-sec "$C_2K_SEC" \
+            --max-parallel 20 --out exp14_runtime_report.json
+          cat exp14_runtime_report.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp14-preflight-report
+          path: |
+            exp14_runtime_report.json
+            preflight_timing.txt
+          retention-days: 90
+
+      # HARD RULE: ここでworkflowを終了する。formalへ遷移するjob/stepは
+      # このworkflowファイル中に一切存在しない。formalは人間がレポートを
+      # 見た後、mode=formal を指定した別dispatchでのみ開始する。
+
+  # ===========================================================================
+  # formal: mode=formal を明示指定した別dispatchでのみ実行される。
+  # このjobはpreflight jobの成功/失敗に一切依存しない (needs不使用)。
+  # ===========================================================================
+  formal_phase_a:
+    if: ${{ inputs.mode == 'formal' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [A0, A1, A2, A3, A4, A5, A6]
+        seed: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: run
+        run: |
+          set -euo pipefail
+          uv run python -c "
+          import sys; sys.path.insert(0, '.')
+          from tools.make_exp14_configs import build_phase_a
+          from tools.exp14_common import PROFILES
+          ticks = PROFILES['${{ inputs.profile }}']['A']
+          build_phase_a('${{ matrix.arm }}', ticks).to_json('/tmp/cfg.json')
+          print(ticks)
+          " > /tmp/ticks.txt
+          TICKS=$(tail -1 /tmp/ticks.txt)
+          uv run python main.py --headless --ticks "$TICKS" --seed ${{ matrix.seed }} \
+            --config /tmp/cfg.json --out runs/exp14_raw
+          SRC=$(find runs/exp14_raw -mindepth 1 -maxdepth 1 -type d | head -1)
+          NAME="exp14_A_${{ matrix.arm }}_seed${{ matrix.seed }}"
+          mkdir -p "runs/exp14_formal/$NAME"
+          cp -r "$SRC"/* "runs/exp14_formal/$NAME/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp14-formal-A-${{ matrix.arm }}-seed${{ matrix.seed }}
+          path: runs/exp14_formal
+          retention-days: 90
+
+  formal_phase_b:
+    if: ${{ inputs.mode == 'formal' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        period: [80, 120, 160, 200, 240]
+        capacity: [75, 100, 125, 150, 200]
+        seed: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: run
+        run: |
+          set -euo pipefail
+          uv run python -c "
+          import sys; sys.path.insert(0, '.')
+          from tools.make_exp14_configs import build_phase_b
+          from tools.exp14_common import PROFILES
+          ticks = PROFILES['${{ inputs.profile }}']['B']
+          build_phase_b(${{ matrix.period }}, ${{ matrix.capacity }}, ticks).to_json('/tmp/cfg.json')
+          print(ticks)
+          " > /tmp/ticks.txt
+          TICKS=$(tail -1 /tmp/ticks.txt)
+          uv run python main.py --headless --ticks "$TICKS" --seed ${{ matrix.seed }} \
+            --config /tmp/cfg.json --out runs/exp14_raw
+          SRC=$(find runs/exp14_raw -mindepth 1 -maxdepth 1 -type d | head -1)
+          NAME="exp14_B_p${{ matrix.period }}_c${{ matrix.capacity }}_seed${{ matrix.seed }}"
+          mkdir -p "runs/exp14_formal/$NAME"
+          cp -r "$SRC"/* "runs/exp14_formal/$NAME/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp14-formal-B-p${{ matrix.period }}-c${{ matrix.capacity }}-seed${{ matrix.seed }}
+          path: runs/exp14_formal
+          retention-days: 90
+
+  formal_phase_c:
+    if: ${{ inputs.mode == 'formal' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [C1, C2, C3, C4]
+        seed: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: run
+        run: |
+          set -euo pipefail
+          uv run python -c "
+          import sys; sys.path.insert(0, '.')
+          from tools.make_exp14_configs import build_phase_c
+          from tools.exp14_common import PROFILES
+          ticks = PROFILES['${{ inputs.profile }}']['C']
+          build_phase_c('${{ matrix.arm }}', ticks).to_json('/tmp/cfg.json')
+          print(ticks)
+          " > /tmp/ticks.txt
+          TICKS=$(tail -1 /tmp/ticks.txt)
+          uv run python main.py --headless --ticks "$TICKS" --seed ${{ matrix.seed }} \
+            --config /tmp/cfg.json --out runs/exp14_raw
+          SRC=$(find runs/exp14_raw -mindepth 1 -maxdepth 1 -type d | head -1)
+          NAME="exp14_C_${{ matrix.arm }}_seed${{ matrix.seed }}"
+          mkdir -p "runs/exp14_formal/$NAME"
+          cp -r "$SRC"/* "runs/exp14_formal/$NAME/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp14-formal-C-${{ matrix.arm }}-seed${{ matrix.seed }}
+          path: runs/exp14_formal
+          retention-days: 90
+
+  formal_collect:
+    if: ${{ inputs.mode == 'formal' }}
+    needs: [formal_phase_a, formal_phase_b, formal_phase_c]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "exp14-formal-*"
+          path: runs/exp14_formal_all
+          merge-multiple: true
+      - name: 116 run完全性・整合性チェック
+        run: uv run python tools/check_exp14.py runs/exp14_formal_all --profile ${{ inputs.profile }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp14-formal-collected
+          path: runs/exp14_formal_all
+          retention-days: 90

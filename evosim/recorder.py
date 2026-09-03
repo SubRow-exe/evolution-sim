@@ -28,7 +28,8 @@ import numpy as np
 
 from . import __version__
 from .config import Config
-from .genome import BODY_SIZE, GENE_NAMES, LIGHT_ABS, MUTATION_RATE, REPRO_INVEST
+from .genome import (BODY_SIZE, GENE_NAMES, LIGHT_ABS, MOVE_POWER,
+                     MUTATION_RATE, REPRO_INVEST)
 from .runmeta import run_metadata
 from .spatial import (BAND_NAMES, lineage_spatial, population_spatial,
                       save_environment_snapshot, save_static_environment)
@@ -75,6 +76,17 @@ class Recorder:
             "flow_predation_energy_cum", "flow_predation_matter_cum",
             # 系統支配度
             "top_lineage_id", "top_lineage_frac",
+            # Exp14: Energy/capacity (E/E_max) 分布と、Phase C対象形質の分布。
+            # 既存列 (population, light_cycle_factor) から sunset/dawn
+            # population・daytime peak・night minimum・daylight_births_cum・
+            # night_starvation_deaths_cum は事後計算できるため、ここでは
+            # stats.csv単体では復元できない「個体間分布」だけを追加する
+            # (docs/Exp14_実装チェックリスト.md §6)。読み取り専用の集計で
+            # あり、RNG・個体状態・update orderには一切触れない。
+            "energy_frac_mean", "energy_frac_median", "energy_frac_p10", "energy_frac_p90",
+            "p10_body_size", "p90_body_size",
+            "p10_reproduction_investment", "p90_reproduction_investment",
+            "p10_movement_power", "p90_movement_power",
             # 空間指標 (V1.2.1)。地理帯は Control/Treatment 共通の固定定義
             *[f"pop_{b}_band" for b in BAND_NAMES],
             *[f"frac_{b}_band" for b in BAND_NAMES],
@@ -165,6 +177,24 @@ class Recorder:
             mean_age = max_age = max_gen = n_lin = 0
             tot_e = tot_m = 0.0
 
+        # Exp14: Energy/capacity・Phase C対象形質の分布 (読み取り専用)
+        if n > 0:
+            e_frac = np.array([o.energy / o.energy_max(sim.cfg.energy_capacity)
+                                for o in orgs])
+            energy_frac_cols = [
+                round(float(e_frac.mean()), 6), round(float(np.median(e_frac)), 6),
+                round(float(np.percentile(e_frac, 10)), 6),
+                round(float(np.percentile(e_frac, 90)), 6),
+            ]
+            trait_cols = []
+            for gi in (BODY_SIZE, REPRO_INVEST, MOVE_POWER):
+                col = genomes[:, gi]
+                trait_cols += [round(float(np.percentile(col, 10)), 6),
+                               round(float(np.percentile(col, 90)), 6)]
+        else:
+            energy_frac_cols = ["", "", "", ""]
+            trait_cols = ["", "", "", "", "", ""]
+
         # 空間指標 (V1.2.1)。読み取り専用でRNG・個体状態に触れない
         sp_pop = population_spatial(sim)
         mean_move = (round(sim._move_sum / sim._move_count, 6)
@@ -243,6 +273,7 @@ class Recorder:
               ("light", "chemical", "nutrient", "corpse_matter",
                "corpse_energy", "predation_energy", "predation_matter")],
             top_id, round(top_frac, 6),
+            *energy_frac_cols, *trait_cols,
             *[sp_pop[f"pop_{b}_band"] for b in BAND_NAMES],
             *[sp_pop[f"frac_{b}_band"] for b in BAND_NAMES],
             sp_pop["mean_local_light"], sp_pop["vent_cell_population"],
