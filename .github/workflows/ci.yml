@@ -23,17 +23,17 @@ jobs:
         #
         # V1.6は世界ルール変更境界 (一次Energyの移動則を temporal biased
         # random walk へ変更) なので、V1.5以前とは意図的に結果が異なる。
-        # V1.6内の結果不変変更は 1c708be (Exp10採用値 response_gain=64 を
-        # 恒久defaultへ反映した確定commit = v1.6-final) を基準にする。
-        # 最初のV1.6実装コミット e15ee67 はresponse_gain=16のままであり、
-        # 64への変更は意図的な結果変更 (docs/バージョニング方針.md) のため
-        # 旧refのままでは誤検知する。
         #
-        # V1.6は移動原理そのものを変えるため、V1.5との単独source一致
-        # (--single-source) は成立しない。その検証はV1.5の停止条件であり、
-        # `v1.5-final` branch が再現手段を持つ。
+        # V1.7は bmr_core default を 0.0 -> 0.15 へ変更する境界 (docs/V1.7_総括.md)。
+        # 意図した結果変更のため、V1.6基準の1c708beのままでは誤検知する。
+        # V1.7内の結果不変変更は 2edc3db (V1.7 close確定commit = v1.7-final)
+        # を基準にする。
+        #
+        # V1.6/V1.7は移動原理・BMR式そのものを変えるため、V1.5以前との
+        # 単独source一致 (--single-source) は成立しない。その検証はV1.5の
+        # 停止条件であり、`v1.5-final` branch が再現手段を持つ。
         # Repository variable が古い値のまま残っていても基準を上書きしないよう、
         # このworkflowではrefを明示的に固定する。
         # 過去バージョンの再現は
-        # v1.2-final / v1.3-final / v1.4-final / v1.5-final を使用する。
-        run: uv run python tools/verify_vs_ref.py --ref 1c708be
+        # v1.2-final / v1.3-final / v1.4-final / v1.5-final / v1.6-final / v1.7-final を使用する。
+        run: uv run python tools/verify_vs_ref.py --ref 2edc3db
