@@ -13,6 +13,7 @@ import numpy as np
 
 from . import behavior, physiology
 from .config import Config
+from .daynight import daylight_factor
 from .corpse import Corpse
 from .genome import (CHEM_ABS, CORPSE_DIG, LIGHT_ABS, MEMBRANE, NUTRIENT_ABS,
                      PREDATION, REPRO_INVEST, diagnostic_overrides,
@@ -61,8 +62,17 @@ class Simulation:
             "predation_energy": 0.0,  # 捕食で得たエネルギー
             "predation_matter": 0.0,  # 捕食で同化した物質
         }
-        # 世界全体の光供給量/tick (未利用光量の算出用・不変)
+        # 世界全体の光供給量/tick (未利用光量の算出用・不変。昼夜cycle適用前のbase値)
         self.light_supply_per_tick = float(self.world.light.sum())
+        # V1.8: そのtickのdaylight factor。step()冒頭で一度だけ決め、
+        # sensing/light supply/light uptake/recorderが同じ値を共有する。
+        # 初期値1.0はrun開始前 (tick=0) の状態で、最初のstep()呼び出しで
+        # 実際のfactorへ更新される。
+        self.daylight_factor_now = 1.0
+        # V1.8: 実効光供給量の積算 (docs/V1.8_一次Energy生態非対称仕様.md §9)。
+        # 昼夜導入後は static supply × tick で計算してはいけないため、
+        # 毎stepの実効(daylight_factor適用後)供給量を積算する。
+        self.light_supply_cum = 0.0
         # 系統別の累積出生数 (系統別統計用)
         self.births_by_lineage: dict[int, int] = {}
 
@@ -227,6 +237,12 @@ class Simulation:
         cfg = self.cfg
         self.tick += 1
 
+        # 0. V1.8 daylight factor をstep開始time (current tick) から一度だけ
+        #    決め、このstep内のsensing/light supply/light uptake/recorderが
+        #    同じ値を共有する (途中でtickを進めて別factorを読まない)。
+        self.daylight_factor_now = daylight_factor(self.tick, cfg)
+        self.light_supply_cum += self.light_supply_per_tick * self.daylight_factor_now
+
         # 1. 環境更新 (化学湧出はエネルギー流入)
         chem_influx, chem_loss = self.world.update()
         self.energy_in_cum += chem_influx
@@ -350,20 +366,29 @@ class Simulation:
         return min(1.0, supply / total)
 
     def _absorb_light(self, orgs, phis, areas, key) -> None:
-        """光: 個体の変換能力が上限。未利用光はそのtickで散逸する。"""
+        """光: 個体の変換能力が上限。未利用光はそのtickで散逸する。
+
+        V1.8: そのtickの実効光は World.light (base/peak habitat field) に
+        daylight_factor_now を掛けたもの。night (factor=0) では厳密に
+        gain=0。primary_energy_density_response=True のときのみ、実効光
+        濃度への局所密度応答 H(I, light_uptake_half) を需要へ掛ける
+        (docs/V1.8_一次Energy生態非対称仕様.md §6)。OFF時はV1.7式のまま。
+        """
         cfg = self.cfg
-        flux = float(self.world.light[key])
+        flux = float(self.world.light[key]) * self.daylight_factor_now
         if flux <= 0.0:
             return
         coef = cfg.light_uptake_coef
         cap = cfg.energy_capacity
+        density_on = cfg.primary_energy_density_response
+        resp = physiology.density_response(flux, cfg.light_uptake_half) if density_on else 1.0
         demands = []
         for o, phi, area in zip(orgs, phis, areas):
             a = o.genome[LIGHT_ABS]
             if a <= ABILITY_EPS:
                 demands.append(0.0)
                 continue
-            raw = coef * a * area * phi
+            raw = coef * a * area * phi * resp
             demands.append(min(raw, max(0.0, o.energy_max(cap) - o.energy)))
         scale = self._demand_scale(demands, flux)
         if scale <= 0.0:
@@ -381,20 +406,29 @@ class Simulation:
         self.stim_obs["band_light_e"][int(self.world.vent_band[key])] += taken
 
     def _absorb_chemical(self, orgs, phis, areas, key) -> None:
-        """化学: 局所stockから吸収 (フィールド→個体の移動なので流入計上なし)。"""
+        """化学: 局所stockから吸収 (フィールド→個体の移動なので流入計上なし)。
+
+        V1.8: primary_energy_density_response=True のときのみ、局所stock
+        濃度への密度応答 H(C, chemical_uptake_half) を需要へ掛ける
+        (docs/V1.8_一次Energy生態非対称仕様.md §7)。OFF時はV1.7式のまま。
+        chemicalはnightでも利用可能 (daylight_factorの影響を受けない)。
+        地質source/lossの式は変更しない。
+        """
         cfg = self.cfg
         stock = float(self.world.chemical[key])
         if stock <= 0.0:
             return
         rate = cfg.chem_uptake
         cap = cfg.energy_capacity
+        density_on = cfg.primary_energy_density_response
+        resp = physiology.density_response(stock, cfg.chemical_uptake_half) if density_on else 1.0
         demands = []
         for o, phi, area in zip(orgs, phis, areas):
             a = o.genome[CHEM_ABS]
             if a <= ABILITY_EPS:
                 demands.append(0.0)
                 continue
-            raw = rate * a * area * phi
+            raw = rate * a * area * phi * resp
             demands.append(min(raw, max(0.0, o.energy_max(cap) - o.energy)))
         scale = self._demand_scale(demands, stock)
         if scale <= 0.0:

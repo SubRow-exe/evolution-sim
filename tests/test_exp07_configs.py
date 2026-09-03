@@ -28,7 +28,11 @@ POST_V13_KEYS = {"light_uptake_coef", "light_stimulus_half",
                  # V1.6 temporal biased random walk
                  "memory_tau", "response_gain",
                  # V1.7 基礎維持代謝 (docs/V1.7_基礎維持代謝仕様案.md)
-                 "bmr_core"}
+                 "bmr_core",
+                 # V1.8 一次Energy生態非対称 (docs/V1.8_一次Energy生態非対称仕様.md)
+                 "primary_energy_density_response", "light_uptake_half",
+                 "chemical_uptake_half", "light_cycle_enabled",
+                 "light_cycle_period_ticks", "light_day_fraction"}
 
 
 def load(flux: float, condition: str) -> dict:

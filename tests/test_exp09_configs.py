@@ -25,7 +25,11 @@ VARIABLE = {"light_pattern", "light_max", "chem_vent_flux",
 # 「後から増えた項目か」だけを確認し、V1.5当時の項目は厳密一致で守る。
 POST_V15_KEYS = {"memory_tau", "response_gain",
                  # V1.7 基礎維持代謝 (docs/V1.7_基礎維持代謝仕様案.md)
-                 "bmr_core"}
+                 "bmr_core",
+                 # V1.8 一次Energy生態非対称 (docs/V1.8_一次Energy生態非対称仕様.md)
+                 "primary_energy_density_response", "light_uptake_half",
+                 "chemical_uptake_half", "light_cycle_enabled",
+                 "light_cycle_period_ticks", "light_day_fraction"}
 
 
 def load(condition: str) -> dict:

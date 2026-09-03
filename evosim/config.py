@@ -49,6 +49,26 @@ class Config:
     chem_loss_frac: float = 0.10     # stockの環境損失割合 [1/tick]
     chem_uptake: float = 0.5         # 吸収レート係数
 
+    # --- V1.8: 一次Energy生態非対称 (docs/V1.8_一次Energy生態非対称仕様.md) ---
+    # light/chemicalの直接一次Energy吸収だけへ、共通の局所密度応答
+    #   H(x,K) = x / (x+K)   x=0->0 / x=K->0.5 / 単調増加 / 高濃度で1へ飽和
+    # を導入する。nutrient/corpse/predationへは適用しない。
+    # V1.5の知覚用 *_stimulus_half とは別物 (混同しないこと)。
+    # 選定前defaultはfeature OFF (V1.7完全回帰)。恒久値はExp13で選定する。
+    primary_energy_density_response: bool = False
+    light_uptake_half: float = 0.6       # light密度応答のhalf-saturation
+    chemical_uptake_half: float = 6.15   # 暫定default。Exp13でsweepし選定する
+
+    # V1.8: light day/night半周期 (half-sine)。World.lightは昼のbase/peak
+    # 空間fieldとして保持し、そのtickの利用可能光は
+    #   F_light(tick) = World.light * daylight_factor(tick)
+    # で決める。daylight_factorはenergy中立へ正規化しない
+    # (docs/V1.8_Exp13_レビュー判断.md M-1: 昼夜で一周期総光量が静的世界より
+    # 減ることは意図した性質)。選定前defaultはfeature OFF (常時1.0)。
+    light_cycle_enabled: bool = False
+    light_cycle_period_ticks: int = 200  # 1周期のtick数
+    light_day_fraction: float = 0.5      # 周期中で昼が占める割合 (0,1)
+
     # --- 無機栄養 (物質・厳密保存・再生なし) ---
     nutrient_initial: float = 2.0    # 初期ストック [M/セル]
     nutrient_diffusion: float = 0.05  # 拡散係数
@@ -66,8 +86,12 @@ class Config:
     # bmr_core: 縮小不能な個体共通基礎維持代謝 [E/tick/個体]
     # bmr_core=0 -> V1.6 完全一致 / M=1 -> BMR=bmr_coef 常に維持
     # 0 <= bmr_core <= bmr_coef を検証する (違反は ValueError)
-    # 恒久値は Exp11 で選定。選定前の通常 default は 0.0。
-    bmr_core: float = 0.0            # 縮小不能な基礎維持代謝 [E/tick] (V1.7)
+    # V1.7確定値 (docs/V1.7_総括.md): Exp11で候補を広く探索し、Exp12で
+    # 50k tickの長期平衡を確認した結果、bmr_core=0.15 をV1.7恒久defaultとした。
+    # 0.15は自然界の相転移点ではなく、事前登録した0.23 sentinelを最初に
+    # 超えた試験格子点 (B1 8/8 seedで内部平衡)。V1.6完全回帰にはbmr_core=0を
+    # 明示的に渡すこと。
+    bmr_core: float = 0.15           # 縮小不能な基礎維持代謝 [E/tick] (V1.7)
     bmr_coef: float = 0.3            # 基礎代謝スケーリング係数 (M=1 時の BMR)
     organ_upkeep: float = 0.05       # 栄養獲得5能力の維持費係数
     sense_upkeep: float = 0.02      # 感覚維持 = k * sensory_range^2
@@ -188,6 +212,16 @@ class Config:
             raise ValueError(
                 f"bmr_core={self.bmr_core} が範囲外です。"
                 f"0 <= bmr_core <= bmr_coef={self.bmr_coef} でなければなりません。"
+            )
+        if self.light_uptake_half <= 0.0:
+            raise ValueError(f"light_uptake_half={self.light_uptake_half} は正でなければなりません。")
+        if self.chemical_uptake_half <= 0.0:
+            raise ValueError(f"chemical_uptake_half={self.chemical_uptake_half} は正でなければなりません。")
+        if self.light_cycle_period_ticks <= 0:
+            raise ValueError(f"light_cycle_period_ticks={self.light_cycle_period_ticks} は正でなければなりません。")
+        if not (0.0 < self.light_day_fraction < 1.0):
+            raise ValueError(
+                f"light_day_fraction={self.light_day_fraction} は0と1の間でなければなりません。"
             )
 
     def to_json(self, path: str | Path) -> None:

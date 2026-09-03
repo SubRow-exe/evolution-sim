@@ -184,26 +184,34 @@ class TestConfigRoundTrip:
 # ---------------------------------------------------------------------------
 
 class TestV16Regression:
-    """bmr_core=0 (default) でのシミュレーション結果が V1.6 と変わらない。
+    """bmr_core=0 を明示すれば V1.6 と完全一致する式であることを確認する。
 
-    V1.6 の結果を直接保持する golden がないため、ここでは同一 Config・同一 seed で
-    bmr_core=0 と bmr_core=0.0 (デフォルト) を比較して完全一致を確認する。
+    V1.7 close (docs/V1.7_総括.md) により default は 0.15 (恒久値) へ変更された。
+    V1.6 完全回帰には bmr_core=0 を明示的に渡す必要がある。
     """
 
-    def test_default_config_is_bmr_core_zero(self):
-        """デフォルト Config の bmr_core は 0.0。"""
+    def test_default_config_is_v17_final_bmr_core(self):
+        """デフォルト Config の bmr_core は V1.7確定値 0.15。"""
         cfg = Config()
-        assert cfg.bmr_core == 0.0
+        assert cfg.bmr_core == 0.15
 
-    def test_explicit_zero_matches_default(self):
-        """explicit bmr_core=0.0 と default の結果が完全一致する (決定性確認)。"""
+    def test_explicit_zero_differs_from_default(self):
+        """explicit bmr_core=0.0 は default (0.15) と結果が異なる (式が効いている)。"""
         ticks = 30
         seed = 7
         sim_default = _run(seed=seed, ticks=ticks)
         sim_explicit = _run(seed=seed, ticks=ticks, bmr_core=0.0)
         fp_d = _fingerprint(sim_default)
         fp_e = _fingerprint(sim_explicit)
-        assert fp_d == fp_e
+        assert fp_d != fp_e
+
+    def test_explicit_zero_matches_explicit_zero(self):
+        """explicit bmr_core=0.0 同士は完全一致する (決定性確認)。"""
+        ticks = 30
+        seed = 7
+        sim_a = _run(seed=seed, ticks=ticks, bmr_core=0.0)
+        sim_b = _run(seed=seed, ticks=ticks, bmr_core=0.0)
+        assert _fingerprint(sim_a) == _fingerprint(sim_b)
 
     def test_nonzero_core_differs_from_zero(self):
         """bmr_core>0 は bmr_core=0 と結果が異なる (式が実際に効いている)。"""

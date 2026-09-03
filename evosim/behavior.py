@@ -119,8 +119,12 @@ def decide_and_move(org, sim) -> float:
     use_light = g[LIGHT_ABS] > ABILITY_EPS
     use_chem = g[CHEM_ABS] > ABILITY_EPS
 
-    r_l = (response(world.sample(world.light, org.x, org.y),
-                    cfg.light_stimulus_half) if use_light else 0.0)
+    # V1.8: light sensingはそのtickの実効光 (base field × daylight_factor)
+    # を読む。night (factor=0) では厳密に R_light=0。chemicalはcurrent
+    # stockをそのまま読むためnightでも利用可能 (仕様§8)。
+    effective_light = (world.sample(world.light, org.x, org.y)
+                       * sim.daylight_factor_now)
+    r_l = response(effective_light, cfg.light_stimulus_half) if use_light else 0.0
     r_c = (response(world.sample(world.chemical, org.x, org.y),
                     cfg.chemical_stimulus_half) if use_chem else 0.0)
 

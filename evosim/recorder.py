@@ -11,6 +11,12 @@ meta.json        : seed / git SHA / 数値実行環境 (再現条件の特定に
 再現には seed と Config だけでは足りない。結果は数値実行環境に依存するため
 (math.sin/cos/atan2/hypot と pow がOS側の数学ライブラリ実装に依存)、
 meta.json に環境を記録して比較実験群の同一性を後から確認できるようにする。
+
+V1.8 day/night (docs/V1.8_一次Energy生態非対称仕様.md §9):
+`World.light` は昼のbase/peak空間fieldのスナップショットであり、実効光量
+ではない。stats.csv の `light_supply_cum` は毎stepの実効(daylight_factor
+適用後)供給量の積算であり、V1.7以前の「static供給×tick」とは意味が
+異なる。V1.7以前の同名列と無条件に直接比較しないこと。
 """
 from __future__ import annotations
 
@@ -59,7 +65,12 @@ class Recorder:
             "total_energy", "total_biomass", "nutrient_total", "chemical_total",
             "mean_age", "max_age", "max_generation", "n_lineages",
             # 資源利用率 (累積値。区間レートは差分で求める)
-            "light_supply_cum", "flow_light_cum", "flow_chemical_cum",
+            # V1.8: light_supply_cum は実効(daylight_factor適用後)供給量の
+            # 積算 (static供給×tickでは計算しない。docs/V1.8_一次Energy
+            # 生態非対称仕様.md §9)。light_cycle_factor/light_supply_rateは
+            # この統計取得tick時点の瞬間値。
+            "light_supply_cum", "light_cycle_factor", "light_supply_rate",
+            "flow_light_cum", "flow_chemical_cum",
             "flow_nutrient_cum", "flow_corpse_matter_cum", "flow_corpse_energy_cum",
             "flow_predation_energy_cum", "flow_predation_matter_cum",
             # 系統支配度
@@ -225,7 +236,9 @@ class Recorder:
             round(sim.world.total_nutrients(), 6),
             round(sim.world.total_chemical(), 6),
             round(mean_age, 2), max_age, max_gen, n_lin,
-            round(sim.light_supply_per_tick * sim.tick, 4),
+            round(sim.light_supply_cum, 4),
+            round(sim.daylight_factor_now, 8),
+            round(sim.light_supply_per_tick * sim.daylight_factor_now, 6),
             *[round(sim.flows[k], 4) for k in
               ("light", "chemical", "nutrient", "corpse_matter",
                "corpse_energy", "predation_energy", "predation_matter")],

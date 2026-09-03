@@ -1,0 +1,674 @@
+name: Exp13
+
+# Exp13 V1.8一次Energy生態非対称 校正実験 (docs/Exp13_実験計画確定.md)。
+#
+# 正本:
+#   docs/V1.8_Exp13_レビュー判断.md
+#   docs/V1.8_一次Energy生態非対称仕様.md
+#   docs/Exp13_実験計画確定.md
+#   docs/V1.8_実装チェックリスト.md
+#
+# 依存 (§17):
+#   phase0 -> run_a1 + run_a2 (並列) -> select_a -> run_phaseb_selection (A2b+A3)
+#          -> phaseA_collect -> run_b (B1-B4) -> final_collect
+#
+# 手動実行のみ。formal simulation予定143 run。
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_events:
+        description: "events.csv も保存する (容量大)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: exp13
+  cancel-in-progress: false
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Phase 0: 軽量HARD GATE (§3)
+  # -------------------------------------------------------------------------
+  phase0:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      pass: ${{ steps.gate.outputs.pass }}
+      matrix_a1: ${{ steps.gen.outputs.matrix_a1 }}
+      matrix_a2: ${{ steps.gen.outputs.matrix_a2 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+
+      # P0-1/P0-2/P0-4: Config schema・V1.8 unit/integration・feature flags 2x2
+      - name: P0-1/P0-2/P0-4 Config・V1.8 unit/integration/feature flags
+        run: |
+          uv run python tools/check_exp13.py
+          uv run pytest tests/test_v18_primary_energy.py tests/test_exp13_configs.py \
+            tests/test_exp13_aggregation.py tests/test_check_exp13.py -q
+
+      # P0-3: Energy/Matter conservation/ledger
+      - name: P0-3 保存則・台帳
+        run: uv run pytest tests/test_conservation.py tests/test_determinism.py -q
+
+      # P0-5: 代表mixed条件を2,000 tick×2実行し、現在環境内で決定性確認
+      - name: P0-5 現在環境内 2,000 tick×2 決定性 (primary/reference)
+        id: current2k
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          cfg = {
+              "bmr_core": 0.15, "memory_tau": 10.0, "response_gain": 64.0,
+              "primary_energy_density_response": True, "light_cycle_enabled": True,
+              "light_cycle_period_ticks": 200, "light_day_fraction": 0.5,
+              "light_uptake_half": 0.6,
+              "light_max": 2.1, "chemical_uptake_half": 1.5, "chem_uptake": 2.0,
+              "chem_vent_flux": 16.0,
+          }
+          import sys
+          sys.path.insert(0, ".")
+          from evosim.config import Config
+          Config(**cfg).to_json("/tmp/p05_mixed.json")
+          PY
+          for rep in primary reference; do
+            t0=$(date +%s)
+            uv run python main.py --headless --ticks 2000 --seed 1 \
+              --config /tmp/p05_mixed.json --out "runs/exp13_p05_${rep}"
+            t1=$(date +%s)
+            echo "${rep}: 2,000 tick 実測 $((t1-t0)) 秒" | tee -a phase0_timing.txt
+          done
+          SRC_P=$(find runs/exp13_p05_primary -mindepth 1 -maxdepth 1 -type d | head -1)
+          SRC_R=$(find runs/exp13_p05_reference -mindepth 1 -maxdepth 1 -type d | head -1)
+          uv run python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from pathlib import Path
+          from tools.check_exp13 import compare_first_2k
+          errs = compare_first_2k(Path('$SRC_P'), Path('$SRC_R'), max_tick=2000)
+          for e in errs:
+              print('ERROR:', e)
+          raise SystemExit(1 if errs else 0)
+          "
+
+      # P0-6: collector E2E smoke (Config整合性チェッカーが実runツリーを読めるか)
+      - name: P0-6 collector E2E smoke
+        run: |
+          set -euo pipefail
+          SRC=$(find runs/exp13_p05_primary -mindepth 1 -maxdepth 1 -type d | head -1)
+          mkdir -p runs/exp13_p0_smoke/A1_light2.10/seed1
+          cp -r "$SRC"/* runs/exp13_p0_smoke/A1_light2.10/seed1/
+          uv run python tools/check_exp13.py runs/exp13_p0_smoke
+
+      # P0-7: runtime preflight (代表run実測からjob timeoutに収まるか概算)
+      - name: P0-7 runtime preflight
+        id: runtime
+        run: |
+          set -euo pipefail
+          cat phase0_timing.txt
+          SECONDS_2K=$(grep "primary:" phase0_timing.txt | grep -oE '[0-9]+ 秒' | grep -oE '[0-9]+')
+          # Phase Bの最長条件はB3 (30,000 tick)。2k実測から単純比例 + 安全係数2倍
+          WORST_CASE_SEC=$((SECONDS_2K * 15 * 2))
+          WORST_CASE_MIN=$((WORST_CASE_SEC / 60))
+          echo "2k実測: ${SECONDS_2K}秒 / B3(30k)保守的worst-case見積: ${WORST_CASE_MIN}分"
+          echo "worst_case_min=${WORST_CASE_MIN}" >> "$GITHUB_OUTPUT"
+          echo "seconds_2k=${SECONDS_2K}" >> "$GITHUB_OUTPUT"
+          if [ "$WORST_CASE_MIN" -gt 300 ]; then
+            echo "::error::RUNTIME_PREFLIGHT_FAIL — worst-case ${WORST_CASE_MIN}分 > 300分"
+            exit 1
+          fi
+          echo "RUNTIME_PREFLIGHT PASS (${WORST_CASE_MIN}分 <= 300分)"
+
+      - name: matrix生成 (A1 40 job + A2 48 job)
+        id: gen
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          A1_LIGHT_MAX = [0.8, 1.2, 1.5, 1.8, 2.1, 2.4, 3.0, 4.0]
+          A2_K = [0.5, 1.5, 3.0, 6.15]
+          A2_UPTAKE = [0.5, 1.0, 2.0, 4.0]
+
+          a1 = []
+          for lm in A1_LIGHT_MAX:
+              for seed in range(1, 6):
+                  a1.append({"tag": f"A1-light{lm:.2f}", "seed": seed,
+                            "config": f"configs/exp13/exp13_A1_light{lm:.2f}.json",
+                            "ticks": 10000})
+          assert len(a1) == 40, len(a1)
+
+          a2 = []
+          for k in A2_K:
+              for u in A2_UPTAKE:
+                  for seed in range(1, 4):
+                      a2.append({"tag": f"A2-K{k:.3f}-uptake{u:.3f}", "seed": seed,
+                                "config": f"configs/exp13/exp13_A2_K{k:.3f}_uptake{u:.3f}.json",
+                                "ticks": 5000})
+          assert len(a2) == 48, len(a2)
+
+          print("matrix_a1=" + json.dumps({"include": a1}))
+          print("matrix_a2=" + json.dumps({"include": a2}))
+          PY
+
+      - name: Phase 0 GO判定
+        id: gate
+        if: always()
+        run: |
+          if [ "${{ steps.current2k.outcome }}" = "success" ] && \
+             [ "${{ steps.runtime.outcome }}" = "success" ] && \
+             [ "${{ steps.gen.outcome }}" = "success" ]; then
+            echo "pass=true" >> "$GITHUB_OUTPUT"
+            echo "Phase 0: PASS"
+          else
+            echo "pass=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Phase 0 FAIL"
+          fi
+          {
+            echo "## Exp13 Phase 0 結果"
+            echo "- 現在環境内2k×2決定性: ${{ steps.current2k.outcome }}"
+            echo "- runtime preflight: ${{ steps.runtime.outcome }} (worst-case ${{ steps.runtime.outputs.worst_case_min }}分)"
+            echo "- matrix生成: ${{ steps.gen.outcome }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # -------------------------------------------------------------------------
+  # Phase A1: light map (Phase 0 PASS後、A2と並列)
+  # -------------------------------------------------------------------------
+  run_a1:
+    needs: phase0
+    if: needs.phase0.outputs.pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.phase0.outputs.matrix_a1) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: シミュレーション実行
+        run: |
+          uv run python main.py --headless --ticks ${{ matrix.ticks }} \
+            --seed ${{ matrix.seed }} --config "${{ matrix.config }}" \
+            --out "runs/exp13_${{ matrix.tag }}"
+      - name: 保存対象を整理
+        run: |
+          set -euo pipefail
+          SRC=$(find "runs/exp13_${{ matrix.tag }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$DST"/ 2>/dev/null || true
+          if [ -d "$SRC/snapshots" ]; then cp -r "$SRC"/snapshots "$DST"/; fi
+          if [ -d "$SRC/environment" ]; then cp -r "$SRC"/environment "$DST"/; fi
+          du -sh "$DST"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp13-${{ matrix.tag }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  # Phase A2: chemical grid (Phase 0 PASS後、A1と並列)
+  # -------------------------------------------------------------------------
+  run_a2:
+    needs: phase0
+    if: needs.phase0.outputs.pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.phase0.outputs.matrix_a2) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: シミュレーション実行
+        run: |
+          uv run python main.py --headless --ticks ${{ matrix.ticks }} \
+            --seed ${{ matrix.seed }} --config "${{ matrix.config }}" \
+            --out "runs/exp13_${{ matrix.tag }}"
+      - name: 保存対象を整理
+        run: |
+          set -euo pipefail
+          SRC=$(find "runs/exp13_${{ matrix.tag }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$DST"/ 2>/dev/null || true
+          if [ -d "$SRC/snapshots" ]; then cp -r "$SRC"/snapshots "$DST"/; fi
+          if [ -d "$SRC/environment" ]; then cp -r "$SRC"/environment "$DST"/; fi
+          du -sh "$DST"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp13-${{ matrix.tag }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  # select_a: A1+A2集計・選定・Phase B用Config生成
+  # -------------------------------------------------------------------------
+  select_a:
+    needs: [phase0, run_a1, run_a2]
+    if: always() && needs.phase0.outputs.pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      a_pass: ${{ steps.summarize.outputs.a_pass }}
+      matrix_phaseb_selection: ${{ steps.genmatrix.outputs.matrix }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+
+      - name: A1+A2 artifactをダウンロード
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A1-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A2-*"
+          echo "=== ダウンロード数 ==="
+          find dl -mindepth 1 -maxdepth 1 -type d | wc -l
+
+      - name: 条件ごとに再構成
+        run: |
+          set -euo pipefail
+          mkdir -p runs/exp13_a
+          for d in dl/exp13-*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/^exp13-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp13_a/$key"
+            cp -r "$d"/* "runs/exp13_a/$key"/ 2>/dev/null || true
+          done
+
+      - name: Config整合性チェック
+        id: integrity
+        continue-on-error: true
+        run: uv run python tools/check_exp13.py runs/exp13_a
+
+      - name: Phase A選定 (A1 light map + A2 chemical grid)
+        id: summarize
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p exp13_out
+          uv run python tools/summarize_exp13.py runs/exp13_a --out-dir exp13_out 2>&1 | tee phaseA_selection.txt
+          if [ -f exp13_out/exp13_selected.json ]; then
+            echo "a_pass=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "a_pass=false" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo "## Exp13 Phase A選定結果"
+            echo '```'
+            cat phaseA_selection.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Phase B用Config生成 + matrix生成
+        id: genmatrix
+        if: steps.summarize.outputs.a_pass == 'true'
+        run: |
+          set -euo pipefail
+          uv run python tools/make_exp13_configs.py --phase-b exp13_out/exp13_selected.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          items = []
+          for p in ("vent", "random"):
+              for seed in range(1, 6):
+                  items.append({"tag": f"A2b-{p}", "seed": seed,
+                               "config": f"configs/exp13_phaseb/exp13_A2b_{p}.json",
+                               "ticks": 10000})
+          for pop in (1, 10, 50):
+              for seed in range(1, 4):
+                  items.append({"tag": f"A3-pop{pop}", "seed": seed,
+                               "config": f"configs/exp13_phaseb/exp13_A3_pop{pop}.json",
+                               "ticks": 2000})
+          assert len(items) == 19, len(items)
+          print("matrix=" + json.dumps({"include": items}))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp13-selected
+          path: exp13_out/
+          retention-days: 90
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp13-phaseb-configs
+          path: configs/exp13_phaseb/
+          retention-days: 90
+        if: steps.summarize.outputs.a_pass == 'true'
+
+      - name: A選定失敗の判定
+        if: steps.integrity.outcome == 'failure' || steps.summarize.outputs.a_pass != 'true'
+        run: |
+          echo "::error::Phase A選定失敗 (LIGHT_CALIBRATION_FAIL / CHEMICAL_CALIBRATION_FAIL / 集計エラー)"
+          exit 1
+
+  # -------------------------------------------------------------------------
+  # A2b + A3: selected値の検証・密度競争 (select_a成功後)
+  # -------------------------------------------------------------------------
+  run_phaseb_selection:
+    needs: select_a
+    if: needs.select_a.outputs.a_pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.select_a.outputs.matrix_phaseb_selection) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp13-phaseb-configs
+          path: configs/exp13_phaseb/
+      - name: シミュレーション実行
+        run: |
+          uv run python main.py --headless --ticks ${{ matrix.ticks }} \
+            --seed ${{ matrix.seed }} --config "${{ matrix.config }}" \
+            --out "runs/exp13_${{ matrix.tag }}"
+      - name: 保存対象を整理
+        run: |
+          set -euo pipefail
+          SRC=$(find "runs/exp13_${{ matrix.tag }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$DST"/ 2>/dev/null || true
+          if [ -d "$SRC/snapshots" ]; then cp -r "$SRC"/snapshots "$DST"/; fi
+          if [ -d "$SRC/environment" ]; then cp -r "$SRC"/environment "$DST"/; fi
+          du -sh "$DST"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp13-${{ matrix.tag }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  # phaseA_collect: Phase A全体 (A1+A2+A2b+A3=107) の完全性・A_PASS再検証
+  # -------------------------------------------------------------------------
+  phaseA_collect:
+    needs: [select_a, run_phaseb_selection]
+    if: always() && needs.select_a.outputs.a_pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      b_gate: ${{ steps.gate.outputs.b_gate }}
+      matrix_b: ${{ steps.genmatrix.outputs.matrix }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+
+      - name: Phase A全artifact (A1+A2+A2b+A3=107) をダウンロード
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A1-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A2-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A2b-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A3-*"
+          gh run download "${{ github.run_id }}" --dir dl --name "exp13-selected"
+          echo "=== ダウンロード数 ==="
+          find dl -mindepth 1 -maxdepth 1 -type d | wc -l
+
+      - name: 条件ごとに再構成
+        run: |
+          set -euo pipefail
+          mkdir -p runs/exp13_a
+          for d in dl/exp13-*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/^exp13-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp13_a/$key"
+            cp -r "$d"/* "runs/exp13_a/$key"/ 2>/dev/null || true
+          done
+
+      - name: Config整合性・107 run完全性チェック
+        id: integrity
+        continue-on-error: true
+        run: uv run python tools/check_exp13.py runs/exp13_a
+
+      - name: A_PASS 再検証 (A1+A2+A2b+A3全体)
+        id: recheck
+        continue-on-error: true
+        run: |
+          uv run python tools/summarize_exp13.py runs/exp13_a --full-phase-a \
+            --selected dl/exp13_selected.json
+
+      - name: Phase B matrix生成
+        id: genmatrix
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          items = []
+          for seed in range(1, 9):
+              items.append({"tag": "B1", "seed": seed,
+                           "config": "configs/exp13_phaseb/exp13_B1.json", "ticks": 20000})
+          for seed in range(1, 9):
+              items.append({"tag": "B2", "seed": seed,
+                           "config": "configs/exp13_phaseb/exp13_B2.json", "ticks": 20000})
+          for seed in range(1, 13):
+              items.append({"tag": "B3", "seed": seed,
+                           "config": "configs/exp13_phaseb/exp13_B3.json", "ticks": 30000})
+          for seed in range(1, 4):
+              items.append({"tag": "B4a", "seed": seed,
+                           "config": "configs/exp13_phaseb/exp13_B4a.json", "ticks": 5000})
+          for seed in range(1, 6):
+              items.append({"tag": "B4b", "seed": seed,
+                           "config": "configs/exp13_phaseb/exp13_B4b.json", "ticks": 20000})
+          assert len(items) == 36, len(items)
+          print("matrix=" + json.dumps({"include": items}))
+          PY
+
+      - name: Phase B GO判定
+        id: gate
+        if: always()
+        run: |
+          if [ "${{ steps.integrity.outcome }}" = "success" ] && \
+             [ "${{ steps.recheck.outcome }}" = "success" ]; then
+            echo "b_gate=true" >> "$GITHUB_OUTPUT"
+            echo "Phase B: PASS"
+          else
+            echo "b_gate=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Phase A collect失敗、Phase Bを起動しない"
+          fi
+
+  # -------------------------------------------------------------------------
+  # Phase B: B1/B2/B3/B4a/B4b (36 job)
+  # -------------------------------------------------------------------------
+  run_b:
+    needs: phaseA_collect
+    if: needs.phaseA_collect.outputs.b_gate == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJSON(needs.phaseA_collect.outputs.matrix_b) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp13-phaseb-configs
+          path: configs/exp13_phaseb/
+      - name: シミュレーション実行
+        run: |
+          uv run python main.py --headless --ticks ${{ matrix.ticks }} \
+            --seed ${{ matrix.seed }} --config "${{ matrix.config }}" \
+            --out "runs/exp13_${{ matrix.tag }}"
+      - name: 保存対象を整理
+        run: |
+          set -euo pipefail
+          SRC=$(find "runs/exp13_${{ matrix.tag }}" -mindepth 1 -maxdepth 1 -type d | head -1)
+          DST="artifact/$(basename "$SRC")"
+          mkdir -p "$DST"
+          cp "$SRC"/config.json "$SRC"/meta.json "$SRC"/stats.csv "$SRC"/lineages.csv "$DST"/ 2>/dev/null || true
+          if [ -d "$SRC/snapshots" ]; then cp -r "$SRC"/snapshots "$DST"/; fi
+          if [ "${{ inputs.upload_events }}" = "true" ] && [ -f "$SRC/events.csv" ]; then
+            cp "$SRC"/events.csv "$DST"/
+          fi
+          du -sh "$DST"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp13-${{ matrix.tag }}-seed${{ matrix.seed }}
+          path: artifact/
+          retention-days: 90
+
+  # -------------------------------------------------------------------------
+  # final_collect: 全143 run完全性・最終判定・保存
+  # -------------------------------------------------------------------------
+  final_collect:
+    needs: [phaseA_collect, run_b]
+    if: always() && needs.phaseA_collect.outputs.b_gate == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RCLONE_CONF: ${{ secrets.RCLONE_CONFIG_BASE64 }}
+      REMOTE_BASE: ${{ vars.RCLONE_REMOTE_BASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+
+      - name: 全143 run + selected artifactをダウンロード
+        run: |
+          set -euo pipefail
+          mkdir -p dl
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A1-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A2-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A2b-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-A3-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-B1-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-B2-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-B3-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-B4a-*"
+          gh run download "${{ github.run_id }}" --dir dl --pattern "exp13-B4b-*"
+          gh run download "${{ github.run_id }}" --dir dl --name "exp13-selected"
+          echo "=== ダウンロード数 ==="
+          find dl -mindepth 1 -maxdepth 1 -type d | wc -l
+
+      - name: 条件ごとに再構成
+        run: |
+          set -euo pipefail
+          mkdir -p runs/exp13
+          for d in dl/exp13-*; do
+            name=$(basename "$d")
+            key=$(echo "$name" | sed -E 's/^exp13-(.+)-seed[0-9]+$/\1/')
+            mkdir -p "runs/exp13/$key"
+            cp -r "$d"/* "runs/exp13/$key"/ 2>/dev/null || true
+          done
+          du -sh runs/exp13
+
+      - name: Config整合性・143 run完全性・formal SHA/numeric environment整合性
+        id: integrity
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          uv run python tools/check_exp13.py runs/exp13 2>&1 | tee integrity.txt
+
+      - name: 最終判定 (Phase A再検証 + Phase B HARD GATE + Exp13 verdict)
+        id: summary
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p exp13_out
+          uv run python tools/summarize_exp13.py runs/exp13 --selected dl/exp13_selected.json \
+            --out-dir exp13_out 2>&1 | tee summary.txt
+          {
+            echo "## Exp13 最終結果"
+            echo ""
+            echo "### 整合性チェック"
+            echo '```'
+            cat integrity.txt
+            echo '```'
+            echo ""
+            echo "### 事前登録判定"
+            echo '```'
+            cat summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 生データを圧縮
+        id: pack
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y%m%d_%H%M%S)"
+          EXP="exp13_actions_${STAMP}"
+          echo "exp=$EXP" >> "$GITHUB_OUTPUT"
+          mkdir -p archives "experiments/$EXP"
+          for c in runs/exp13/*; do
+            name="exp13_$(basename "$c")"
+            tar -czf "archives/${name}.tar.gz" -C "$(dirname "$c")" "$(basename "$c")"
+          done
+          cp summary.txt integrity.txt dl/exp13_selected.json "experiments/$EXP/" 2>/dev/null || true
+          if [ -d exp13_out ]; then cp -r exp13_out "experiments/$EXP/"; fi
+          du -sh archives/
+
+      - name: Google Drive へ生データを転送
+        id: upload
+        if: env.RCLONE_CONF != '' && env.REMOTE_BASE != ''
+        env:
+          EXP: ${{ steps.pack.outputs.exp }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          mkdir -p ~/.config/rclone
+          echo "$RCLONE_CONF" | base64 -d > ~/.config/rclone/rclone.conf
+          rclone copy archives/ "${REMOTE_BASE}/${EXP}/" --progress --stats-one-line
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          rm -f ~/.config/rclone/rclone.conf
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp13-summary
+          path: experiments/
+          retention-days: 90
+
+      - name: 生データアーカイブを保存 (転送未設定時の保険)
+        if: ${{ steps.upload.outputs.uploaded != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp13-rawdata
+          path: archives/
+          retention-days: 90
+
+      - name: 整合性違反の判定
+        if: steps.integrity.outcome == 'failure' || steps.summary.outcome == 'failure'
+        run: |
+          echo "::error::整合性違反 (Config不一致/run欠落/formal SHA・numeric environment混在/集計エラー)"
+          exit 1
+
+      - name: 実行完了
+        if: steps.integrity.outcome != 'failure' && steps.summary.outcome != 'failure'
+        run: |
+          {
+            echo "### 整合性 OK — 実行は成功"
+            echo "科学的判定は summary.txt の EXP13_VERDICT を参照。"
+          } >> "$GITHUB_STEP_SUMMARY"
