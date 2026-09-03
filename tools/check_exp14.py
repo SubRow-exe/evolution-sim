@@ -197,6 +197,8 @@ def main() -> int:
     ap.add_argument("run_dirs", nargs="*", type=Path,
                     help="実行済みrun結果の親ディレクトリ (省略時は静的Config確認のみ)")
     ap.add_argument("--profile", choices=["FULL", "COMPACT"], default="FULL")
+    ap.add_argument("--skip-completeness", action="store_true",
+                    help="116 run完全性チェックを省略する (preflightの1件smokeなど部分collectで使う)")
     args = ap.parse_args()
 
     errors: list[str] = []
@@ -216,7 +218,8 @@ def main() -> int:
                 Config.from_json(cfg_path)
             except Exception as e:
                 errors.append(f"{run_dir}: Config.from_json失敗: {e}")
-        errors.extend(check_run_key_completeness(run_dirs))
+        if not args.skip_completeness:
+            errors.extend(check_run_key_completeness(run_dirs))
         errors.extend(check_run_environment_integrity(run_dirs))
 
     if errors:
