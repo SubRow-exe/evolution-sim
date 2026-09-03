@@ -7,93 +7,58 @@
 # 1. 現在の最優先参照順
 
 1. `docs/次の実験計画.md` — **現在の司令塔**
-2. `docs/V1.8_Exp13_レビュー判断.md` — **Opus 5レビューの人間採否 / 最優先設計判断**
-3. `docs/V1.8_一次Energy生態非対称仕様.md` — **V1.8実装正本**
-4. `docs/Exp13_実験計画確定.md` — **Exp13条件・選定規則・run構成正本**
-5. `docs/V1.8_実装チェックリスト.md` — **実装品質HARD GATE**
-6. `docs/V1.7_総括.md` — **V1.7完了判断 / Exp11・Exp12総括**
-7. `docs/Exp12_結果考察.md`
-8. `docs/メインストリーム開発ストーリー.md`
-9. `docs/数値再現性・Actions実行環境方針.md`
-10. `docs/LUCA参照モデル方針.md`
-11. `docs/実験結果保存方針.md`
-12. `docs/バージョニング方針.md`
+2. `docs/Exp14_レビュー判断.md` — **Opus 5レビューの人間採否 / 最優先科学判断**
+3. `docs/Exp14_実験計画確定.md` — **Exp14科学条件正本**
+4. `docs/Exp14_実装チェックリスト.md` — **Exp14実装品質HARD GATE**
+5. `docs/Exp13_結果考察_中間.md` — Exp13実測/原因考察
+6. `docs/V1.8_一次Energy生態非対称仕様.md` — V1.8物理仕様
+7. `docs/V1.8_Exp13_レビュー判断.md` — V1.8設計判断履歴
+8. `docs/Exp13_実験計画確定.md` — Exp13事前登録履歴。**再dispatchしない**
+9. `docs/V1.7_総括.md`
+10. `docs/メインストリーム開発ストーリー.md`
+11. `docs/数値再現性・Actions実行環境方針.md`
+12. `docs/実験結果保存方針.md`
+13. `docs/バージョニング方針.md`
 
-Opus 5レビュー原文はbranch `claude/review-v1-7-exp11-kflr82` commit `6dba4b4` にある。**レビュー原文の提案を独自採用せず、上記1〜5を優先する。**
+Exp14レビュー原文:
 
-旧Exp11/12事前登録・レビューは履歴として保存する。
+```text
+branch: claude/review-v1-7-exp11-kflr82
+commit: 2383ee5afee50ac5493d3a5332eb7d2433ae0c0e
+file: docs/Exp14_Opus5レビュー.md
+```
+
+**レビュー原文を独自採用しない。必ず`docs/Exp14_レビュー判断.md`を優先する。**
 
 ---
 
 # 2. 現在地
 
 ```text
-V1.4 / Exp08                      完了
-V1.5 / Exp09                      完了
-V1.6 / Exp10                      完了
-V1.7 bmr_core実装                 完了
-Exp11                            完了 / 255 run
-Exp12                            完了 / 71/71 formal run
-V1.7科学判断                      bmr_core=.15で終了
-V1.7 default反映 / v1.7-final     ← 最初に実施
-V1.8実装                          ← その次
-Exp13                            ← 実装・監査後
+V1.4 / Exp08                  完了
+V1.5 / Exp09                  完了
+V1.6 / Exp10                  完了
+V1.7 / Exp11 / Exp12          完了 / bmr_core=.15
+V1.8実装                      完了 / main merge済み
+Exp13 Phase 0                 PASS
+Exp13 A1                      8 light水準すべて5/5 EXTINCT
+Exp13 A2                      chemical grid完了 / 暫定候補あり
+Exp13                         LIGHT_CALIBRATION_FAIL / REVIEWで科学STOP
+Exp14                         ← 現在ここ
 ```
 
-Exp13結果考察はV1.8チャットで行う。
+Exp13 formal:
+
+```text
+run id 33722634280
+SHA a8f33648c0287b5eb47304f0c079b90715a19130
+```
+
+Exp13のActions赤表示は科学STOPをtechnical failureとして表現した運用問題を含む。Exp14前に分離する。
 
 ---
 
-# 3. V1.7確定事項
-
-```text
-BMR = bmr_core + (bmr_coef - bmr_core) * M^0.75
-bmr_core = 0.15
-```
-
-Exp12 B1では0.15が8/8 seedでinterior equilibrium、B1 `DELAY_CONTINUES=0`。
-
-Exp12の事前登録機械判定は:
-
-```text
-SCIENTIFIC_VERDICT = INVALID_OR_METHOD_REVIEW
-```
-
-（B2 method-control gate未達）。
-
-人間判断は:
-
-```text
-METHOD CONTROL ASSUMPTION INVALID
-```
-
-すなわちB2自身が50kでも変化しており、既知stationary controlという前提が不成立。B2科学runを失敗扱いしない。
-
-0.15は自然界の相転移点ではなく、事前sentinelを最初に超えた試験格子点。将来環境変更後にbody_size平衡を再確認しうる。
-
----
-
-# 4. V1.7 closeをV1.8より先に行う
-
-V1.8コード変更前に:
-
-```text
-Config.bmr_core default 0.0 -> 0.15
-```
-
-必須:
-1. full pytest
-2. conservation
-3. determinism
-4. CI Green
-5. V1.7 CI基準ref更新
-6. `v1.7-final`保存
-
-V1.7 closeとV1.8科学変更を同一の曖昧なcommitへ混ぜない。
-
----
-
-# 5. V1.8絶対方針
+# 3. V1.8絶対方針
 
 ```text
 light
@@ -111,297 +76,325 @@ chemical
 - vent source replenishes
 ```
 
-共通density response:
+一次Energy直接吸収のみ:
 
 ```text
 H(x,K)=x/(x+K)
 ```
 
-をlight/chemical**直接一次Energy吸収だけ**へ導入。
+light day/nightはhalf-sine / day_fraction=.5。
+**energy中立正規化しない。**
 
-### day/night重要判断
-
-half-sine / day_fraction=.5を使用し、**energy中立正規化しない。**
-
-同じ`light_max`なら静的V1.7より一周期平均lightが低くなることを意図した性質とする。昼を3.14倍して旧総量へ合わせない。
-
-`light_max`はExp13で広くsweepする。
-
-### 絶対にしない
-
+絶対にしない:
 - light直接fitness penalty
 - chemical固定Energy bonus
-- light user movement強制OFF
 - plant/cyanobacteria/chloroplast class
 - oxygen field
 - finite vent lifetime
 - V1.8でINITIAL_GENOME.light_absorption=0
-- bmr_core再調整
+- bmr_coreを小型化だけのため再調整
+- light userだけを強制静止
 
 phototrophy起源はV1.9事項。
 
 ---
 
-# 6. V1.8 Config
+# 4. Exp13で得た新しい問題
 
-選定前feature OFF:
+light_maxを0.8〜4.0まで広く振っても全滅した。
+
+典型:
 
 ```text
-primary_energy_density_response = False
-light_cycle_enabled = False
+昼: population 100 -> 400〜500級
+夜: starvationで一桁〜十数個体
+翌昼: 再増殖
+翌夜: 再崩壊
 ```
 
-新項目:
+現時点の主要mechanism:
 
 ```text
-light_uptake_half = 0.6
-chemical_uptake_half = 6.15  # 暫定default、Exp13でsweep
-light_cycle_period_ticks = 200
-light_day_fraction = 0.5
+continuous darkness duration
+vs
+available Energy reserve / night drain
 ```
 
-feature OFF/OFFでV1.7-final回帰をHARD GATE。
+繁殖が昼の余剰Energyを親子へ分配するため、light量を増やすだけでは夜前reserveが十分増えない可能性が高い。
 
-Exp13 chemical grid:
+Exp14では分析専用量:
 
 ```text
-chemical_uptake_half = 0.5,1.5,3.0,6.15
-chem_uptake          = 0.5,1.0,2.0,4.0
+R_ref = night length / reference night survival ticks
+```
+
+を事前登録する。
+
+R_refをsimulationのfitness/behaviorへ使ってはいけない。
+
+---
+
+# 5. Exp14 science matrix
+
+詳細は`docs/Exp14_実験計画確定.md`。
+
+## Phase A — mechanism diagnostic
+
+```text
+A0 baseline
+A1 no night / same mean supply
+A2 period80
+A3 light8
+A4 repro threshold .8
+A5 initial_energy40
+A6 energy_capacity200 + initial_energy100
+```
+
+```text
+7 arms ×3 seed ×2k =21
+```
+
+A3はR仮説の反証arm。
+A5は初期tick1一斉繁殖の交絡分離。
+A6は初期E/Emaxを揃えたstorage capacity診断。
+
+## Phase B — period × energy_capacity map
+
+```text
+period = 80,120,160,200,240
+energy_capacity = 75,100,125,150,200
+```
+
+```text
+25 cells ×3 seed =75
+```
+
+capacity変更時:
+
+```text
+initial_energy = 0.5 * energy_capacity
+```
+
+固定表現型の成立/崩壊境界とR_refを地図化する。
+恒久parameterは自動選定しない。
+
+## Phase C — evolutionary rescue
+
+baseline world constantsを維持し、既存形質だけ解放。
+
+```text
+C1 body_size only
+C2 reproduction_investment only
+C3 movement_power only
+C4 above 3 traits
+```
+
+```text
+4 arms ×5 seed =20
+```
+
+Formal total:
+
+```text
+21 +75 +20 =116 simulation runs
 ```
 
 ---
 
-# 7. Recorder / ledger注意
+# 6. runtime — 約10時間枠
 
-昼夜導入後、`static light supply × tick`で`light_supply_cum`を計算してはいけない。
+formal前にrepresentative runtime benchmarkを取る。
 
-必ずactual effective light supplyをstepごとに積算する。
-
-追加/明確化:
+科学結果ではなくruntime予測だけで事前登録profileを選択する。
 
 ```text
-light_cycle_factor
-light_supply_rate
-light_supply_cum = effective supply integral
-flow_light_cum = actual organism uptake
+FULL:
+ Phase A 2k
+ Phase B 5k
+ Phase C 20k
+ nominal 817k ticks
+
+COMPACT:
+ Phase A 2k
+ Phase B 3k
+ Phase C 10k
+ nominal 467k ticks
 ```
 
-`World.light` static snapshotはbase/peak habitat field。
+選択:
 
-観測機能がRNG/stateへ影響しないこと。
+```text
+FULL安全率込み全体予測 <=9h -> FULL
+else -> COMPACT
+```
+
+COMPACT安全率込み>10hならformalを開始せず人間へ報告する。
+Claude判断でseed/grid/armを削らない。
 
 ---
 
-# 8. Exp13構成
+# 7. preflight / formalを絶対に分離
 
-Phase 0後、A1/A2を並列開始可。
+Exp13ではPhase 0 PASS後にformalが自動開始した。再発禁止。
 
-```text
-Phase 0
- -> A1 light map
- -> A2 chemical grid
- -> select_A
- -> A2b selected validation + A3 density
- -> Phase A collect
- -> B1/B2/B3/B4
- -> final collect
-```
-
-### A1 light
+Exp14:
 
 ```text
-light_max = 0.8,1.2,1.5,1.8,2.1,2.4,3.0,4.0
-5 seed ×10k = 40 run
+preflight dispatch
+ -> tests
+ -> config/matrix
+ -> determinism
+ -> representative benchmark
+ -> runtime reportを作って終了
 ```
 
-全水準を実行。working lightは`ROBUST_LIGHT_VIABLE`を満たす最小値。
+**preflightからformalへ自動遷移しない。**
 
-初期個体を各光量へ合わせて救済しない。
+ユーザーへExp14全体wall-clock予測を報告した後、formalを別dispatchする。
 
-### A2 chemical
-
-```text
-4 K × 4 uptake ×3 seed ×5k = 48 run
-```
-
-selected:
-1. admissible中の最小`chem_uptake`
-2. 同じuptakeでrealized median Hが0.5に最も近いK
-
-### A2b / A3
-
-```text
-selected vent/random validation = 10 run
-density competition             = 9 run
-```
-
-Phase A = 107 run。
-
-### Phase B
-
-```text
-B1 light-only                8 ×20k
-B2 chemical-only             8 ×20k
-B3 mixed 2-gene evolution   12 ×30k
-B4a body_size=.246 fixed     3 ×5k
-B4b body_size-only evolution 5 ×20k
-```
-
-Phase B = 36 run。
-
-Formal planned total = **143 simulation runs**。
-
-BURST_RATIOは選定HARD GATEにしない。
-
----
-
-# 9. Phase 0 / 数値再現性
-
-Exp12の10k×2を毎回繰り返さない。
-
-V1.8科学コード変更のため:
-- unit/integration
-- conservation
-- Config/manifest
-- feature flag 4組合せ
-- representative 2k×2 current-run determinism
-- collector E2E
-- CI Green
-
-をHARD GATE。
-
-過去Hosted Runner artifactとのbit mismatch単独をFAILにしない。
-
-formalではConfig/SHA/numeric environment/artifact/expected key完全性を確認する。
-
----
-
-# 10. Actions・CI・push運用
-
-CIは最終独立確認。途中実装のデバッグ目的でpushを乱発しない。
-
-- 論理的変更単位までローカルで完成
-- Python/Config/collector/workflow変更はpush前に関連test＋原則full pytest
-- 新科学ロジック/Config/workflowはformal前CI Green
-- local failureの原因調査だけをCIへ投げない
-- Markdownのみはまとめる
-- 科学コードと文書をCI回避目的で不自然に混ぜない
-
-Exp11/12再発防止:
-- fixed_genesはcanonical `GENE_NAMES`から検証
-- checker/testが同じ手書き誤定数を共有しない
-- Recorder実形式のE2E fixture
-- artifact全件取得
-- technical failとscientific REVIEW分離
-
----
-
-# 11. run status
-
-```text
-COMPLETE
-EXTINCT
-POP_HALT
-INCOMPLETE_RESOURCE
-INTEGRITY_FAIL
-```
-
-- EXTINCT/POP_HALT = 科学結果
-- timeout/runner interruption/artifact欠落 = INCOMPLETE_RESOURCE
-- Config/SHA/numeric environment等のformal integrity違反 = INTEGRITY_FAIL
-- 技術的不完了のみ同一SHA/Configで再実行可
-
----
-
-# 12. Exp13実行時間 — 今回の最重要運用
-
-時間専用instrumentationを追加しない。
-
-**Phase A formal開始前に、Sonnet 5はExp13全体終了までのwall-clock概算をユーザーへ報告する。**
-
-必須:
-- formal 143 run予定
-- phase別run/tick
-- short benchmark
-- single-run最大概算
+formal開始前の報告:
+- FULL/COMPACT
+- formal 116 run
+- phase別tick
+- benchmark
 - max-parallel
 - wave数
-- Phase 0/selection/collectを含む**Exp13全体合計予測時間**
-- safety factor / uncertainty
+- preflight/collect
+- safety factor
+- Exp14全体wall-clock
 
-1 run時間だけ報告して開始してはいけない。
-
-実験後:
-- workflow total
-- phase別wall-clock
-- run median/P90/max
-- prediction vs actual
-
-を保存。
+1 run時間だけでは不可。
 
 ---
 
-# 13. V1.8実装品質HARD GATE
+# 8. Exp14実装品質HARD GATE
 
-`docs/V1.8_実装チェックリスト.md`全項目を確認。
+`docs/Exp14_実装チェックリスト.md`を全項目確認する。
 
 formal前に:
 
 | Requirement | Implementation | Independent Test | Result |
 |---|---|---|---|
 
-を作り、空欄が1つでもあれば未完成。
+を作る。
+
+空欄が1つでもあればGOしない。
 
 特に:
-- V1.7 close
-- day/night non-normalized
-- step内factor一貫性
-- light/chemical density uptake
-- chemical K sweep
-- fair sharing
-- actual light ledger
-- V1.7 regression
-- 4 feature flags
-- Config/fixed genes
-- artifact completeness
-- runtime total estimate
+- A0-A6
+- Phase B 25×3
+- Phase C mutable/fixed genes
+- formal total=116
+- FULL/COMPACT
+- A6 initial_energy連動
+- Phase B initial_energy導出
+- R_ref
+- late N/A semantics
+- scientific STOP分離
+- recorder非干渉
+- artifact完全性
+- preflight/formal分離
 
-を漏らさない。
-
----
-
-# 14. 小型化に関する原則
-
-小型化抑制だけを目的にした人工penaltyを追加しない。
-
-V1.7 `bmr_core`は全生命共通基礎維持代謝。
-
-V1.8 day/nightはbody_size選択圧を自然に変える可能性があるのでB4で診断する。
+を独立testする。
 
 ---
 
-# 15. LUCA-inspired / プロジェクト絶対原則
+# 9. Recorder / ledger
+
+既存V1.8:
+
+```text
+light_cycle_factor
+light_supply_rate
+light_supply_cum = actual effective supply integral
+flow_light_cum = actual uptake
+```
+
+Exp14追加集計:
+- sunset/dawn population
+- daylight births
+- night starvation deaths
+- daytime peak / night minimum
+- night_min / preceding_day_peak
+- Energy/capacity mean/median/p10/p90
+- Phase C trait quantiles
+- lineage persistence
+
+観測コードはRNG/state/update orderを変更してはいけない。
+
+---
+
+# 10. run status
+
+```text
+COMPLETE
+EXTINCT
+POP_HALT
+SCIENTIFIC_STOP / REVIEW
+INCOMPLETE_RESOURCE
+INTEGRITY_FAIL
+```
+
+- EXTINCT/POP_HALT/SCIENTIFIC_STOP = 科学結果
+- timeout/runner interruption = INCOMPLETE_RESOURCE
+- crash/test/artifact/Config/SHA integrity違反 = technical fail
+
+科学STOPでもartifact/reportを必ず保存する。
+
+late window未到達は`N/A`。PASS扱いしない。
+
+---
+
+# 11. CI / push運用
+
+CIは最終独立確認。
+
+- 途中デバッグpushを乱発しない
+- Python/Config/collector/workflow変更はpush前に関連test＋原則full pytest
+- formal前CI Green
+- checker/testが同じ手書き誤定数を共有しない
+- fixed_genesはcanonical `GENE_NAMES`
+- recorder実形式のE2E fixture
+- expected artifact key完全性
+
+---
+
+# 12. プロジェクト絶対原則
 
 - 適応度を直接計算しない
 - 完成した種classを作らない
-- 寿命値を直接作らない
+- 寿命を直接設定しない
 - costは物理/生理則から
-- Matter保存/Energy台帳
-- RNG/決定性
+- Matter保存 / Energy台帳
+- RNG / 決定性
 - 想定外戦略を許容
 - 特定生態型へ直接bonusしない
-- 原則1軸ずつ。ただし複数機構を同一versionへ入れる場合はfeature flagでfactorize
 - 遺伝子の存在と進化経路の成立を区別
 - Energy戦略は単独成立性を先に確認
 - 行動へ未来予測/知能を暗黙導入しない
-- 結果後に同一実験候補/閾値を追加しない
-- 科学STOP/REVIEWと技術FAILを区別
+- 結果後に同一experimentへ条件を思いつき追加しない
+- 科学STOPと技術FAILを分離
 
-現実からは構造・因果・scaling・比率を優先して借り、未校正SI絶対値を直接移植しない。
+小型化だけを防ぐ人工penaltyを追加しない。
 
 ---
 
-# 16. V1.9以降
+# 13. Chemical
+
+Exp14ではExp13 A2を再sweepしない。
+
+暫定候補:
+
+```text
+chemical_uptake_half =1.5
+chem_uptake =.5
+```
+
+light問題整理後に長期/探索/density validationへ戻る。
+
+---
+
+# 14. V1.9以降
 
 ```text
 V1.8 source物理分化
@@ -413,19 +406,23 @@ V1.8 source物理分化
  -> oxygenic photosynthesis/planetary feedback
 ```
 
-V1.9前に`light_absorption=0`から有意値へ到達する待ち時間を軽量検算する。
-
-engulfment以降は「個体が個体を内包する」データモデル変更規模と認識し、独立設計する。
+メインストリーム方針はExp14では変更しない。
 
 ---
 
-# 17. 実験結果保存
+# 15. 実験結果保存
 
 `docs/実験結果保存方針.md`に従う。
 
-文字サマリーだけでformalを閉じない。
+文字summaryだけでformalを閉じない。
 
-- GitHub: 結果考察 / NOTES / aggregate plots / representative figures / runtime prediction-vs-actual
-- raw data / 全画像: external storage / Actions artifact
+GitHub:
+- 結果考察
+- aggregate plot/table
+- runtime prediction vs actual
+- scientific/technical verdict
+
+raw:
+- Actions artifact / external storage
 
 技術stack: Python 3.12 / uv / numpy / pygame-ce / matplotlib / pytest
