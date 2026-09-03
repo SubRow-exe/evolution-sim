@@ -95,7 +95,7 @@ jobs:
           SRC=$(find runs/exp14_preflight_primary -mindepth 1 -maxdepth 1 -type d | head -1)
           mkdir -p runs/exp14_p0_smoke/exp14_A_A0_seed1
           cp -r "$SRC"/* runs/exp14_p0_smoke/exp14_A_A0_seed1/
-          uv run python tools/check_exp14.py runs/exp14_p0_smoke
+          uv run python tools/check_exp14.py runs/exp14_p0_smoke --skip-completeness
 
       - name: Phase B代表runtime benchmark (5,000 tick)
         id: bench_b

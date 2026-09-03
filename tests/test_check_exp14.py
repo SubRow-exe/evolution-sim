@@ -70,3 +70,20 @@ def test_compare_first_nk_identical_match(tmp_path):
     b = _stub_run(tmp_path, "b")
     errors = check_exp14.compare_first_nk(a, b, max_tick=2000)
     assert errors == []
+
+
+def test_main_skip_completeness_allows_partial_collect(tmp_path, capsys, monkeypatch):
+    """preflightのE2E smokeは1件だけ配置するため、既定の完全性チェックでは
+    115件欠落エラーになる。--skip-completeness で回避できることを確認する
+    (Actions run 33759888896で発生した実障害の回帰テスト)。
+    """
+    _stub_run(tmp_path, "exp14_A_A0_seed1")
+    monkeypatch.setattr(sys, "argv", ["check_exp14.py", str(tmp_path)])
+    rc = check_exp14.main()
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "欠落" in err
+
+    monkeypatch.setattr(sys, "argv", ["check_exp14.py", str(tmp_path), "--skip-completeness"])
+    rc2 = check_exp14.main()
+    assert rc2 == 0
