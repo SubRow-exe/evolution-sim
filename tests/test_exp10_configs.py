@@ -30,7 +30,13 @@ VARIABLE = {"light_pattern", "light_max", "chem_vent_flux",
 # `configs/exp10/` は実行済みExp10 (V1.6) の記録なので再生成しない。
 # V1.7以降に追加されたConfig項目は当時のファイルに存在しないため、
 # 「後から増えた項目か」だけを確認し、V1.6当時の項目は厳密一致で守る。
-POST_V16_KEYS = {"bmr_core"}  # V1.7 基礎維持代謝 (docs/V1.7_基礎維持代謝仕様案.md)
+POST_V16_KEYS = {
+    "bmr_core",  # V1.7 基礎維持代謝 (docs/V1.7_基礎維持代謝仕様案.md)
+    # V1.8 一次Energy生態非対称 (docs/V1.8_一次Energy生態非対称仕様.md)
+    "primary_energy_density_response", "light_uptake_half",
+    "chemical_uptake_half", "light_cycle_enabled",
+    "light_cycle_period_ticks", "light_day_fraction",
+}
 
 
 def load(condition: str, rule: str) -> dict:

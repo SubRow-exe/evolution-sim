@@ -14,6 +14,23 @@ from .organism import Organism
 SURFACE_EPS = 1e-9
 
 
+def density_response(x: float, k: float) -> float:
+    """V1.8 局所密度依存の一次Energy吸収応答 (docs/V1.8_一次Energy生態非対称仕様.md §5)。
+
+        H(x, K) = x / (x + K)
+
+    x=0 -> 0 / x=K -> 0.5 / xの増加で単調増加 / 高濃度で1へ飽和。
+
+    light/chemicalの直接一次Energy吸収だけへ適用する
+    (nutrient/corpse/predationへは適用しない)。V1.5の知覚用
+    `*_stimulus_half` の response とは呼び出し元・定数が異なるため、
+    式の形は同じでも混同しないこと。
+    """
+    if x <= 0.0:
+        return 0.0
+    return x / (x + k)
+
+
 def effective_surface(matter: float) -> float:
     """環境と直接交換できる有効表面積 A_eff = M^(2/3) (V1.4 §3)。
 
