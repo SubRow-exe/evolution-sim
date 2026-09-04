@@ -251,6 +251,11 @@ class Config:
     reference_dry_mass_kg: float = 2.8e-16   # 0.28 pgDW
     matter_unit_to_kgdw: float = 2.8e-16
     reference_cell_volume_m3: float = 1.0e-18  # 1 µm^3 (body_size=1.0)
+    # voxel (= gridセル) の実効深さ [m]。cell_size (面方向の辺長) と合わせて
+    # voxel_volume_m3 = cell_size^2 * effective_depth_m を作る。physical_mode
+    # のExp15 configではworld_width/world_height/cell_sizeをmeter単位で設定する
+    # 前提 (docs/V1.9_検証実装仕様_物理スケール版.md §4: 20mm x 20mm / cell 0.5mm)。
+    effective_depth_m: float = 0.5e-3
 
     # --- H2 物理定数 (docs §5-7) ---
     h2_source_concentration_molm3: float = 1.0     # 1 mM Dirichlet boundary
@@ -361,6 +366,8 @@ class Config:
                 raise ValueError("matter_unit_to_kgdw は正でなければなりません。")
             if self.reference_cell_volume_m3 <= 0.0:
                 raise ValueError("reference_cell_volume_m3 は正でなければなりません。")
+            if self.effective_depth_m <= 0.0:
+                raise ValueError("effective_depth_m は正でなければなりません。")
             if self.h2_source_concentration_molm3 < 0.0:
                 raise ValueError("h2_source_concentration_molm3 は0以上でなければなりません。")
             if self.h2_diffusion_m2s <= 0.0:

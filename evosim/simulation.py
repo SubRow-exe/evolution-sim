@@ -73,6 +73,8 @@ class Simulation:
         self.storage_overflow_cum = 0.0
         self.h2_influx_cum = 0.0   # substrate単位 (energy-equivalentではない)
         self.h2_loss_cum = 0.0     # substrate単位
+        # physical_mode: 生物側が実取得したH2量 [mol] の累積 (観測専用)
+        self.h2_biological_uptake_mol_cum = 0.0
         # V1.9 structural innovation観測 (観測専用・進化ロジックへ不使用)
         self.phototrophy_innovation_events = 0
         self.phototrophy_loss_events = 0
@@ -241,10 +243,14 @@ class Simulation:
 
     def system_energy(self) -> float:
         """system全体のEnergy。H2はenergy-equivalentで含める
-        (docs/V1.9_iLUCA再設計仕様.md §12)。"""
+        (docs/V1.9_iLUCA再設計仕様.md §12)。physical_modeでは
+        h2_usable_energy_j_per_mol [J/mol] をenergy-equivalent換算に使う
+        (docs/V1.9_検証実装仕様_物理スケール版.md §7)。"""
+        cfg = self.cfg
+        yield_ = cfg.h2_usable_energy_j_per_mol if cfg.physical_mode else cfg.h2_energy_yield
         return (sum(o.energy for o in self.organisms)
                 + sum(c.energy for c in self.corpses)
-                + self.world.total_h2() * self.cfg.h2_energy_yield)
+                + self.world.total_h2() * yield_)
 
     def system_matter(self) -> float:
         return (sum(o.matter for o in self.organisms)
@@ -266,8 +272,9 @@ class Simulation:
 
         # 1. 環境更新 (H2湧出はエネルギー流入。energy-equivalentで計上)
         h2_influx, h2_loss = self.world.update()
-        self.energy_in_cum += h2_influx * cfg.h2_energy_yield
-        self.energy_out_cum += h2_loss * cfg.h2_energy_yield
+        h2_yield = cfg.h2_usable_energy_j_per_mol if cfg.physical_mode else cfg.h2_energy_yield
+        self.energy_in_cum += h2_influx * h2_yield
+        self.energy_out_cum += h2_loss * h2_yield
         self.h2_influx_cum += h2_influx
         self.h2_loss_cum += h2_loss
 
@@ -422,7 +429,7 @@ class Simulation:
                 continue
             uf = physiology.uptake_factor(o.starve_state, cfg)
             raw = coef * a * area * phi * uf * resp
-            demands.append(min(raw, max(0.0, o.energy_max(cap_base) - o.energy)))
+            demands.append(min(raw, max(0.0, physiology.energy_max(o, cfg) - o.energy)))
         scale = self._demand_scale(demands, flux)
         if scale <= 0.0:
             return
@@ -450,6 +457,9 @@ class Simulation:
         stockは必ず実取得substrate量 (J) だけ減らす。局所密度応答
         H(C, h2_uptake_half) とstarvation uptake_factorを需要へ掛ける。
         """
+        if self.cfg.physical_mode:
+            self._absorb_h2_physical(orgs, phis, key)
+            return
         cfg = self.cfg
         stock = float(self.world.h2[key])
         if stock <= 0.0:
@@ -495,6 +505,53 @@ class Simulation:
         self.flows["h2"] += gained_energy
         self.stim_obs["band_chem_e"][int(self.world.vent_band[key])] += gained_energy
 
+    def _absorb_h2_physical(self, orgs, phis, key) -> None:
+        """physical_mode: Michaelis-Menten H2 uptake (docs §6-7)。
+
+        world.h2[key] はconcentration [mol/m^3]。fair-shareは実amount
+        [mol] で行い、取得molだけconcentrationを下げる。usable Energyは
+        `mol_taken * h2_usable_energy_j_per_mol` (conversion loss項は
+        physical baselineでは使わない。docs §7)。
+        """
+        cfg = self.cfg
+        conc = float(self.world.h2[key])
+        if conc <= 0.0:
+            return
+        voxel_volume = self.world.voxel_volume_m3
+        available_mol = conc * voxel_volume
+        demands_mol = []
+        for o, phi in zip(orgs, phis):
+            a = o.genome[CHEM_ABS]
+            if a <= ABILITY_EPS:
+                demands_mol.append(0.0)
+                continue
+            uf = physiology.uptake_factor(o.starve_state, cfg)
+            rate_mol_s = physiology.physical_h2_uptake_rate_mol_s(
+                conc, o.matter, a, uf, cfg) * phi
+            raw_mol = rate_mol_s * cfg.dt_seconds
+            headroom_j = max(0.0, physiology.energy_max(o, cfg) - o.energy)
+            headroom_mol = headroom_j / max(cfg.h2_usable_energy_j_per_mol, 1e-12)
+            demands_mol.append(min(raw_mol, headroom_mol))
+        scale = self._demand_scale(demands_mol, available_mol)
+        if scale <= 0.0:
+            return
+        taken_mol_list = []
+        energy_gains = []
+        for o, d in zip(orgs, demands_mol):
+            if d <= 0.0:
+                continue
+            mol_taken = d * scale
+            usable = mol_taken * cfg.h2_usable_energy_j_per_mol
+            o.energy += usable
+            taken_mol_list.append(mol_taken)
+            energy_gains.append(usable)
+        taken_mol = math.fsum(taken_mol_list)
+        self.world.h2[key] = max(0.0, conc - taken_mol / voxel_volume)
+        self.h2_biological_uptake_mol_cum += taken_mol
+        gained_energy = math.fsum(energy_gains)
+        self.flows["h2"] += gained_energy
+        self.stim_obs["band_chem_e"][int(self.world.vent_band[key])] += gained_energy
+
     def _absorb_nutrient(self, orgs, phis, areas, key) -> None:
         """無機栄養 (物質): 吸収には同化エネルギーコストがかかる。
 
@@ -506,8 +563,14 @@ class Simulation:
         stock = float(self.world.nutrients[key])
         if stock <= 0.0:
             return
-        rate = cfg.nutrient_uptake
-        acost = cfg.matter_absorb_cost
+        if cfg.physical_mode:
+            # docs §9: 0.20 matter unit/h * nutrient_absorption を
+            # nutrient-rich条件でのcapとし、実growth energy costで律速する。
+            rate = cfg.nutrient_uptake_rate_matter_per_h / 3600.0 * cfg.dt_seconds
+            acost = cfg.growth_energy_j_per_kgdw * cfg.matter_unit_to_kgdw
+        else:
+            rate = cfg.nutrient_uptake
+            acost = cfg.matter_absorb_cost
         demands = []
         for o, phi, area in zip(orgs, phis, areas):
             a = o.genome[NUTRIENT_ABS]
@@ -520,7 +583,11 @@ class Simulation:
                 continue
             uf = physiology.uptake_factor(o.starve_state, cfg)
             affordable = o.energy / acost
-            demands.append(min(rate * a * area * phi * uf, room, affordable))
+            if cfg.physical_mode:
+                raw = rate * a  # matter unit/step、面積項は使わない (質量ベース)
+            else:
+                raw = rate * a * area * phi * uf
+            demands.append(min(raw, room, affordable))
         scale = self._demand_scale(demands, stock)
         if scale <= 0.0:
             return
@@ -572,7 +639,7 @@ class Simulation:
         if target is None:
             return
         phi = org.phi(cfg.damage_capacity, cfg.phi_floor)
-        e_max = org.energy_max(cfg.energy_capacity_base)
+        e_max = physiology.energy_max(org, cfg)
         matter_cap = cfg.matter_cap_frac * org.target_size
 
         bite = min(cfg.corpse_eat_rate * g[CORPSE_DIG] * org.matter * phi, target.matter)
@@ -636,7 +703,7 @@ class Simulation:
             return
         target.damage += net
         target.attacked_recently = True
-        e_max = org.energy_max(cfg.energy_capacity_base)
+        e_max = physiology.energy_max(org, cfg)
         matter_cap = cfg.matter_cap_frac * org.target_size
 
         # エネルギー吸取

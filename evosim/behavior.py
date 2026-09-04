@@ -30,6 +30,7 @@ import math
 
 import numpy as np
 
+from . import physiology
 from .genome import (CHEM_ABS, CORPSE_DIG, LIGHT_ABS, MEMBRANE, MOVE_POWER,
                      NUTRIENT_ABS, PREDATION, SENSORY)
 
@@ -54,7 +55,7 @@ def decide_and_move(org, sim) -> float:
     g = org.genome
 
     phi = org.phi(cfg.damage_capacity, cfg.phi_floor)
-    e_max = org.energy_max(cfg.energy_capacity_base)
+    e_max = physiology.energy_max(org, cfg)
     matter_cap = cfg.matter_cap_frac * org.target_size
 
     # 満ち足りていれば待機

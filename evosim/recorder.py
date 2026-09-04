@@ -192,7 +192,7 @@ class Recorder:
 
         # Exp14: Energy/capacity・Phase C対象形質の分布 (読み取り専用)
         if n > 0:
-            e_frac = np.array([o.energy / o.energy_max(sim.cfg.energy_capacity_base)
+            e_frac = np.array([o.energy / physiology.energy_max(o, sim.cfg)
                                 for o in orgs])
             energy_frac_cols = [
                 round(float(e_frac.mean()), 6), round(float(np.median(e_frac)), 6),
