@@ -1,7 +1,9 @@
 @AGENTS.md
 @docs/V1.9_現状ステータス.md
+@docs/V1.9_物理スケール再校正方針.md
 @docs/V1.9_iLUCA再設計仕様.md
 @docs/V1.9_実装チェックリスト.md
+@docs/Exp15_V1.9_実験計画案.md
 @docs/次の実験計画.md
 @docs/V1.8_総括.md
 @docs/環境因子追加・校正方針.md
