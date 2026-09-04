@@ -1,0 +1,50 @@
+# Opus 5 レビュー時 実走 raw 出力
+# 2026-09-04 / main SHA e19988f / ticks=1500
+# 再現: uv run python experiments/opus5_review_precheck_20260904/run_precheck.py 1500
+
+=== Exp15 Phase A 2x2 (light_max=1.2) ===
+condition                                      seed    status  stop_tk    pop maxgen
+A0 cycle OFF / density OFF (V1.7型control)       1    REACHED        0       807      8
+A0 cycle OFF / density OFF (V1.7型control)       2    REACHED        0       831      6
+A0 cycle OFF / density OFF (V1.7型control)       3    REACHED        0       829      6
+A1 cycle OFF / density ON  (density単独)          1    REACHED        0       807      8
+A1 cycle OFF / density ON  (density単独)          2    REACHED        0       830      7
+A1 cycle OFF / density ON  (density単独)          3    REACHED        0       820      7
+A2 cycle ON  / density OFF (day/night単独)        1    EXTINCT      165         0     -1
+A2 cycle ON  / density OFF (day/night単独)        2    EXTINCT      171         0     -1
+A2 cycle ON  / density OFF (day/night単独)        3    EXTINCT      171         0     -1
+A3 cycle ON  / density ON  (V1.8 combined)      1    EXTINCT      165         0     -1
+A3 cycle ON  / density ON  (V1.8 combined)      2    EXTINCT      171         0     -1
+A3 cycle ON  / density ON  (V1.8 combined)      3    EXTINCT      171         0     -1
+
+=== 追加: energy等価な昼夜arm (light_max=3.7699) ===
+A2' cycle ON /density OFF/ light_max=3.770 (energy等価)         1   EXTINCT      380      0     -1
+A2' cycle ON /density OFF/ light_max=3.770 (energy等価)         2   EXTINCT      381      0     -1
+A2' cycle ON /density OFF/ light_max=3.770 (energy等価)         3   EXTINCT      399      0     -1
+A3' cycle ON /density ON / light_max=3.770 (energy等価)         1   EXTINCT      571      0     -1
+A3' cycle ON /density ON / light_max=3.770 (energy等価)         2   EXTINCT      560      0     -1
+A3' cycle ON /density ON / light_max=3.770 (energy等価)         3   EXTINCT      362      0     -1
+
+=== Exp15 Phase B の light_max 掃引 ===
+PhaseB combined light_max=  2.4                               1   EXTINCT      373      0     -1
+PhaseB combined light_max=  2.4                               2   EXTINCT      379      0     -1
+PhaseB combined light_max=  4.0                               1   EXTINCT      404      0     -1
+PhaseB combined light_max=  4.0                               2   EXTINCT      377      0     -1
+PhaseB combined light_max=  8.0                               1   EXTINCT      392      0     -1
+PhaseB combined light_max=  8.0                               2   EXTINCT      389      0     -1
+PhaseB combined light_max= 12.0                               1   EXTINCT      376      0     -1
+PhaseB combined light_max= 12.0                               2   EXTINCT      377      0     -1
+
+=== remedy候補 (light_max=4.0 / combined 固定) ===
+R0 baseline (Phase B light_max=4.0)            1   EXTINCT      404      0     -1
+R0 baseline (Phase B light_max=4.0)            2   EXTINCT      377      0     -1
+R1 repro_energy_frac .6->.80                   1   REACHED        0     34      6
+R1 repro_energy_frac .6->.80                   2   REACHED        0     18      6
+R2 energy_capacity 100->300                    1   REACHED        0    648      4
+R2 energy_capacity 100->300                    2   REACHED        0    657      4
+R3 period 200->80 (夜100->40)                   1   REACHED        0    958      9
+R3 period 200->80 (夜100->40)                   2   REACHED        0    981      8
+R4 day_fraction .5->.8 (夜100->40)              1   REACHED        0   2764      9
+R4 day_fraction .5->.8 (夜100->40)              2   REACHED        0   2790      9
+R5 R1+R2 (reserve上限を大きく上げる)                    1   REACHED        0    442      4
+R5 R1+R2 (reserve上限を大きく上げる)                    2   REACHED        0    419      4
