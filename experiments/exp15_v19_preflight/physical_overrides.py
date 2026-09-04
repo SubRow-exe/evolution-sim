@@ -36,6 +36,14 @@ def _diffuse_h2_physical_fixed(h2: np.ndarray, cfg, source_mask: np.ndarray):
     return c, source_in_mol, exchange_loss_mol
 
 
+def _physical_runway_fixed(org, cfg) -> float:
+    p_full = physiology.full_activity_expenditure_rate(org, cfg)
+    # SI powers are femtowatt scale; the legacy 1e-9 floor is many orders of
+    # magnitude larger than a cell's real P_full and would force runway ~0.
+    eps = 1e-30 if cfg.physical_mode else 1e-9
+    return org.energy / max(p_full, eps)
+
+
 def _physical_maintenance_and_movement_fixed(org, cfg, v: float, state: float) -> float:
     p_ref = physiology.reference_basal_power_w(cfg)
     fr = physiology._basal_component_fractions(org.genome, org.matter)
@@ -76,6 +84,7 @@ def install() -> None:
     if _INSTALLED:
         return
     world_module._diffuse_h2_physical = _diffuse_h2_physical_fixed
+    physiology.runway = _physical_runway_fixed
     physiology._physical_maintenance_and_movement = _physical_maintenance_and_movement_fixed
     behavior.decide_and_move = _decide_and_move_physical_fixed
     _INSTALLED = True
