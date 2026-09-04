@@ -1,0 +1,128 @@
+name: Exp15 V1.9 Formal
+
+on:
+  push:
+    branches: [claude/pr-50-v1.6-exp11-iuhnzm]
+    paths:
+      - '.github/workflows/exp15_v19.yml'
+      - 'experiments/exp15_v19/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Relevant tests
+        run: uv run pytest tests/test_v19_iluca.py tests/test_v13_chemical_source.py tests/test_v14_uptake.py -q
+      - name: Formal runner smoke (14.4 physical minutes)
+        run: >-
+          uv run python experiments/exp15_v19/run_exp15.py
+          --arm A --seed 15001 --days 0.01 --outdir smoke_A_15001
+
+  phase_a:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        seed: [15001, 15002, 15003, 15004, 15005]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Phase A fixed iLUCA — 10 physical days
+        run: >-
+          uv run python experiments/exp15_v19/run_exp15.py
+          --arm A --seed ${{ matrix.seed }} --days 10
+          --outdir result_A_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp15-A-${{ matrix.seed }}
+          path: result_A_${{ matrix.seed }}
+          retention-days: 30
+
+  gate:
+    needs: phase_a
+    if: always()
+    runs-on: ubuntu-24.04
+    outputs:
+      pass: ${{ steps.eval.outputs.pass }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp15-A-*
+          path: gate_input
+      - name: Evaluate preregistered Phase-A adequacy gate
+        id: eval
+        shell: bash
+        run: |
+          uv run python experiments/exp15_v19/aggregate_exp15.py --root gate_input --out phase_a_gate.json --gate-only
+          PASS=$(python -c 'import json; print(str(json.load(open("phase_a_gate.json"))["phase_a_gate"]["pass"]).lower())')
+          echo "pass=$PASS" >> "$GITHUB_OUTPUT"
+          echo "PHASE_A_GATE=$PASS"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp15-phase-a-gate
+          path: phase_a_gate.json
+          retention-days: 30
+
+  phase_b:
+    needs: gate
+    if: needs.gate.outputs.pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        seed: [15001, 15002, 15003, 15004, 15005]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Phase B three-gene evolution — 10 physical days
+        run: >-
+          uv run python experiments/exp15_v19/run_exp15.py
+          --arm B --seed ${{ matrix.seed }} --days 10
+          --outdir result_B_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp15-B-${{ matrix.seed }}
+          path: result_B_${{ matrix.seed }}
+          retention-days: 30
+
+  aggregate:
+    needs: [gate, phase_b]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp15-?-[0-9]*
+          path: all_runs
+      - name: Aggregate formal results
+        run: uv run python experiments/exp15_v19/aggregate_exp15.py --root all_runs --out exp15_aggregate.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp15-v19-aggregate
+          path: exp15_aggregate.json
+          retention-days: 30
