@@ -46,4 +46,4 @@ jobs:
         # v1.6-final / v1.7-final / v1.8-final を使用する。
         # Repository variable が古い値のまま残っていても基準を上書きしないよう、
         # このworkflowではrefを明示的に固定する。
-        run: uv run python tools/verify_vs_ref.py --ref b9e7a2e
+        run: uv run python tools/verify_vs_ref.py --ref e8d111d
