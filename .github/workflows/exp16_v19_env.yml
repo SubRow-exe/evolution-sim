@@ -1,0 +1,114 @@
+name: Exp16 V1.9 Environment Robustness
+
+on:
+  push:
+    branches: [claude/pr-50-v1.6-exp11-iuhnzm]
+    paths:
+      - '.github/workflows/exp16_v19_env.yml'
+      - 'experiments/exp16_v19_env/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Exp16 condition/invariant tests
+        run: uv run pytest experiments/exp16_v19_env/test_exp16_conditions.py -q
+      - name: Low-H2 smoke
+        run: >-
+          uv run python experiments/exp16_v19_env/run_exp16.py
+          --condition h2_1mM --seed 16001 --days 0.01
+          --outdir smoke_h2_1mM_16001
+      - name: Cluster-layout smoke
+        run: >-
+          uv run python experiments/exp16_v19_env/run_exp16.py
+          --condition layout_cluster --seed 16001 --days 0.01
+          --outdir smoke_layout_cluster_16001
+      - name: Validate smoke ledgers
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          for p in [
+              "smoke_h2_1mM_16001/summary.json",
+              "smoke_layout_cluster_16001/summary.json",
+          ]:
+              s = json.load(open(p))
+              assert s["fixed_iLUCA"] is True, s
+              assert abs(s["energy_ledger_residual_j"]) < 1e-12, s
+              assert abs(s["matter_ledger_residual_matter"]) < 1e-9, s
+          print("EXP16_PREFLIGHT_PASS")
+          PY
+
+  runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        condition:
+          - h2_1mM
+          - h2_3mM
+          - h2_6mM
+          - baseline_10mM
+          - h2_15mM
+          - exchange_fast_300s
+          - exchange_slow_3600s
+          - diffusion_low_2p5e9
+          - diffusion_high_1e8
+          - layout_cross
+          - layout_cluster
+        seed: [16001, 16002, 16003, 16004, 16005]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Fixed-iLUCA environment run — 10 physical days
+        run: >-
+          uv run python experiments/exp16_v19_env/run_exp16.py
+          --condition ${{ matrix.condition }}
+          --seed ${{ matrix.seed }}
+          --days 10
+          --outdir result_${{ matrix.condition }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp16-${{ matrix.condition }}-${{ matrix.seed }}
+          path: result_${{ matrix.condition }}_${{ matrix.seed }}
+          retention-days: 30
+
+  aggregate:
+    needs: runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp16-*
+          path: all_runs
+      - name: Aggregate Exp16 results
+        run: >-
+          uv run python experiments/exp16_v19_env/aggregate_exp16.py
+          --root all_runs
+          --out exp16_aggregate.json
+          --csv exp16_aggregate.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp16-v19-env-aggregate
+          path: |
+            exp16_aggregate.json
+            exp16_aggregate.csv
+          retention-days: 30
