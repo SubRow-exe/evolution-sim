@@ -805,15 +805,10 @@ class Simulation:
         org.matter -= m_child
 
         # 7-9. Energy offer → child capacity clamp
+        # child_emaxはphysiology.energy_max()経由 (physical_modeではJ、
+        # arbitrary modeでは旧arbitrary unit) で求めるため、先にe_child=0の
+        # 仮childを作ってからoffer量をclampする。
         e_offer = org.genome[REPRO_INVEST] * org.energy
-        child_emax = cfg.energy_capacity_base * child_genome[STORAGE_CAP] * m_child
-        e_child = min(e_offer, child_emax)
-        org.energy -= e_child
-
-        # 10. 親のcapacity clamp (身体縮小でE_maxが下がる → 超過分は散逸)
-        p_overflow = physiology.clamp_energy_to_capacity(org, cfg)
-        self.energy_out_cum += p_overflow
-        self.storage_overflow_cum += p_overflow
 
         ang = float(self.rng.uniform(-math.pi, math.pi))
         dist = org.radius(cfg.radius_coef) * 2.0
@@ -822,9 +817,18 @@ class Simulation:
 
         child = Organism(self.next_id, org.id, org.lineage_id,
                          org.generation + 1, self.tick, child_genome,
-                         cx, cy, ang, e_child, m_child,
+                         cx, cy, ang, 0.0, m_child,
                          phototrophy_on=child_capability["phototrophy"],
                          predation_on=child_capability["predation"])
+        child_emax = physiology.energy_max(child, cfg)
+        e_child = min(e_offer, child_emax)
+        child.energy = e_child
+        org.energy -= e_child
+
+        # 10. 親のcapacity clamp (身体縮小でE_maxが下がる → 超過分は散逸)
+        p_overflow = physiology.clamp_energy_to_capacity(org, cfg)
+        self.energy_out_cum += p_overflow
+        self.storage_overflow_cum += p_overflow
         # child capacity clamp (e_child <= child_emaxで既に保証されるが、
         # 浮動小数の端数対策として明示的に確認する)
         c_overflow = physiology.clamp_energy_to_capacity(child, cfg)
