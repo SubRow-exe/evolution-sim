@@ -1,4 +1,5 @@
 @AGENTS.md
+@docs/V1.9_現状ステータス.md
 @docs/次の実験計画.md
 @docs/V1.9_iLUCA再設計仕様.md
 @docs/V1.8_総括.md
