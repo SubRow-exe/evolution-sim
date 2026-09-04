@@ -61,21 +61,22 @@ def test_new_genes_present_with_expected_names():
 
 
 def test_initial_genome_v19_defaults():
+    """docs/V1.9_検証実装仕様_物理スケール版.md §2: horizon geneはseconds単位。"""
     assert INITIAL_GENOME[LIGHT_ABS] == 0.0
     assert INITIAL_GENOME[CHEM_ABS] == 1.0
     assert INITIAL_GENOME[PREDATION] == 0.0
     assert INITIAL_GENOME[STORAGE_CAP] == 1.0
-    assert INITIAL_GENOME[STARV_HORIZON] == 50.0
-    assert INITIAL_GENOME[REPRO_HORIZON] == 30.0
+    assert INITIAL_GENOME[STARV_HORIZON] == 1800.0
+    assert INITIAL_GENOME[REPRO_HORIZON] == 3600.0
 
 
 def test_new_gene_ranges():
     assert GENE_MIN[STORAGE_CAP] == pytest.approx(0.20)
     assert GENE_MAX[STORAGE_CAP] == pytest.approx(5.00)
-    assert GENE_MIN[STARV_HORIZON] == pytest.approx(1.0)
-    assert GENE_MAX[STARV_HORIZON] == pytest.approx(300.0)
-    assert GENE_MIN[REPRO_HORIZON] == pytest.approx(1.0)
-    assert GENE_MAX[REPRO_HORIZON] == pytest.approx(300.0)
+    assert GENE_MIN[STARV_HORIZON] == pytest.approx(60.0)
+    assert GENE_MAX[STARV_HORIZON] == pytest.approx(86400.0)
+    assert GENE_MIN[REPRO_HORIZON] == pytest.approx(300.0)
+    assert GENE_MAX[REPRO_HORIZON] == pytest.approx(43200.0)
 
 
 def test_fixed_genes_accepts_all_17_names():

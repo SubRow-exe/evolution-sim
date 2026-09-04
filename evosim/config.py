@@ -235,6 +235,60 @@ class Config:
     phototrophy_loss_prob: float = 1e-3         # per birth (ON->OFF)
     phototrophy_seed_absorption: float = 0.01   # innovation直後のlight_absorption下限
 
+    # --- V1.9物理スケール検証パッチ (docs/V1.9_検証実装仕様_物理スケール版.md) ---
+    # physical_mode=False (既定) では PR #67 の arbitrary-unit 機構を完全に
+    # 維持する (既存test・既存挙動に一切影響しない)。physical_mode=True の
+    # ときだけ、下記SI定数を使ってH2 uptake/basal power/growth energy/
+    # movement powerを物理単位で計算する (evosim/physiology.py, world.py,
+    # simulation.py)。
+    physical_mode: bool = False
+    # 1 step = dt_seconds [s]。物理量 (J/s, mol/s等) を1step分へ変換する
+    # 共通倍率。既定1.0はarbitrary-unit modeの「1 tick」と完全互換。
+    dt_seconds: float = 1.0
+
+    # --- 質量基準 (docs §3) ---
+    # 1 matter unit = reference dry mass (body_size=1.0のreference)。
+    reference_dry_mass_kg: float = 2.8e-16   # 0.28 pgDW
+    matter_unit_to_kgdw: float = 2.8e-16
+    reference_cell_volume_m3: float = 1.0e-18  # 1 µm^3 (body_size=1.0)
+
+    # --- H2 物理定数 (docs §5-7) ---
+    h2_source_concentration_molm3: float = 1.0     # 1 mM Dirichlet boundary
+    h2_diffusion_m2s: float = 5.0e-9
+    h2_exchange_tau_s: float = 900.0
+    h2_subcycle_alpha_max: float = 0.20
+    # q_max=50 mmol H2/(gDW h) -> 50 mol/(kgDW h) -> /3600 -> mol/(kgDW s)
+    h2_qmax_mol_per_kgdw_s: float = 50.0 / 3600.0
+    # K_m = q_max / k_first_order = (50 mmol/gDW/h) / (19.36 L/gDW/h)
+    #     = 2.5826 mmol/L = 2.5826 mol/m^3
+    h2_km_mol_m3: float = 50.0 / 19.36
+    # 4 H2 + 2 CO2 -> acetate; ATP/H2=0.075 mol/mol; ATP free energy 50 kJ/mol
+    # -> usable Energy = 0.075 * 50000 = 3750 J/mol H2
+    h2_usable_energy_j_per_mol: float = 3750.0
+
+    # --- basal maintenance 物理定数 (docs §8) ---
+    basal_atp_mmol_per_gdw_h: float = 0.116
+    atp_energy_j_per_mol: float = 50_000.0
+    # reference genomeで合計1.0になる正規化重み (docs §8)
+    basal_weight_core: float = 0.60
+    basal_weight_organ: float = 0.12
+    basal_weight_sense: float = 0.08
+    basal_weight_membrane: float = 0.10
+    basal_weight_resistance: float = 0.05
+    basal_weight_storage: float = 0.05
+    # E_max_ref = reference basal power * storage_capacity_hours (docs §8)
+    storage_capacity_hours: float = 12.0
+
+    # --- growth / Matter assimilation 物理定数 (docs §9) ---
+    # Y_ATP=10 gDW/mol ATP, ATP energy=50 kJ/mol -> 5.0e6 J/kgDW
+    growth_energy_j_per_kgdw: float = 5.0e6
+    # 0.20 matter unit/h * nutrient_absorption (nutrient-rich条件でのcap)
+    nutrient_uptake_rate_matter_per_h: float = 0.20
+
+    # --- movement 物理定数 (docs §10) ---
+    water_viscosity_pa_s: float = 1.0e-3
+    motor_efficiency: float = 0.10
+
     # --- 災害 ---
     disaster_kill_frac: float = 0.9
 
@@ -299,6 +353,41 @@ class Config:
             raise ValueError(
                 f"phototrophy_seed_absorption={self.phototrophy_seed_absorption} は正でなければなりません。"
             )
+        # --- V1.9物理スケール検証パッチ validation ---
+        if self.dt_seconds <= 0.0:
+            raise ValueError(f"dt_seconds={self.dt_seconds} は正でなければなりません。")
+        if self.physical_mode:
+            if self.matter_unit_to_kgdw <= 0.0:
+                raise ValueError("matter_unit_to_kgdw は正でなければなりません。")
+            if self.reference_cell_volume_m3 <= 0.0:
+                raise ValueError("reference_cell_volume_m3 は正でなければなりません。")
+            if self.h2_source_concentration_molm3 < 0.0:
+                raise ValueError("h2_source_concentration_molm3 は0以上でなければなりません。")
+            if self.h2_diffusion_m2s <= 0.0:
+                raise ValueError("h2_diffusion_m2s は正でなければなりません。")
+            if self.h2_exchange_tau_s <= 0.0:
+                raise ValueError("h2_exchange_tau_s は正でなければなりません。")
+            if not (0.0 < self.h2_subcycle_alpha_max <= 1.0):
+                raise ValueError("h2_subcycle_alpha_max は 0 < x <= 1 でなければなりません。")
+            if self.h2_qmax_mol_per_kgdw_s <= 0.0 or self.h2_km_mol_m3 <= 0.0:
+                raise ValueError("h2_qmax_mol_per_kgdw_s / h2_km_mol_m3 は正でなければなりません。")
+            if self.h2_usable_energy_j_per_mol <= 0.0:
+                raise ValueError("h2_usable_energy_j_per_mol は正でなければなりません。")
+            weights = (self.basal_weight_core, self.basal_weight_organ,
+                      self.basal_weight_sense, self.basal_weight_membrane,
+                      self.basal_weight_resistance, self.basal_weight_storage)
+            if any(w < 0.0 for w in weights):
+                raise ValueError("basal_weight_* は0以上でなければなりません。")
+            if abs(sum(weights) - 1.0) > 1e-6:
+                raise ValueError(f"basal_weight_* の合計が1.0でありません: {sum(weights)}")
+            if self.storage_capacity_hours <= 0.0:
+                raise ValueError("storage_capacity_hours は正でなければなりません。")
+            if self.growth_energy_j_per_kgdw <= 0.0:
+                raise ValueError("growth_energy_j_per_kgdw は正でなければなりません。")
+            if self.nutrient_uptake_rate_matter_per_h < 0.0:
+                raise ValueError("nutrient_uptake_rate_matter_per_h は0以上でなければなりません。")
+            if self.water_viscosity_pa_s <= 0.0 or self.motor_efficiency <= 0.0:
+                raise ValueError("water_viscosity_pa_s / motor_efficiency は正でなければなりません。")
         if self.n_vents > 0:
             r = self.vent_radius_cells
             lo_x, hi_x = r, self.grid_w - r - 1

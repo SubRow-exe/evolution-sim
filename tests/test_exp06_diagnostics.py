@@ -133,8 +133,24 @@ def test_override_does_not_consume_rng():
 
 
 def test_override_stays_fixed_across_generations():
-    """positive control は子孫でも 2.0 のまま (fixed_genes による固定)。"""
-    sim = Simulation(cfg_for("C"), 1)
+    """positive control は子孫でも 2.0 のまま (fixed_genes による固定)。
+
+    V1.9物理スケール検証パッチでreproduction_horizonの既定値/最小値が
+    seconds単位 (最小300s) へ変わったが、arbitrary-unit modeのEnergy収支
+    ではその最小値にも届かない (tests/test_smoke.pyのdocstring参照)。
+    この機構テストの目的はfixed_genesによる固定の確認であり、
+    reproduction_horizonもfixed_genesへ加えたうえで、Config経由のgene
+    rangeバリデーションを経ずに個体genomeへ直接テスト専用の小さい値を
+    設定する (fixed geneは子孫でもそのまま継承される)。
+    """
+    cfg = Config(**dict(ALL_DARK, snapshot_interval=1000,
+                        diagnostic_placement="vent",
+                        fixed_genes=["chemical_absorption", "reproduction_horizon"],
+                        diagnostic_gene_overrides={"chemical_absorption": 2.0}))
+    sim = Simulation(cfg, 1)
+    from evosim.genome import REPRO_HORIZON
+    for o in sim.organisms:
+        o.genome[REPRO_HORIZON] = 1.0
     for _ in range(600):
         sim.step()
     assert sim.births_cum > sim.cfg.initial_population, "世代交代が起きていない"

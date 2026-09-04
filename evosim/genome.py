@@ -58,24 +58,24 @@ INITIAL_GENOME = np.array([
     0.5,    # damage_resistance
     0.4,    # reproduction_investment
     0.05,   # mutation_rate
-    1.0,    # storage_capacity
-    50.0,   # starvation_horizon [tick]
-    30.0,   # reproduction_horizon [tick]
+    1.0,     # storage_capacity
+    1800.0,  # starvation_horizon [s] (docs/V1.9_検証実装仕様_物理スケール版.md §2)
+    3600.0,  # reproduction_horizon [s]
 ])
 
 GENE_MIN = np.array([
     0.2, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.005,
-    0.20, 1.0, 1.0,
+    0.20, 60.0, 300.0,
 ])
 GENE_MAX = np.array([
     10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 0.9, 0.5,
-    5.00, 300.0, 300.0,
+    5.00, 86400.0, 43200.0,
 ])
 
 # 加算変異項の代表スケール (0に落ちた能力が再出現できる余地)
 GENE_SCALE = np.array([
     1.0, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.4, 0.05,
-    0.5, 10.0, 10.0,
+    0.5, 600.0, 1200.0,
 ])
 
 # --- capability state (V1.9 §3) --------------------------------------------

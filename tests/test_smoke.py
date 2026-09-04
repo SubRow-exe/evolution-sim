@@ -37,8 +37,20 @@ def test_reproduction_happens_before_any_extinction():
 
     診断専用配置 (diagnostic_placement="vent") はEnergy収支そのものを
     変えない。世界規模の探索問題と繁殖機構の検証を分離するためだけに使う。
+
+    V1.9物理スケール検証パッチでreproduction_horizonの既定値/最小値が
+    seconds単位 (最小300s) へ変わったが、tests/test_smoke.pyのdocstring
+    通りarbitrary-unit mode下のfixed ancestorのEnergy収支では、その最小値
+    にすら到達しない (runwayが単調に減少し300へ届かない)。この繁殖機構
+    テストの目的はEnergy収支ではなく繁殖ループそのものの確認なので、
+    Config経由のgene rangeバリデーションを経ずに個体のgenomeへ直接、
+    テスト専用の小さいreproduction_horizonを設定する。
     """
-    sim = Simulation(Config(diagnostic_placement="vent"), 1)
+    cfg = Config(diagnostic_placement="vent")
+    sim = Simulation(cfg, 1)
+    from evosim.genome import REPRO_HORIZON
+    for o in sim.organisms:
+        o.genome[REPRO_HORIZON] = 1.0
     for _ in range(200):
         sim.step()
         if sim.births_cum > sim.cfg.initial_population:
