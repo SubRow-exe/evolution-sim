@@ -6,18 +6,19 @@
 
 # 1. 現在の最優先参照順
 
-1. `docs/次の実験計画.md` — **現在の司令塔**
-2. `docs/V1.9_iLUCA再設計仕様.md` — **V1.9世界ルール設計の正本**
-3. `docs/V1.8_総括.md` — **V1.8 close / 方針転換の正本**
-4. `docs/環境因子追加・校正方針.md` — **プロジェクト全体の恒久設計原則**
-5. `docs/バージョニング方針.md`
-6. `docs/メインストリーム開発ストーリー.md`
-7. `docs/Exp14_表現型プロベナンス訂正.md` — 履歴
-8. `docs/V1.8_現状総括_Exp14結果.md` — 履歴
-9. `docs/実験結果保存方針.md`
-10. `docs/数値再現性・Actions実行環境方針.md`
+1. `docs/V1.9_現状ステータス.md` — **現在地・確定事項・残設計課題の正本**
+2. `docs/次の実験計画.md` — **現在の司令塔**
+3. `docs/V1.9_iLUCA再設計仕様.md` — **V1.9世界ルール設計の詳細draft**
+4. `docs/V1.8_総括.md` — **V1.8 close / 方針転換の正本**
+5. `docs/環境因子追加・校正方針.md` — **プロジェクト全体の恒久設計原則**
+6. `docs/バージョニング方針.md`
+7. `docs/メインストリーム開発ストーリー.md`
+8. `docs/Exp14_表現型プロベナンス訂正.md` — 履歴
+9. `docs/V1.8_現状総括_Exp14結果.md` — 履歴
+10. `docs/実験結果保存方針.md`
+11. `docs/数値再現性・Actions実行環境方針.md`
 
-過去の実験計画より、現在の人間判断・総括・司令塔を優先する。
+過去の実験計画より、現在の人間判断・総括・ステータス正本を優先する。
 
 ---
 
@@ -25,14 +26,14 @@
 
 ```text
 V1.7                         CLOSED / bmr_core=.15
-V1.8 mechanisms               COMPLETE
-Exp13                         COMPLETE / scientific STOP
-Exp14                         COMPLETE / phenotype provenance corrected
-original Exp15                SUPERSEDED / DO NOT DISPATCH
-V1.8 scientific phase         CLOSED
-V1.9 design                   DRAFT / human decisions pending
-V1.9 implementation           NOT STARTED
-next formal experiment        NOT DESIGNED
+V1.8 mechanisms              COMPLETE
+Exp13                        COMPLETE / scientific STOP
+Exp14                        COMPLETE / phenotype provenance corrected
+original Exp15               SUPERSEDED / DO NOT DISPATCH
+V1.8 scientific phase        CLOSED
+V1.9 design                  IN PROGRESS / major human decisions pending
+V1.9 implementation          NOT STARTED
+next formal experiment       NOT DESIGNED
 ```
 
 **現在AIが勝手に行ってはいけないこと:**
@@ -42,7 +43,7 @@ next formal experiment        NOT DESIGNED
 - V1.9 world-ruleコード実装
 - parameter sweep / formal experiment設計
 
-V1.9の3 human decisionsが確定し、仕様がFINALになるまでworld-rule実装は開始しない。
+`docs/V1.9_現状ステータス.md` の主要設計課題P1〜P5が整理され、V1.9仕様がFINALになるまでworld-rule実装は開始しない。
 
 ---
 
@@ -90,17 +91,19 @@ V1.9 = **より妥当なchemical-first iLUCA baselineの再構築**。
 
 同時に、元ロードマップの「chemical-first祖先からphototrophy創発」を可能にする。
 
-予定する主要変更:
+現時点で確定している主要方向:
 
 ```text
 INITIAL light_absorption = 0
 INITIAL predation_efficiency = 0
-operational Energy + reserve の2-pool
+operational Energy + reserve の2-pool化
 内部Energy状態依存homeostasis
 reserve_capacity gene
 reproduction_threshold gene
+starvation_sensitivity gene
 chemical Energy stock -> H2-like substrate -> usable Energy
-zero-start能力のgeneric additive mutation改善
+H2 explicit / CO2 implicit
+zero-start能力が将来立ち上がれるmutation設計を再検討
 ```
 
 V1.8 day/nightは残す。初期iLUCAにはlight routeがないため直接影響せず、phototrophy出現後に意味のある周期圧になることを狙う。
@@ -128,7 +131,7 @@ starvation responseは現在の内部状態だけで決める。
 
 環境が要求する適応をworld constantだけに置かない。
 
-V1.9で新たに進化可能にする候補:
+V1.9で新たに進化可能にする方向:
 
 ```text
 starvation_sensitivity
@@ -160,22 +163,26 @@ fixed ancestor試験とevolution-ON試験を分離する。
 
 ---
 
-# 9. V1.9設計の未決3点
+# 9. V1.9設計の残課題
 
-実装前に人間判断が必要:
+実装前に人間判断が必要な主要課題は `docs/V1.9_現状ステータス.md` のP1〜P5。
 
 ```text
-Q1 CO2をexplicit fieldにするか
-   推奨: V1.9ではH2 explicit + CO2 implicit
-
-Q2 chemical-first initial populationをどこへ置くか
-   推奨: vent/source habitat近傍
-
-Q3 INITIAL corpse_digestionを0にするか
-   推奨: 0
+P1 Operational Energy + Reserve 詳細仕様
+P2 starvation response適用範囲
+P3 reproduction strategy詳細
+P4 H2 environment / initial spawn詳細
+P5 zero能力から新能力を出現させるmutation設計
 ```
 
-詳細: `docs/V1.9_iLUCA再設計仕様.md` §25。
+低優先候補:
+
+```text
+corpse / Matter recycling
+initial corpse_digestion
+```
+
+CO2については **V1.9では H2 explicit / CO2 implicit** で確定済み。
 
 ---
 
@@ -196,14 +203,15 @@ Q3 INITIAL corpse_digestionを0にするか
 # 11. V1.9実装前手順
 
 ```text
-1. 3 human decisions確定
-2. `docs/V1.9_iLUCA再設計仕様.md`をFINAL化
-3. V1.8最終refを固定
-4. 実装
-5. unit/integration/conservation/determinism tests
-6. fixed iLUCA scientific sanity
-7. evolution-ON sanity
-8. その後に初めてexperiment設計
+1. Opus 5等でV1.9現状ステータスをレビュー
+2. P1〜P5のhuman decisions確定
+3. `docs/V1.9_iLUCA再設計仕様.md`をFINAL化
+4. V1.8最終refを固定
+5. 実装
+6. unit/integration/conservation/determinism tests
+7. fixed iLUCA scientific sanity
+8. evolution-ON sanity
+9. その後に初めてexperiment設計
 ```
 
 formal experimentは人間の明示判断なしに開始しない。
