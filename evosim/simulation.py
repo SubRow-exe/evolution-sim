@@ -1,9 +1,13 @@
-"""シミュレーション本体 (仕様書 Ver.1.1 §5–8, 11, 13)。
+"""シミュレーション本体 (仕様書 Ver.1.1 §5–8, 11, 13 / V1.9 iLUCA再設計仕様)。
 
 設計原則:
 - 適応度は計算しない。生存と繁殖はエネルギー・物質・損傷の帰結。
 - 乱数は単一の numpy Generator。個体処理はリスト順で決定的。
 - 物質は世界全体で厳密保存。エネルギーは流入・散逸を台帳で追跡。
+
+V1.9: 1-pool Energy + storage_capacity gene、runway homeostasis、
+H2 explicit substrate (chemical field置き換え)、structural innovation
+(phototrophy)。詳細は docs/V1.9_iLUCA再設計仕様.md。
 """
 from __future__ import annotations
 
@@ -16,8 +20,10 @@ from .config import Config
 from .daynight import daylight_factor
 from .corpse import Corpse
 from .genome import (CHEM_ABS, CORPSE_DIG, LIGHT_ABS, MEMBRANE, NUTRIENT_ABS,
-                     PREDATION, REPRO_INVEST, diagnostic_overrides,
-                     fixed_mask_from_names, initial_genome, mutate)
+                     PREDATION, REPRO_HORIZON, REPRO_INVEST, STORAGE_CAP,
+                     diagnostic_overrides, fixed_mask_from_names,
+                     initial_capability, initial_genome, mutate,
+                     structural_mutate)
 from .organism import Organism
 from .recorder import Recorder
 from .world import VENT_BAND_NAMES, World
@@ -49,19 +55,28 @@ class Simulation:
                                 ("starvation", "damage", "predation", "disaster")}
 
         # エネルギー台帳 (保存則検証用)
-        self.energy_in_cum = 0.0        # 光吸収 + 化学source
+        self.energy_in_cum = 0.0        # 光吸収 + H2 source (energy-equivalent)
         self.energy_out_cum = 0.0       # 全散逸 (熱)
 
         # 資源利用率 (改善方針 Ver.1.2 §5): 経路別の累積獲得量。進化には不使用
         self.flows = {
             "light": 0.0,             # 光から得たエネルギー
-            "chemical": 0.0,          # 化学ストックから得たエネルギー
+            "h2": 0.0,                # H2 substrateから得たusable Energy
             "nutrient": 0.0,          # 無機栄養から得た物質
             "corpse_matter": 0.0,     # 死骸から同化した物質
             "corpse_energy": 0.0,     # 死骸から得たエネルギー
             "predation_energy": 0.0,  # 捕食で得たエネルギー
             "predation_matter": 0.0,  # 捕食で同化した物質
         }
+        # V1.9 Energy ledger追加項目 (観測専用)
+        self.h2_conversion_loss_cum = 0.0
+        self.storage_overflow_cum = 0.0
+        self.h2_influx_cum = 0.0   # substrate単位 (energy-equivalentではない)
+        self.h2_loss_cum = 0.0     # substrate単位
+        # V1.9 structural innovation観測 (観測専用・進化ロジックへ不使用)
+        self.phototrophy_innovation_events = 0
+        self.phototrophy_loss_events = 0
+
         # 世界全体の光供給量/tick (未利用光量の算出用・不変。昼夜cycle適用前のbase値)
         self.light_supply_per_tick = float(self.world.light.sum())
         # V1.8: そのtickのdaylight factor。step()冒頭で一度だけ決め、
@@ -78,14 +93,6 @@ class Simulation:
 
         # 一次Energy刺激の選択統計 (V1.5 観測)。stats記録ごとにリセットされる
         # 区間統計で、RNGも個体状態も進化ロジックも一切変えない。
-        #   light/chemical : 一次Energy候補として選ばれた回数
-        #   tie            : 無次元scoreが同点だった回数
-        #   walk           : 刺激が無くランダムウォークへ落ちた回数
-        #   both_events    : light/chemical両方の候補が存在した回数
-        #   *_resp_sum     : そのときの無次元response合計 (平均算出用)
-        #   chem_stock_sum : そのときのchemical stock合計 (平均算出用)
-        #   agree          : 無次元scoreの順位と実際の選択が一致した回数
-        #   lost_*         : 一次Energy候補が他刺激 (栄養/死骸/捕食) に負けた回数
         self.stim_obs = self._new_stim_obs()
         # V1.6 短期記憶のEMA更新率。alpha = 1 - exp(-1/tau)。
         # tick毎に exp を呼ばないよう __init__ で1度だけ求める。
@@ -117,7 +124,7 @@ class Simulation:
 
         定義を再現可能に固定するため、次の2点で「生物不在の世界」を使う:
 
-        - chemical は実stockではなく生物不在平衡 `flux / loss_frac`
+        - H2は実stockではなく生物不在平衡場 (world.h2, RNG不使用で構築済み)
         - 能力は初期個体群の平均 light/chemical_absorption
 
         Phase Bは診断表現型を固定するので、この平均は条件の表現型と一致する。
@@ -125,9 +132,7 @@ class Simulation:
         """
         cfg = self.cfg
         light = self.world.light
-        chem_eq = (self.world.chem_source_flux / cfg.chem_loss_frac
-                   if cfg.chem_loss_frac > 0.0
-                   else np.zeros_like(self.world.chem_source_flux))
+        chem_eq = self.world.h2
         if self.organisms:
             g = np.stack([o.genome for o in self.organisms])
             la = float(g[:, LIGHT_ABS].mean())
@@ -169,13 +174,13 @@ class Simulation:
     # 初期個体群
 
     def _vent_cells(self) -> list[tuple[int, int]]:
-        """化学噴出口セルの一覧 (添字順で決定的)。乱数を消費しない。"""
+        """H2 vent セルの一覧 (添字順で決定的)。乱数を消費しない。"""
         cells = [(int(ix), int(iy))
-                 for ix, iy in np.argwhere(self.world.chem_mask)]
+                 for ix, iy in np.argwhere(self.world.h2_mask)]
         if not cells:
             raise ValueError(
-                "diagnostic_placement='vent' だが chem_mask が空 "
-                "(n_vents / vent_radius_cells を確認すること)")
+                "diagnostic_placement='vent' だが h2_mask が空 "
+                "(n_vents / vent_radius_cellsを確認すること)")
         return cells
 
     def _spawn_initial(self) -> None:
@@ -191,12 +196,24 @@ class Simulation:
         vent_cells = (self._vent_cells() if cfg.diagnostic_placement == "vent"
                       else None)
 
+        # V1.9 baseline: capabilityは両方OFF (docs/V1.9_iLUCA再設計仕様.md §2)。
+        # diagnostic_force_phototrophyはmechanical sanity専用 (既定False)。
+        base_capability = initial_capability()
+        if cfg.diagnostic_force_phototrophy:
+            base_capability = dict(base_capability)
+            base_capability["phototrophy"] = True
+
         for _ in range(cfg.initial_population):
-            g = initial_genome(self.rng, cfg.initial_jitter_sigma, self.fixed_mask)
+            capability = dict(base_capability)
+            g = initial_genome(self.rng, cfg.initial_jitter_sigma, self.fixed_mask,
+                               capability=capability)
             if overrides is not None:
                 # 上書きは乱数を消費しない (同一seedで配置・変異系列を変えない)
                 for idx, value in overrides:
                     g[idx] = value
+            # V1.9 baseline: world uniform random spawn。H2濃度・vent座標は
+            # 使わない (docs/V1.9_iLUCA再設計仕様.md §13)。diagnostic_placement
+            # ="vent"はExp06互換の診断専用経路として残す。
             if vent_cells is None:
                 x = float(self.rng.uniform(0, cfg.world_width))
                 y = float(self.rng.uniform(0, cfg.world_height))
@@ -206,7 +223,9 @@ class Simulation:
                 y = float((iy + self.rng.random()) * cfg.cell_size)
             org = Organism(self.next_id, -1, self.next_id, 0, 0, g,
                            x, y, float(self.rng.uniform(-math.pi, math.pi)),
-                           cfg.initial_energy, cfg.initial_matter)
+                           cfg.initial_energy, cfg.initial_matter,
+                           phototrophy_on=capability["phototrophy"],
+                           predation_on=capability["predation"])
             self.next_id += 1
             self.organisms.append(org)
             if self.recorder:
@@ -221,9 +240,11 @@ class Simulation:
     # 集計 (保存則)
 
     def system_energy(self) -> float:
+        """system全体のEnergy。H2はenergy-equivalentで含める
+        (docs/V1.9_iLUCA再設計仕様.md §12)。"""
         return (sum(o.energy for o in self.organisms)
                 + sum(c.energy for c in self.corpses)
-                + self.world.total_chemical())
+                + self.world.total_h2() * self.cfg.h2_energy_yield)
 
     def system_matter(self) -> float:
         return (sum(o.matter for o in self.organisms)
@@ -243,10 +264,12 @@ class Simulation:
         self.daylight_factor_now = daylight_factor(self.tick, cfg)
         self.light_supply_cum += self.light_supply_per_tick * self.daylight_factor_now
 
-        # 1. 環境更新 (化学湧出はエネルギー流入)
-        chem_influx, chem_loss = self.world.update()
-        self.energy_in_cum += chem_influx
-        self.energy_out_cum += chem_loss
+        # 1. 環境更新 (H2湧出はエネルギー流入。energy-equivalentで計上)
+        h2_influx, h2_loss = self.world.update()
+        self.energy_in_cum += h2_influx * cfg.h2_energy_yield
+        self.energy_out_cum += h2_loss * cfg.h2_energy_yield
+        self.h2_influx_cum += h2_influx
+        self.h2_loss_cum += h2_loss
 
         # 2. 空間ハッシュ (tick開始時の位置スナップショット)。
         #    行動決定はこの時点の刺激場・配置を見る。
@@ -274,6 +297,14 @@ class Simulation:
         #    以降の吸収・局所相互作用はすべて移動後の位置で判定する。
         self._build_hashes()
 
+        # 4.5 V1.9: そのtickのstarvation stateをtick開始時のenergyから1回だけ
+        #     計算し、uptake_factor (吸収) とmetabolic_factor (維持費) の
+        #     両方でこの1つの値を共有する (docs/V1.9_iLUCA再設計仕様.md §6)。
+        #     未来情報は参照しない。RNGは消費しない。
+        for org in self.organisms:
+            if org.alive:
+                org.starve_state = physiology.starvation_state(org, cfg)
+
         # 5. 環境フィールドからの吸収 (セル単位の需要比例配分・個体順に非依存)
         self._absorb_fields()
 
@@ -286,8 +317,9 @@ class Simulation:
             self._predate(org)
 
             # 生理 (維持コスト・損傷・修復)
-            self.energy_out_cum += physiology.maintenance_and_movement(org, cfg, v)
-            self.energy_out_cum += physiology.repair(org, cfg)
+            self.energy_out_cum += physiology.maintenance_and_movement(
+                org, cfg, v, org.starve_state)
+            self.energy_out_cum += physiology.repair(org, cfg, org.starve_state)
 
             # 死亡判定
             if org.energy <= 0.0:
@@ -330,16 +362,16 @@ class Simulation:
             self.corpse_hash.setdefault(key, []).append(c)
 
     # ------------------------------------------------------------------
-    # 環境フィールドからの吸収 (V1.4)
+    # 環境フィールドからの吸収 (V1.4 / V1.9 H2)
 
     def _absorb_fields(self) -> None:
-        """光・化学・無機栄養をセル単位で配分する (V1.4 §4-6)。
+        """光・H2・無機栄養をセル単位で配分する (V1.4 §4-6 / V1.9 §11)。
 
         セルごとに全個体の要求量 (demand) を先に求め、供給が足りなければ
         需要比例で縮小する。総取得は必ず ``min(供給, 総需要)`` になり、
         個体リスト順は配分結果に影響しない (V1.3以前の先着biasを廃止)。
 
-        資源間の順序 (光 → 化学 → 無機栄養) はV1.3以前と同じ。有効表面積と
+        資源間の順序 (光 → H2 → 無機栄養) はV1.3以前と同じ。有効表面積と
         健全度はセル処理の開始時点で一度だけ求め、3資源で共有する。
         """
         cfg = self.cfg
@@ -348,7 +380,7 @@ class Simulation:
             phis = [o.phi(dc, pf) for o in orgs]
             areas = [physiology.effective_surface(o.matter) for o in orgs]
             self._absorb_light(orgs, phis, areas, key)
-            self._absorb_chemical(orgs, phis, areas, key)
+            self._absorb_h2(orgs, phis, areas, key)
             self._absorb_nutrient(orgs, phis, areas, key)
 
     @staticmethod
@@ -366,30 +398,31 @@ class Simulation:
         return min(1.0, supply / total)
 
     def _absorb_light(self, orgs, phis, areas, key) -> None:
-        """光: 個体の変換能力が上限。未利用光はそのtickで散逸する。
+        """光: PHOTOTROPHY ON個体だけが変換できる。未利用光は散逸する。
 
         V1.8: そのtickの実効光は World.light (base/peak habitat field) に
         daylight_factor_now を掛けたもの。night (factor=0) では厳密に
-        gain=0。primary_energy_density_response=True のときのみ、実効光
-        濃度への局所密度応答 H(I, light_uptake_half) を需要へ掛ける
-        (docs/V1.8_一次Energy生態非対称仕様.md §6)。OFF時はV1.7式のまま。
+        gain=0。V1.9では局所密度応答 H(I, light_uptake_half) を常時適用し、
+        さらにstarvation uptake_factorを掛ける
+        (docs/V1.9_iLUCA再設計仕様.md §6.2/§11)。PHOTOTROPHY OFFの個体は
+        light_absorption=0が強制されているため、需要は自動的に0になる。
         """
         cfg = self.cfg
         flux = float(self.world.light[key]) * self.daylight_factor_now
         if flux <= 0.0:
             return
         coef = cfg.light_uptake_coef
-        cap = cfg.energy_capacity
-        density_on = cfg.primary_energy_density_response
-        resp = physiology.density_response(flux, cfg.light_uptake_half) if density_on else 1.0
+        cap_base = cfg.energy_capacity_base
+        resp = physiology.density_response(flux, cfg.light_uptake_half)
         demands = []
         for o, phi, area in zip(orgs, phis, areas):
             a = o.genome[LIGHT_ABS]
             if a <= ABILITY_EPS:
                 demands.append(0.0)
                 continue
-            raw = coef * a * area * phi * resp
-            demands.append(min(raw, max(0.0, o.energy_max(cap) - o.energy)))
+            uf = physiology.uptake_factor(o.starve_state, cfg)
+            raw = coef * a * area * phi * uf * resp
+            demands.append(min(raw, max(0.0, o.energy_max(cap_base) - o.energy)))
         scale = self._demand_scale(demands, flux)
         if scale <= 0.0:
             return
@@ -405,51 +438,69 @@ class Simulation:
         self.flows["light"] += taken
         self.stim_obs["band_light_e"][int(self.world.vent_band[key])] += taken
 
-    def _absorb_chemical(self, orgs, phis, areas, key) -> None:
-        """化学: 局所stockから吸収 (フィールド→個体の移動なので流入計上なし)。
+    def _absorb_h2(self, orgs, phis, areas, key) -> None:
+        """H2: substrateとして吸収し、conversion効率をかけてusable Energyへ
+        変換する (docs/V1.9_iLUCA再設計仕様.md §11)。
 
-        V1.8: primary_energy_density_response=True のときのみ、局所stock
-        濃度への密度応答 H(C, chemical_uptake_half) を需要へ掛ける
-        (docs/V1.8_一次Energy生態非対称仕様.md §7)。OFF時はV1.7式のまま。
-        chemicalはnightでも利用可能 (daylight_factorの影響を受けない)。
-        地質source/lossの式は変更しない。
+        H2はEnergyそのものではない:
+            free_energy = J(取得substrate) * h2_energy_yield
+            usable      = free_energy * h2_conversion_eff
+            loss        = free_energy - usable  (energy_outへ)
+
+        stockは必ず実取得substrate量 (J) だけ減らす。局所密度応答
+        H(C, h2_uptake_half) とstarvation uptake_factorを需要へ掛ける。
         """
         cfg = self.cfg
-        stock = float(self.world.chemical[key])
+        stock = float(self.world.h2[key])
         if stock <= 0.0:
             return
-        rate = cfg.chem_uptake
-        cap = cfg.energy_capacity
-        density_on = cfg.primary_energy_density_response
-        resp = physiology.density_response(stock, cfg.chemical_uptake_half) if density_on else 1.0
+        rate = cfg.h2_uptake_coef
+        cap_base = cfg.energy_capacity_base
+        yield_ = cfg.h2_energy_yield
+        eff = cfg.h2_conversion_eff
+        resp = physiology.density_response(stock, cfg.h2_uptake_half)
+        headroom_divisor = max(yield_ * eff, 1e-12)
         demands = []
         for o, phi, area in zip(orgs, phis, areas):
             a = o.genome[CHEM_ABS]
             if a <= ABILITY_EPS:
                 demands.append(0.0)
                 continue
-            raw = rate * a * area * phi * resp
-            demands.append(min(raw, max(0.0, o.energy_max(cap) - o.energy)))
+            uf = physiology.uptake_factor(o.starve_state, cfg)
+            raw = rate * a * area * phi * uf * resp
+            headroom = max(0.0, o.energy_max(cap_base) - o.energy)
+            demands.append(min(raw, headroom / headroom_divisor))
         scale = self._demand_scale(demands, stock)
         if scale <= 0.0:
             return
-        gains = []
+        substrate_taken = []
+        energy_gains = []
+        conv_loss_total = 0.0
         for o, d in zip(orgs, demands):
             if d <= 0.0:
                 continue
-            gain = d * scale
-            o.energy += gain
-            gains.append(gain)
-        taken = math.fsum(gains)
-        self.world.chemical[key] = max(0.0, stock - taken)
-        self.flows["chemical"] += taken
-        self.stim_obs["band_chem_e"][int(self.world.vent_band[key])] += taken
+            j = d * scale  # 実取得substrate量
+            free_energy = j * yield_
+            usable = free_energy * eff
+            loss = free_energy - usable
+            o.energy += usable
+            substrate_taken.append(j)
+            energy_gains.append(usable)
+            conv_loss_total += loss
+        taken = math.fsum(substrate_taken)
+        self.world.h2[key] = max(0.0, stock - taken)
+        gained_energy = math.fsum(energy_gains)
+        self.energy_out_cum += conv_loss_total
+        self.h2_conversion_loss_cum += conv_loss_total
+        self.flows["h2"] += gained_energy
+        self.stim_obs["band_chem_e"][int(self.world.vent_band[key])] += gained_energy
 
     def _absorb_nutrient(self, orgs, phis, areas, key) -> None:
         """無機栄養 (物質): 吸収には同化エネルギーコストがかかる。
 
         配分前の要求量を、身体物質の余地と「現在のエネルギーで同化コストを
         払える量」でもcapする。したがって配分後にEnergyが負にならない。
+        starvation uptake_factorを需要へ掛ける (docs/V1.9_iLUCA再設計仕様.md §6.2)。
         """
         cfg = self.cfg
         stock = float(self.world.nutrients[key])
@@ -467,8 +518,9 @@ class Simulation:
             if room <= 0.0:
                 demands.append(0.0)
                 continue
+            uf = physiology.uptake_factor(o.starve_state, cfg)
             affordable = o.energy / acost
-            demands.append(min(rate * a * area * phi, room, affordable))
+            demands.append(min(rate * a * area * phi * uf, room, affordable))
         scale = self._demand_scale(demands, stock)
         if scale <= 0.0:
             return
@@ -520,7 +572,7 @@ class Simulation:
         if target is None:
             return
         phi = org.phi(cfg.damage_capacity, cfg.phi_floor)
-        e_max = org.energy_max(cfg.energy_capacity)
+        e_max = org.energy_max(cfg.energy_capacity_base)
         matter_cap = cfg.matter_cap_frac * org.target_size
 
         bite = min(cfg.corpse_eat_rate * g[CORPSE_DIG] * org.matter * phi, target.matter)
@@ -584,7 +636,7 @@ class Simulation:
             return
         target.damage += net
         target.attacked_recently = True
-        e_max = org.energy_max(cfg.energy_capacity)
+        e_max = org.energy_max(cfg.energy_capacity_base)
         matter_cap = cfg.matter_cap_frac * org.target_size
 
         # エネルギー吸取
@@ -603,10 +655,9 @@ class Simulation:
         tx, ty = self.world.cell_index(target.x, target.y)
         self.world.nutrients[tx, ty] += m_take - m_gain
         # 咬まれて身体を失った獲物のエネルギー上限超過分は散逸
-        t_emax = target.energy_max(cfg.energy_capacity)
-        if target.energy > t_emax:
-            self.energy_out_cum += target.energy - t_emax
-            target.energy = t_emax
+        overflow = physiology.clamp_energy_to_capacity(target, cfg)
+        self.energy_out_cum += overflow
+        self.storage_overflow_cum += overflow
 
     # ------------------------------------------------------------------
     # 死亡・死骸
@@ -643,37 +694,59 @@ class Simulation:
         self.corpses = survivors
 
     # ------------------------------------------------------------------
-    # 繁殖 (無性生殖)
+    # 繁殖 (無性生殖) — V1.9 runway gate + storage capacity
 
     def _try_reproduce(self, org: Organism) -> Organism | None:
+        """V1.9繁殖手順 (docs/V1.9_iLUCA再設計仕様.md §7.1)。
+
+        1. runway gate (Energy): runway >= genome[reproduction_horizon]
+        2. Matter gate: 既存 repro_matter_frac を維持
+        3. birth_overheadを支払えるか確認
+        4. continuous mutation + capability structural mutationでchild genotype
+        5-6. child matter譲渡 (child_matter_frac)
+        7-9. child Energy offer (reproduction_investment) → capacity clamp
+        10. parent/child双方でcapacity clamp、overflowはheatへ
+        """
         cfg = self.cfg
-        e_max = org.energy_max(cfg.energy_capacity)
-        if org.energy < cfg.repro_energy_frac * e_max:
+
+        # 1. runway gate
+        r = physiology.runway(org, cfg)
+        if r < org.genome[REPRO_HORIZON]:
             return None
+        # 2. Matter gate
         if org.matter < cfg.repro_matter_frac * org.target_size:
             return None
-
-        # 出産オーバーヘッド
+        # 3. birth_overheadを支払えるか確認 (支払えないtickは繁殖しない)
+        if org.energy < cfg.birth_overhead:
+            return None
         org.energy -= cfg.birth_overhead
         self.energy_out_cum += cfg.birth_overhead
 
+        # 4. continuous mutation + capability structural mutation
         child_genome = mutate(org.genome, self.rng,
                               cfg.meta_mutation_sigma, cfg.additive_mutation_frac,
                               self.fixed_mask)
+        child_capability, child_genome = structural_mutate(
+            org.capability, child_genome, self.rng, cfg)
+        if child_capability["phototrophy"] and not org.phototrophy_on:
+            self.phototrophy_innovation_events += 1
+        elif org.phototrophy_on and not child_capability["phototrophy"]:
+            self.phototrophy_loss_events += 1
 
-        # 物質・エネルギーの譲渡 (親→子; 保存)
+        # 5-6. 物質譲渡 (親→子; 保存)
         m_child = cfg.child_matter_frac * org.matter
         org.matter -= m_child
+
+        # 7-9. Energy offer → child capacity clamp
         e_offer = org.genome[REPRO_INVEST] * org.energy
-        child_emax = cfg.energy_capacity * m_child
+        child_emax = cfg.energy_capacity_base * child_genome[STORAGE_CAP] * m_child
         e_child = min(e_offer, child_emax)
         org.energy -= e_child
 
-        # 親のエネルギー上限は身体縮小で下がる → 超過分は散逸
-        p_emax = org.energy_max(cfg.energy_capacity)
-        if org.energy > p_emax:
-            self.energy_out_cum += org.energy - p_emax
-            org.energy = p_emax
+        # 10. 親のcapacity clamp (身体縮小でE_maxが下がる → 超過分は散逸)
+        p_overflow = physiology.clamp_energy_to_capacity(org, cfg)
+        self.energy_out_cum += p_overflow
+        self.storage_overflow_cum += p_overflow
 
         ang = float(self.rng.uniform(-math.pi, math.pi))
         dist = org.radius(cfg.radius_coef) * 2.0
@@ -682,7 +755,15 @@ class Simulation:
 
         child = Organism(self.next_id, org.id, org.lineage_id,
                          org.generation + 1, self.tick, child_genome,
-                         cx, cy, ang, e_child, m_child)
+                         cx, cy, ang, e_child, m_child,
+                         phototrophy_on=child_capability["phototrophy"],
+                         predation_on=child_capability["predation"])
+        # child capacity clamp (e_child <= child_emaxで既に保証されるが、
+        # 浮動小数の端数対策として明示的に確認する)
+        c_overflow = physiology.clamp_energy_to_capacity(child, cfg)
+        self.energy_out_cum += c_overflow
+        self.storage_overflow_cum += c_overflow
+
         self.next_id += 1
         self.births_cum += 1
         self.births_by_lineage[child.lineage_id] = (

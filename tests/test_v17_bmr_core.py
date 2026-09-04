@@ -214,8 +214,13 @@ class TestV16Regression:
         assert _fingerprint(sim_a) == _fingerprint(sim_b)
 
     def test_nonzero_core_differs_from_zero(self):
-        """bmr_core>0 は bmr_core=0 と結果が異なる (式が実際に効いている)。"""
-        ticks = 100
+        """bmr_core>0 は bmr_core=0 と結果が異なる (式が実際に効いている)。
+
+        V1.9注記: fixed ancestorはEnergy収支calibration次第で短時間で
+        絶滅しうる (tests/test_smoke.py参照)。両条件とも絶滅前のtick数で
+        比較する。
+        """
+        ticks = 30
         seed = 3
         sim0 = _run(seed=seed, ticks=ticks, bmr_core=0.0)
         sim1 = _run(seed=seed, ticks=ticks, bmr_core=0.3)

@@ -10,7 +10,7 @@ def state_checksum(sim: Simulation) -> tuple:
         for o in sim.organisms)
     return (sim.tick, sim.births_cum, sim.deaths_cum,
             round(sim.world.total_nutrients(), 9),
-            round(sim.world.total_chemical(), 9), orgs)
+            round(sim.world.total_h2(), 9), orgs)
 
 
 def run(seed: int, ticks: int) -> tuple:

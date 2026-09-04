@@ -60,9 +60,18 @@ def test_all_dark_supplies_no_light():
 
 
 def test_all_dark_keeps_light_absorption_gene():
-    """光0でも light_absorption 遺伝子自体は消さない (世界側だけを変える)。"""
+    """光0の診断条件が light_absorption 遺伝子自体を書き換えない
+    (世界側 (light=0) だけを変え、個体側のgene値には触れない)。
+
+    V1.9: baseline iLUCAはPHOTOTROPHY OFFなのでlight_absorption=0が
+    正しい既定値 (docs/V1.9_iLUCA再設計仕様.md §2)。ここでは診断条件
+    (ALL_DARK) がINITIAL_GENOMEの値からgeneを追加で変えていないことを
+    確認する。
+    """
+    from evosim.genome import INITIAL_GENOME
     sim = Simulation(cfg_for("A"), 1)
-    assert all(o.genome[LIGHT_ABS] > 0.0 for o in sim.organisms)
+    assert all(o.genome[LIGHT_ABS] == pytest.approx(INITIAL_GENOME[LIGHT_ABS])
+               for o in sim.organisms)
 
 
 # --- 配置 -------------------------------------------------------------
@@ -71,7 +80,7 @@ def test_vent_placement_is_on_vent_cells():
     sim = Simulation(cfg_for("B"), 2)
     assert len(sim.organisms) == sim.cfg.initial_population
     for o in sim.organisms:
-        assert sim.world.chem_mask[sim.world.cell_index(o.x, o.y)]
+        assert sim.world.h2_mask[sim.world.cell_index(o.x, o.y)]
 
 
 def test_vent_placement_inside_world():
@@ -157,7 +166,7 @@ def test_unknown_placement_is_rejected():
 
 
 def test_vent_placement_without_vents_is_rejected():
-    with pytest.raises(ValueError, match="chem_mask"):
+    with pytest.raises(ValueError, match="h2_mask"):
         Simulation(Config(n_vents=0, diagnostic_placement="vent"), 1)
 
 

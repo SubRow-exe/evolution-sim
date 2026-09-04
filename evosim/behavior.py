@@ -54,7 +54,7 @@ def decide_and_move(org, sim) -> float:
     g = org.genome
 
     phi = org.phi(cfg.damage_capacity, cfg.phi_floor)
-    e_max = org.energy_max(cfg.energy_capacity)
+    e_max = org.energy_max(cfg.energy_capacity_base)
     matter_cap = cfg.matter_cap_frac * org.target_size
 
     # 満ち足りていれば待機
@@ -125,7 +125,7 @@ def decide_and_move(org, sim) -> float:
     effective_light = (world.sample(world.light, org.x, org.y)
                        * sim.daylight_factor_now)
     r_l = response(effective_light, cfg.light_stimulus_half) if use_light else 0.0
-    r_c = (response(world.sample(world.chemical, org.x, org.y),
+    r_c = (response(world.sample(world.h2, org.x, org.y),
                     cfg.chemical_stimulus_half) if use_chem else 0.0)
 
     # 能力加重平均。能力の絶対値ではなく「どちらを重視するか」だけがQを決める
