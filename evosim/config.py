@@ -36,18 +36,29 @@ class Config:
     light_hc_dark_floor: float = 0.0         # 暗部の相対光量 (0 = 完全暗部)
     light_hc_total_scale: float = 1.0        # Control総光量に対する倍率
 
-    # --- 化学エネルギー (V1.3: 地質source + 局所stock + 環境損失) ---
-    # docs/V1.3_化学資源モデル仕様.md。
-    # source は生物の消費にも現在stockにも依存しない一定flux。stockに上限は
-    # 置かず、一次の環境損失だけで有限化する (生物不在の平衡は S/loss)。
+    # --- V1.9: chemical-first H2 substrate (docs/V1.9_iLUCA再設計仕様.md §8-12) ---
+    # 旧 `chemical` field の意味をH2-like substrateへ変更する。H2はEnergy
+    # そのものではなくsubstrate: uptake -> chemical free energy -> conversion
+    # -> usable Energy + heat。CO2は十分存在する暗黙の共基質として扱う
+    # (explicit fieldを持たない)。
+    #
+    # vent配置: 全vent同一総flux・world端からr以上内側・source disk非重複・
+    # 固定位置 (docs/V1.9_iLUCA再設計仕様.md §9)。
     n_vents: int = 4
     vent_radius_cells: int = 2
-    # Exp08 Phase B で校正した恒久default (docs/V1.4_総括.md §3)。
-    # 標準13セルventで約1.23 E/tick/cell となり、光の最大1.2 E/tick/cell と
-    # ほぼ同じ局所供給密度。世界総量は光より小さいままに保つ。
-    chem_vent_flux: float = 16.0     # 1 ventの総外部供給 [E/tick/vent]
-    chem_loss_frac: float = 0.10     # stockの環境損失割合 [1/tick]
-    chem_uptake: float = 0.5         # 吸収レート係数
+    h2_vent_flux: float = 16.0       # 1 ventの総外部供給 [substrate/tick/vent]
+    h2_loss_frac: float = 0.10       # 環境損失割合 [1/tick]
+    h2_diffusion: float = 0.05       # 4近傍ラプラシアン拡散係数
+    h2_uptake_coef: float = 0.5      # 吸収レート係数
+    h2_uptake_half: float = 6.15     # Monod/Hill H(C,K) のhalf-saturation
+    h2_energy_yield: float = 1.0     # substrate 1単位あたりのchemical free energy
+    h2_conversion_eff: float = 0.60  # free energy -> usable Energyの変換効率
+
+    # --- 旧V1.8 chemical field名 (deprecated: V1.9では未使用。過去configの
+    # JSON round-tripのためfieldだけ残す) ---
+    chem_vent_flux: float = 16.0
+    chem_loss_frac: float = 0.10
+    chem_uptake: float = 0.5
 
     # --- V1.8: 一次Energy生態非対称 (docs/V1.8_一次Energy生態非対称仕様.md) ---
     # light/chemicalの直接一次Energy吸収だけへ、共通の局所密度応答
@@ -76,10 +87,23 @@ class Config:
     matter_absorb_cost: float = 2.0  # 物質1単位の同化エネルギーコスト
 
     # --- 個体スケール ---
-    energy_capacity: float = 100.0   # E_max = energy_capacity * s_eff
+    # V1.9: energy_capacity はdeprecated (旧 world-rule互換のためJSONへは
+    # 残すが新ロジックでは読まない)。E_max = energy_capacity_base *
+    # storage_capacity(gene) * matter を使う (docs/V1.9_iLUCA再設計仕様.md §4)。
+    energy_capacity: float = 100.0   # deprecated (V1.9では未使用)
+    energy_capacity_base: float = 100.0
+    storage_upkeep_coef: float = 0.02   # storage_upkeep = coef*storage_capacity*matter
     radius_coef: float = 4.0         # 半径 = radius_coef * sqrt(s_eff)
     damage_capacity: float = 10.0    # D_max = damage_capacity * s_eff * (1+dr)
     phi_floor: float = 0.1           # 健全度の下限
+
+    # --- V1.9: starvation homeostasis (docs/V1.9_iLUCA再設計仕様.md §5-6) ---
+    # runway = energy / P_full (未来情報を一切参照しない現在状態量)。
+    # state = clip(runway / starvation_horizon, 0, 1)。
+    # metabolic_factor = floor + (1-floor)*state (BMR可変部/repair予算へ)
+    # uptake_factor    = floor + (1-floor)*state (H2/light/nutrient uptakeへ)
+    starvation_metabolic_floor: float = 0.10
+    starvation_uptake_floor: float = 0.50
 
     # --- エネルギー消費 ---
     # V1.7: BMR = bmr_core + (bmr_coef - bmr_core) * M^0.75
@@ -162,7 +186,11 @@ class Config:
     matter_cap_frac: float = 1.2     # 身体物質の貯蔵上限 = frac * body_size
 
     # --- 繁殖 ---
-    repro_energy_frac: float = 0.6   # E >= frac*E_max
+    # V1.9: repro_energy_frac はEnergy gateとして使わない (deprecated / 未使用)。
+    # Energy gateは runway >= genome[reproduction_horizon] へ置き換える
+    # (docs/V1.9_iLUCA再設計仕様.md §7)。Matter gateは既存 repro_matter_frac
+    # を維持する。
+    repro_energy_frac: float = 0.6   # deprecated (V1.9では未使用)
     repro_matter_frac: float = 0.8   # M >= frac*body_size
     child_matter_frac: float = 0.35  # 親Mのうち子へ渡す割合
     birth_overhead: float = 2.0      # 出産時燃焼エネルギー
@@ -195,6 +223,76 @@ class Config:
     #   fixed_genes にも入れること (入れ忘れは ValueError で弾く)。
     diagnostic_placement: str = "random"
     diagnostic_gene_overrides: dict[str, float] = field(default_factory=dict)
+    # V1.9 mechanical sanity専用: 初期個体群のcapabilityを両方ONで生成する
+    # (docs/V1.9_実装チェックリスト.md L節)。既定Falseでは通常のV1.9
+    # baseline (両方OFF) と完全に同一。
+    diagnostic_force_phototrophy: bool = False
+
+    # --- V1.9: structural innovation (docs/V1.9_iLUCA再設計仕様.md §14) ---
+    # continuous mutationとは分離した「能力そのものの起源」イベント。
+    # fitness/environment/観測値を一切参照しない定数確率。
+    phototrophy_innovation_prob: float = 1e-4   # per birth (OFF->ON)
+    phototrophy_loss_prob: float = 1e-3         # per birth (ON->OFF)
+    phototrophy_seed_absorption: float = 0.01   # innovation直後のlight_absorption下限
+
+    # --- V1.9物理スケール検証パッチ (docs/V1.9_検証実装仕様_物理スケール版.md) ---
+    # physical_mode=False (既定) では PR #67 の arbitrary-unit 機構を完全に
+    # 維持する (既存test・既存挙動に一切影響しない)。physical_mode=True の
+    # ときだけ、下記SI定数を使ってH2 uptake/basal power/growth energy/
+    # movement powerを物理単位で計算する (evosim/physiology.py, world.py,
+    # simulation.py)。
+    physical_mode: bool = False
+    # 1 step = dt_seconds [s]。物理量 (J/s, mol/s等) を1step分へ変換する
+    # 共通倍率。既定1.0はarbitrary-unit modeの「1 tick」と完全互換。
+    dt_seconds: float = 1.0
+
+    # --- 質量基準 (docs §3) ---
+    # 1 matter unit = reference dry mass (body_size=1.0のreference)。
+    reference_dry_mass_kg: float = 2.8e-16   # 0.28 pgDW
+    matter_unit_to_kgdw: float = 2.8e-16
+    reference_cell_volume_m3: float = 1.0e-18  # 1 µm^3 (body_size=1.0)
+    # voxel (= gridセル) の実効深さ [m]。cell_size (面方向の辺長) と合わせて
+    # voxel_volume_m3 = cell_size^2 * effective_depth_m を作る。physical_mode
+    # のExp15 configではworld_width/world_height/cell_sizeをmeter単位で設定する
+    # 前提 (docs/V1.9_検証実装仕様_物理スケール版.md §4: 20mm x 20mm / cell 0.5mm)。
+    effective_depth_m: float = 0.5e-3
+
+    # --- H2 物理定数 (docs §5-7) ---
+    h2_source_concentration_molm3: float = 1.0     # 1 mM Dirichlet boundary
+    h2_diffusion_m2s: float = 5.0e-9
+    h2_exchange_tau_s: float = 900.0
+    h2_subcycle_alpha_max: float = 0.20
+    # q_max=50 mmol H2/(gDW h) -> 50 mol/(kgDW h) -> /3600 -> mol/(kgDW s)
+    h2_qmax_mol_per_kgdw_s: float = 50.0 / 3600.0
+    # K_m = q_max / k_first_order = (50 mmol/gDW/h) / (19.36 L/gDW/h)
+    #     = 2.5826 mmol/L = 2.5826 mol/m^3
+    h2_km_mol_m3: float = 50.0 / 19.36
+    # 4 H2 + 2 CO2 -> acetate; ATP/H2=0.075 mol/mol; ATP free energy 50 kJ/mol
+    # -> usable Energy = 0.075 * 50000 = 3750 J/mol H2
+    h2_usable_energy_j_per_mol: float = 3750.0
+
+    # --- basal maintenance 物理定数 (docs §8) ---
+    basal_atp_mmol_per_gdw_h: float = 0.116
+    atp_energy_j_per_mol: float = 50_000.0
+    # reference genomeで合計1.0になる正規化重み (docs §8)
+    basal_weight_core: float = 0.60
+    basal_weight_organ: float = 0.12
+    basal_weight_sense: float = 0.08
+    basal_weight_membrane: float = 0.10
+    basal_weight_resistance: float = 0.05
+    basal_weight_storage: float = 0.05
+    # E_max_ref = reference basal power * storage_capacity_hours (docs §8)
+    storage_capacity_hours: float = 12.0
+
+    # --- growth / Matter assimilation 物理定数 (docs §9) ---
+    # Y_ATP=10 gDW/mol ATP, ATP energy=50 kJ/mol -> 5.0e6 J/kgDW
+    growth_energy_j_per_kgdw: float = 5.0e6
+    # 0.20 matter unit/h * nutrient_absorption (nutrient-rich条件でのcap)
+    nutrient_uptake_rate_matter_per_h: float = 0.20
+
+    # --- movement 物理定数 (docs §10) ---
+    water_viscosity_pa_s: float = 1.0e-3
+    motor_efficiency: float = 0.10
 
     # --- 災害 ---
     disaster_kill_frac: float = 0.9
@@ -223,6 +321,89 @@ class Config:
             raise ValueError(
                 f"light_day_fraction={self.light_day_fraction} は0と1の間でなければなりません。"
             )
+        # --- V1.9 validation (docs/V1.9_iLUCA再設計仕様.md §19) ---
+        if self.energy_capacity_base <= 0.0:
+            raise ValueError(f"energy_capacity_base={self.energy_capacity_base} は正でなければなりません。")
+        if self.storage_upkeep_coef < 0.0:
+            raise ValueError(f"storage_upkeep_coef={self.storage_upkeep_coef} は0以上でなければなりません。")
+        if not (0.0 < self.starvation_metabolic_floor <= self.starvation_uptake_floor <= 1.0):
+            raise ValueError(
+                "0 < starvation_metabolic_floor <= starvation_uptake_floor <= 1 "
+                f"でなければなりません: metabolic_floor={self.starvation_metabolic_floor}, "
+                f"uptake_floor={self.starvation_uptake_floor}"
+            )
+        if not (0.0 <= self.h2_loss_frac < 1.0):
+            raise ValueError(f"h2_loss_frac={self.h2_loss_frac} は 0 <= x < 1 でなければなりません。")
+        if not (0.0 <= self.h2_diffusion <= 0.25):
+            raise ValueError(f"h2_diffusion={self.h2_diffusion} は 0 <= x <= 0.25 でなければなりません。")
+        if self.h2_vent_flux < 0.0:
+            raise ValueError(f"h2_vent_flux={self.h2_vent_flux} は0以上でなければなりません。")
+        if self.h2_uptake_coef < 0.0:
+            raise ValueError(f"h2_uptake_coef={self.h2_uptake_coef} は0以上でなければなりません。")
+        if self.h2_uptake_half <= 0.0:
+            raise ValueError(f"h2_uptake_half={self.h2_uptake_half} は正でなければなりません。")
+        if self.h2_energy_yield <= 0.0:
+            raise ValueError(f"h2_energy_yield={self.h2_energy_yield} は正でなければなりません。")
+        if not (0.0 <= self.h2_conversion_eff <= 1.0):
+            raise ValueError(f"h2_conversion_eff={self.h2_conversion_eff} は 0 <= x <= 1 でなければなりません。")
+        if not (0.0 <= self.phototrophy_innovation_prob <= 1.0):
+            raise ValueError(
+                f"phototrophy_innovation_prob={self.phototrophy_innovation_prob} は 0 <= x <= 1 でなければなりません。"
+            )
+        if not (0.0 <= self.phototrophy_loss_prob <= 1.0):
+            raise ValueError(
+                f"phototrophy_loss_prob={self.phototrophy_loss_prob} は 0 <= x <= 1 でなければなりません。"
+            )
+        if self.phototrophy_seed_absorption <= 0.0:
+            raise ValueError(
+                f"phototrophy_seed_absorption={self.phototrophy_seed_absorption} は正でなければなりません。"
+            )
+        # --- V1.9物理スケール検証パッチ validation ---
+        if self.dt_seconds <= 0.0:
+            raise ValueError(f"dt_seconds={self.dt_seconds} は正でなければなりません。")
+        if self.physical_mode:
+            if self.matter_unit_to_kgdw <= 0.0:
+                raise ValueError("matter_unit_to_kgdw は正でなければなりません。")
+            if self.reference_cell_volume_m3 <= 0.0:
+                raise ValueError("reference_cell_volume_m3 は正でなければなりません。")
+            if self.effective_depth_m <= 0.0:
+                raise ValueError("effective_depth_m は正でなければなりません。")
+            if self.h2_source_concentration_molm3 < 0.0:
+                raise ValueError("h2_source_concentration_molm3 は0以上でなければなりません。")
+            if self.h2_diffusion_m2s <= 0.0:
+                raise ValueError("h2_diffusion_m2s は正でなければなりません。")
+            if self.h2_exchange_tau_s <= 0.0:
+                raise ValueError("h2_exchange_tau_s は正でなければなりません。")
+            if not (0.0 < self.h2_subcycle_alpha_max <= 1.0):
+                raise ValueError("h2_subcycle_alpha_max は 0 < x <= 1 でなければなりません。")
+            if self.h2_qmax_mol_per_kgdw_s <= 0.0 or self.h2_km_mol_m3 <= 0.0:
+                raise ValueError("h2_qmax_mol_per_kgdw_s / h2_km_mol_m3 は正でなければなりません。")
+            if self.h2_usable_energy_j_per_mol <= 0.0:
+                raise ValueError("h2_usable_energy_j_per_mol は正でなければなりません。")
+            weights = (self.basal_weight_core, self.basal_weight_organ,
+                      self.basal_weight_sense, self.basal_weight_membrane,
+                      self.basal_weight_resistance, self.basal_weight_storage)
+            if any(w < 0.0 for w in weights):
+                raise ValueError("basal_weight_* は0以上でなければなりません。")
+            if abs(sum(weights) - 1.0) > 1e-6:
+                raise ValueError(f"basal_weight_* の合計が1.0でありません: {sum(weights)}")
+            if self.storage_capacity_hours <= 0.0:
+                raise ValueError("storage_capacity_hours は正でなければなりません。")
+            if self.growth_energy_j_per_kgdw <= 0.0:
+                raise ValueError("growth_energy_j_per_kgdw は正でなければなりません。")
+            if self.nutrient_uptake_rate_matter_per_h < 0.0:
+                raise ValueError("nutrient_uptake_rate_matter_per_h は0以上でなければなりません。")
+            if self.water_viscosity_pa_s <= 0.0 or self.motor_efficiency <= 0.0:
+                raise ValueError("water_viscosity_pa_s / motor_efficiency は正でなければなりません。")
+        if self.n_vents > 0:
+            r = self.vent_radius_cells
+            lo_x, hi_x = r, self.grid_w - r - 1
+            lo_y, hi_y = r, self.grid_h - r - 1
+            if lo_x > hi_x or lo_y > hi_y:
+                raise ValueError(
+                    f"vent_radius_cells={r} がworld ({self.grid_w}x{self.grid_h}) "
+                    "に対して大きすぎ、edgeから内側へventを配置できません。"
+                )
 
     def to_json(self, path: str | Path) -> None:
         p = Path(path)

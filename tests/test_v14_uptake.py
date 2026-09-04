@@ -23,7 +23,7 @@ from evosim.config import Config
 from evosim.genome import (CHEM_ABS, LIGHT_ABS, NUTRIENT_ABS, PREDATION,
                            CORPSE_DIG)
 from evosim.organism import Organism
-from evosim.physiology import effective_surface
+from evosim.physiology import density_response, effective_surface
 from evosim.simulation import Simulation
 
 
@@ -59,7 +59,7 @@ def test_surface_exceeds_matter_below_one():
 
 def _bare_config(**kw) -> Config:
     """吸収だけを見るための静止世界 (光0・化学0・栄養0がdefault)。"""
-    base = dict(light_pattern="uniform", light_max=0.0, chem_vent_flux=0.0,
+    base = dict(light_pattern="uniform", light_max=0.0, h2_vent_flux=0.0,
                 nutrient_initial=0.0, initial_population=0)
     base.update(kw)
     return Config(**base)
@@ -71,9 +71,10 @@ def _place(sim: Simulation, cell, n: int, gene_idx: int, ability: float,
     cs = sim.cfg.cell_size
     orgs = []
     for _ in range(n):
-        g = np.zeros(14)
+        g = np.zeros(17)
         g[0] = 1.0            # body_size
         g[3] = 1.0            # movement_efficiency
+        g[14] = 1.0           # storage_capacity (E_max>0)
         g[gene_idx] = ability
         o = Organism(sim.next_id, -1, sim.next_id, 0, 0, g,
                      (cell[0] + 0.5) * cs, (cell[1] + 0.5) * cs, 0.0,
@@ -95,9 +96,11 @@ def test_lone_low_ability_organism_does_not_take_whole_cell_light():
     e0 = o.energy
     sim._absorb_fields()
     gain = o.energy - e0
-    expected = cfg.light_uptake_coef * 0.3 * effective_surface(0.8) * 1.0
+    flux = float(sim.world.light[5, 5])
+    resp = density_response(flux, cfg.light_uptake_half)  # V1.9: 常時適用
+    expected = cfg.light_uptake_coef * 0.3 * effective_surface(0.8) * resp
     assert gain == pytest.approx(expected, rel=1e-12)
-    assert gain < float(sim.world.light[5, 5])
+    assert gain < flux
     assert sim.flows["light"] == pytest.approx(gain, rel=1e-12)
 
 
@@ -106,9 +109,10 @@ def test_demand_scales_with_ability_and_coefficient():
         cfg = _bare_config(light_max=100.0, light_uptake_coef=coef)
         sim = Simulation(cfg, 1)
         (o,) = _place(sim, (5, 5), 1, LIGHT_ABS, 2.0, energy=0.0)
+        resp = density_response(float(sim.world.light[5, 5]), cfg.light_uptake_half)
         sim._absorb_fields()
         assert o.energy == pytest.approx(
-            coef * 2.0 * effective_surface(0.8), rel=1e-12)
+            coef * 2.0 * effective_surface(0.8) * resp, rel=1e-9)
 
 
 def test_unused_light_is_left_when_demand_is_below_supply():
@@ -138,9 +142,9 @@ def test_light_energy_capacity_caps_demand():
     cfg = _bare_config(light_max=100.0, light_uptake_coef=4.0)
     sim = Simulation(cfg, 1)
     (o,) = _place(sim, (5, 5), 1, LIGHT_ABS, 5.0,
-                  energy=cfg.energy_capacity * 0.8)
+                  energy=cfg.energy_capacity_base * 0.8)
     sim._absorb_fields()
-    assert o.energy == pytest.approx(o.energy_max(cfg.energy_capacity), rel=1e-12)
+    assert o.energy == pytest.approx(o.energy_max(cfg.energy_capacity_base), rel=1e-12)
 
 
 @pytest.mark.parametrize("n", [1, 5, 20, 100])
@@ -175,29 +179,35 @@ def test_light_allocation_is_independent_of_list_order(n):
 # --- 化学 ------------------------------------------------------------
 
 def test_chemical_demand_uses_effective_surface():
-    cfg = _bare_config(chem_vent_flux=8.0)
+    """V1.9: H2は substrate であり、usable Energy = raw*resp*yield*conversion_eff。"""
+    cfg = _bare_config(h2_vent_flux=8.0)
     sim = Simulation(cfg, 1)
-    vent = tuple(np.argwhere(sim.world.chem_mask)[0])
+    vent = tuple(np.argwhere(sim.world.h2_mask)[0])
     cell = (int(vent[0]), int(vent[1]))
     (o,) = _place(sim, cell, 1, CHEM_ABS, 2.0, energy=0.0)
+    resp = density_response(float(sim.world.h2[cell]), cfg.h2_uptake_half)
     sim._absorb_fields()
-    expected = cfg.chem_uptake * 2.0 * effective_surface(0.8)
-    assert o.energy == pytest.approx(expected, rel=1e-12)
+    raw = cfg.h2_uptake_coef * 2.0 * effective_surface(0.8) * resp
+    expected = raw * cfg.h2_energy_yield * cfg.h2_conversion_eff
+    assert o.energy == pytest.approx(expected, rel=1e-9)
 
 
 def test_chemical_total_take_never_exceeds_stock():
-    cfg = _bare_config(chem_vent_flux=8.0)
+    """全substrate取得量 (energy-equivalentではなくsubstrate量) がstockを超えない。"""
+    cfg = _bare_config(h2_vent_flux=8.0)
     sim = Simulation(cfg, 1)
-    vent = np.argwhere(sim.world.chem_mask)[0]
+    vent = np.argwhere(sim.world.h2_mask)[0]
     cell = (int(vent[0]), int(vent[1]))
-    stock = float(sim.world.chemical[cell])
+    stock = float(sim.world.h2[cell])
     orgs = _place(sim, cell, 60, CHEM_ABS, 5.0, energy=0.0)
     sim._absorb_fields()
-    taken = math.fsum(o.energy for o in orgs)
-    assert taken <= stock + 1e-12
-    assert taken == pytest.approx(stock, rel=1e-9)
-    assert float(sim.world.chemical[cell]) >= 0.0
-    assert float(sim.world.chemical[cell]) == pytest.approx(0.0, abs=1e-9)
+    energy_taken = math.fsum(o.energy for o in orgs)
+    substrate_taken = energy_taken / (cfg.h2_energy_yield * cfg.h2_conversion_eff)
+    assert substrate_taken <= stock + 1e-9
+    assert substrate_taken == pytest.approx(stock, rel=1e-6)
+    remaining = float(sim.world.h2[cell])
+    assert remaining >= 0.0
+    assert remaining == pytest.approx(0.0, abs=1e-6)
 
 
 @pytest.mark.parametrize("n", [5, 100])
@@ -205,9 +215,9 @@ def test_chemical_allocation_is_independent_of_list_order(n):
     shuffler = np.random.Generator(np.random.PCG64(999))
 
     def run(order):
-        cfg = _bare_config(chem_vent_flux=8.0)
+        cfg = _bare_config(h2_vent_flux=8.0)
         sim = Simulation(cfg, 1)
-        vent = np.argwhere(sim.world.chem_mask)[0]
+        vent = np.argwhere(sim.world.h2_mask)[0]
         cell = (int(vent[0]), int(vent[1]))
         orgs = _place(sim, cell, n, CHEM_ABS, 2.0, energy=0.0)
         for i, o in enumerate(orgs):
@@ -312,13 +322,14 @@ def test_all_fields_are_absorbed_at_the_post_move_cell():
     cs = cfg.cell_size
     src, dst = (5, 5), (6, 5)
     sim.world.light[dst] = 1.0
-    sim.world.chemical[dst] = 5.0
+    sim.world.h2[dst] = 5.0
     sim.world.nutrients[dst] = 5.0
-    g = np.zeros(14)
+    g = np.zeros(17)
     g[0] = 1.0            # body_size
     g[2] = 1.0            # movement_power
     g[3] = 1.0            # movement_efficiency
     g[4] = 2.0            # sensory_range (隣接セルを感知できる)
+    g[14] = 1.0           # storage_capacity (E_max>0)
     g[LIGHT_ABS] = 1.0
     g[CHEM_ABS] = 1.0
     g[NUTRIENT_ABS] = 1.0
@@ -331,7 +342,7 @@ def test_all_fields_are_absorbed_at_the_post_move_cell():
 
     assert sim.world.cell_index(o.x, o.y) == dst, "移動していない"
     assert sim.flows["light"] > 0.0, "移動後セルの光を取得していない"
-    assert sim.flows["chemical"] > 0.0
+    assert sim.flows["h2"] > 0.0
     assert sim.flows["nutrient"] > 0.0
 
 
@@ -364,11 +375,11 @@ def test_light_flow_never_exceeds_supply():
 
 
 def test_chemical_stock_never_negative_with_many_absorbers():
-    cfg = Config(light_pattern="uniform", light_max=0.0, chem_vent_flux=8.0,
+    cfg = Config(light_pattern="uniform", light_max=0.0, h2_vent_flux=8.0,
                  diagnostic_placement="vent",
                  fixed_genes=["chemical_absorption"],
                  diagnostic_gene_overrides={"chemical_absorption": 2.0})
     sim = Simulation(cfg, 1)
     for _ in range(300):
         sim.step()
-        assert float(sim.world.chemical.min()) >= 0.0
+        assert float(sim.world.h2.min()) >= 0.0

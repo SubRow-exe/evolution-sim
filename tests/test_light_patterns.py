@@ -103,7 +103,7 @@ def test_light_pattern_does_not_consume_rng():
     """
     a = World(Config(), np.random.Generator(np.random.PCG64(7)))
     b = World(hc_cfg(), np.random.Generator(np.random.PCG64(7)))
-    assert np.array_equal(a.chem_mask, b.chem_mask)
+    assert np.array_equal(a.h2_mask, b.h2_mask)
     assert np.array_equal(a.nutrients, b.nutrients)
     assert not np.array_equal(a.light, b.light), "光場は変わっているはず"
 
