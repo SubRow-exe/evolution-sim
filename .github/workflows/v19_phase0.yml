@@ -18,9 +18,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: Install dependencies
         run: uv sync --dev
-      - name: Run V1.9 physical Phase0 preflight
+      - name: Run V1.9 corrected physical Phase0 preflight
         run: |
-          uv run python experiments/exp15_v19_preflight/run_phase0.py --out phase0_results.json | tee phase0.log
+          uv run python experiments/exp15_v19_preflight/run_phase0_corrected.py --out phase0_results.json | tee phase0.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
