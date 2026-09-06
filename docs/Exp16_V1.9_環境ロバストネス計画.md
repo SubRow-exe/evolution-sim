@@ -1,7 +1,9 @@
 # Exp16 V1.9 環境ロバストネス実験計画
 
-更新: 2026-09-04
-状態: **PREREGISTERED / DISPATCH AUTHORIZED**
+更新: 2026-09-07
+状態: **COMPLETE / 55 RUNS FINISHED**
+
+結果・考察: `docs/Exp16_V1.9_結果考察.md`
 
 ## 1. 目的
 
@@ -31,7 +33,7 @@ initial_matter = 0.50
 ```text
 H2 source concentration = 10 mM
 H2 diffusion coefficient = 5.0e-9 m2/s
-H2 exchange timescale = 900 s
+H2 exchange/loss timescale = 900 s
 source layout = square (10,10),(10,30),(30,10),(30,30)
 4 source cells
 20 mm x 20 mm world
@@ -39,11 +41,13 @@ source layout = square (10,10),(10,30),(30,10),(30,30)
 0.5 mm effective depth
 ```
 
+注: `h2_exchange_tau_s` はsource補給速度ではなく、fieldからのexchange/loss removal timescale。small tauほどH2が速く失われる。
+
 ## 4. 条件
 
 他の値はすべて基準のまま、原則として1軸ずつ変更する。
 
-| condition | H2 source | tau | D [m2/s] | layout |
+| condition | H2 source | loss tau | D [m2/s] | layout |
 |---|---:|---:|---:|---|
 | `h2_1mM` | 1 mM | 900 s | 5e-9 | square |
 | `h2_3mM` | 3 mM | 900 s | 5e-9 | square |
@@ -75,6 +79,8 @@ x 5 seeds (16001-16005)
 x 10 physical days
 = 55 runs
 ```
+
+実行結果: **55/55 complete**。
 
 matrixはfail-fastしない。ある条件が絶滅しても他条件を止めない。
 
