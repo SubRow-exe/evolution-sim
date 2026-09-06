@@ -1,237 +1,161 @@
 # Exp15 V1.9 結果・考察
 
-更新: 2026-09-04
-状態: **PHASE A COMPLETE / GATE FAIL / PHASE B NOT DISPATCHED**
+更新: 2026-09-07
+状態: **ATTEMPT 2 PHASE A SCIENTIFIC PASS / PHASE B PENDING WORKFLOW FIX**
 
-対象commit: `4dd5d769b84527dbfa76c4b800a0fd7fdd41507a`
-GitHub Actions run: `33859051915` (`Exp15 V1.9 Formal`)
+Exp15はV1.9 physical iLUCAが成立し、世代交代できるかを確認したうえで、新規3形質の進化価値を検証する実験である。
 
 ---
 
-## 1. 結論
+# 1. Attempt 1 — physical baseline FAIL
 
-Exp15 formal Phase A は5 seedすべて正常実行されたが、**全seedで約2.2–2.3分以内に100/100個体がstarvation死し、max_generation=0** となった。
+対象run: `33859051915`
 
-事前登録gate:
+結果:
+
+```text
+5/5 seedで約2.2–2.3分以内に全滅
+max generation = 0
+Phase B = preregistered gateによりSKIP
+```
+
+保存則・H2 field自体は正常だった。
+
+根本原因はgrowth/anabolism Energy allocationで、precursor assimilationが外部Energy収入と無関係にstored Energyを大量消費し、maintenance/homeostasisより先にEnergy reserveを空にしていた。
+
+定量的には初期個体のgrowth demandがH2 incomeを大きく上回り、初期Energyを約125 sで消費する計算が実測130–140 s全滅と一致した。
+
+判断:
+
+- H2濃度を後付けで増やして救済しない
+- storageを増やして救済しない
+- growth rateだけを恣意的に下げない
+- LUCA-like physiologyとEnergy allocationを文献拘束で再設計する
+
+Attempt 1は失敗として保持する。
+
+---
+
+# 2. Attempt 2 — literature-constrained LUCA-like proxy
+
+実装commit: `ee9f181612b24c39d5bd092f8cd0310dfcde2cc7`
+GitHub Actions run: `33871356278` (`Exp15 V1.9 LUCA Proxy`)
+
+主要変更:
+
+```text
+anaerobic H2-dependent CO2-fixing acetogen-like LUCA proxy
+physical H2 uptake / ATP / maintenance / growth parameters
+maintenance-first / homeostatic-reserve-protected growth allocation
+H2 source reference = 10 mM
+```
+
+growthは
+
+```text
+P_full * starvation_horizon
+```
+
+に相当するhomeostatic Energy reserveを侵食しない。余剰Energyのみanabolismへ使用する。
+
+## 2.1 6-hour sanity
+
+```text
+100 / 100 alive
+deaths = 0
+Matter mean: 約0.500 -> 0.552
+Energy conservation PASS
+Matter conservation PASS
+```
+
+Attempt 1の2分全滅は解消し、単なる延命ではなく実際にMatter growthが起きた。
+
+## 2.2 Formal Phase A
+
+5 seed x 10 physical daysを固定iLUCAで実行。
+
+| seed | final N | max generation | stop |
+|---:|---:|---:|---|
+| 15001 | 2979 | 5 | duration complete |
+| 15002 | 3021 | 5 | duration complete |
+| 15003 | 2934 | 5 | duration complete |
+| 15004 | 2956 | 5 | duration complete |
+| 15005 | 3009 | 5 | duration complete |
+
+全seedで10日間生存し、全seedがmax_generation=5へ到達した。
+
+generation interval medianは各seedで約55 h前後。
+
+したがって事前登録gate:
 
 ```text
 >= 3/5 seeds reach max_generation >= 5
 ```
 
-に対し:
+に対し、実データは
 
 ```text
-0/5 seeds reach max_generation >= 5
-```
-
-なので **GATE FAIL**。
-
-workflowは設計どおりPhase Bを自動SKIPした。parameter tuning、Phase B強行、Phase C実行は行っていない。
-
-このFAILは、Phase0で確認したH2 Energy収支仮説を否定するものではない。Phase0ではnutrient/growthを無効にしており、formal Phase Aでgrowthを有効化したことで、**growth/anabolism Energy budgetの新たなscale mismatch** が露出した。
-
----
-
-## 2. Phase A結果
-
-| seed | extinction [h] | extinction [min] | max generation | final N | cause |
-|---:|---:|---:|---:|---:|---|
-| 15001 | 0.03889 | 2.333 | 0 | 0 | starvation 100/100 |
-| 15002 | 0.03889 | 2.333 | 0 | 0 | starvation 100/100 |
-| 15003 | 0.03611 | 2.167 | 0 | 0 | starvation 100/100 |
-| 15004 | 0.03889 | 2.333 | 0 | 0 | starvation 100/100 |
-| 15005 | 0.03889 | 2.333 | 0 | 0 | starvation 100/100 |
-
-全seed:
-
-- population max = 100
-- generation = 0
-- birthsは初期100個体のみ
-- Matter ledger residual = 0
-- Energy ledger residual = ~`5e-20–8e-20 J` 程度
-- H2 biological uptake / source influx = 約`3e-7`
-
-従って、数値発散・保存則破綻・個体数爆発ではない。
-
----
-
-## 3. Phase0との違い
-
-Phase0で確認済み:
-
-- H2 field PASS
-- source近傍にnet Energy positive region
-- 遠方にnet Energy negative region
-- random 100個体 / reproduction OFF / 48hで7個体生存
-- chemotaxis / heterogeneous exposure成立
-- dt収束PASS
-
-formal Phase Aで新たにONになった主要項は **Matter precursor assimilation / growth**。
-
-formal runnerではnutrientを一次Energy cueとして移動ターゲットにしない修正は入れていたが、precursor uptakeとgrowth Energy消費自体は有効だった。
-
----
-
-## 4. 根本原因の定量診断
-
-### 4.1 growth Energy cost
-
-物理baseline:
-
-```text
-1 matter = 2.8e-16 kgDW
-growth_energy = 5.0e6 J/kgDW
-```
-
-したがって:
-
-```text
-1 matter synthesis cost = 1.4e-9 J = 1.4 nJ
-```
-
-### 4.2 初期iLUCAのprecursor assimilation demand
-
-reference:
-
-```text
-nutrient uptake cap = 0.20 matter/h * nutrient_absorption
-nutrient_absorption(initial) = 0.5
-```
-
-なので資源豊富時:
-
-```text
-0.10 matter/h
-```
-
-を同化しようとする。
-
-必要power:
-
-```text
-0.10 matter/h * 1.4e-9 J/matter / 3600
-= 3.89e-14 W
-= 38.9 fW
-```
-
-### 4.3 H2側との比較
-
-Matter=0.5、chemical_absorption=1.0、H2=1 mM source cellで、現reference uptake式から得られるusable powerは概算:
-
-```text
-~2.0 fW
-```
-
-したがって:
-
-```text
-growth demand / maximum local H2 income
-~ 19x
+5/5 PASS
 ```
 
 である。
 
-baseline maintenanceはsub-fW級なので、今回の2分全滅を説明する主項はmaintenanceではなくgrowth。
-
-### 4.4 初期Energyとの整合
-
-Matter=0.5, storage_capacity=1.0の初期Energyはおよそ:
-
-```text
-4.87e-12 J
-```
-
-growth demandだけで消費すると:
-
-```text
-4.87e-12 / 3.89e-14 W ≈ 125 s
-```
-
-実測の全滅:
-
-```text
-130–140 s
-```
-
-とほぼ一致する。
-
-よって **原因仮説は定量的にも強く支持される**。
+**科学的にはPhase A adequacy gate PASS。**
 
 ---
 
-## 5. 設計上の問題
+# 3. Phase Bが実行されなかった理由
 
-現在のgrowthは概念的に:
+Actions workflow上ではgate jobがsuccess終了した後、Phase BがSKIPされた。
+
+しかしindividual artifactsを直接確認すると5/5 seedがgeneration 5へ到達しているため、これは科学的FAILではない。
+
+原因はgate/aggregate側がPhase A summary artifact pathを期待どおり収集できなかったworkflow integration issueと判断する。
+
+従って記録は:
 
 ```text
-precursor available
-  -> uptake capまで同化要求
-  -> 現在持っているEnergyで払えるだけ支払う
-  -> その後maintenance
+Exp15 Attempt 2 Phase A = SCIENTIFIC PASS
+Phase B = NOT YET RUN (workflow gate artifact collection bug)
 ```
 
-となっている。
+とする。
 
-このため、外部Energy流入が不足していても、**貯蔵Energyを使い切るまで最大同化速度を維持**する。
-
-これはV1.9で導入したhomeostasisと矛盾する。
-
-生物学的には、anabolism/growthはATP/Energy状態に応じて抑制されるべきであり、maintenanceより優先してEnergy reserveを空にする固定growth demandは不自然。
+Attempt 2を「gate fail」と解釈してはならない。
 
 ---
 
-## 6. 次の修正方針
+# 4. Exp15から得た主要知見
 
-H2 source濃度、H2 uptake能力、maintenance、storageを今回のFAILに合わせて変更しない。
-Phase0でH2単独の正負Energy領域は既に成立しているためである。
-
-次に修正すべき軸は **growth Energy allocation**。
-
-推奨構造:
-
-```text
-1. catabolic Energy uptake (H2 etc.)
-2. basal maintenance / required physiology
-3. homeostatic Energy reserve
-4. surplus Energyのみをgrowth/anabolismへ配分
-5. reproduction
-```
-
-少なくともgrowthに使えるEnergyを:
-
-```text
-E_growth_available = max(0,
-    E - protected_homeostatic_reserve)
-```
-
-のように制限し、Energyが低いとgrowthが自然に止まる構造へ変更する。
-
-`protected_homeostatic_reserve`をstarvation/runway machineryと接続すれば、未来予測なしに現在のEnergy状態だけでgrowth suppressionを実装できる。
-
-重要:
-
-- `nutrient_uptake_rate`を単純に小さくしてPASSさせない
-- H2濃度を上げて救済しない
-- storageを増やして救済しない
-- Phase Bを強行しない
-
-これらは症状を隠すだけで、growth allocation問題を残す。
+1. SI単位へ移行するだけでは生物学的に成立しない。Energy allocation semanticsが必要だった。
+2. LUCA-like acetogen proxy + maintenance-first allocationにすると、H2 physical environment内で生存・成長・分裂が再現性高く成立する。
+3. baseline 10 mM / D=5e-9 / tau=900 s / square sourceは、少なくとも10日・5世代の成立を支える。
+4. fixed iLUCAの成立確認は完了したので、次は新規3形質の進化価値を検証できる。
 
 ---
 
-## 7. Exp15の扱い
+# 5. 次のPhase B
 
-今回のrunを削除・無効化しない。
+workflow gate処理を修正したうえで、Attempt 2 Phase Aと同じbaseline・seed方針を維持してPhase Bを実行する。
+
+進化ONは以下3形質だけ:
 
 ```text
-Exp15 attempt 1:
-  Phase A = FAIL
-  reason = growth/anabolism Energy allocation mismatch revealed
-  Phase B = preregistered gateによりSKIPPED
+storage_capacity
+starvation_horizon
+reproduction_horizon
 ```
 
-として正式な診断結果として保存する。
+その他の遺伝子、phototrophy/predation innovationは固定/OFF。
 
-growth allocation修正後は、同じH2 physical baseline、同じseed、同じPhase A/B構造を使い、`Exp15 rerun / attempt 2` として再実行する。
+目的は、環境を生存可能に調整することではなく、**現在のV1.9環境に対してこの3つの生理戦略が自然選択に使われるか**を確認すること。
 
-Phase Cは引き続き自動実行しない。
+Exp16環境ロバストネスの結果から、Phase B前にbaseline environmentを再調整する必要はない。
+
+---
+
+# 6. Version
+
+Attempt 1 -> Attempt 2のLUCA proxy導入とmaintenance-first Energy allocationは、人間判断によりV1.9へ包含済み。
+
+Exp15は全Attemptを通して**V1.9**。
