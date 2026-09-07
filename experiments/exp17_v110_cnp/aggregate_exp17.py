@@ -19,6 +19,7 @@ REQUIRED_ARTIFACTS = (
 )
 
 LEDGER_RESIDUAL_GATE = 1e-6  # relative; openなので1e-9厳密closureは要求しない
+ALL_LIMITERS = ("energy", "kinetic", "carbon", "nitrogen", "phosphorus", "room")
 
 
 def _finite(values):
@@ -114,16 +115,26 @@ def aggregate_phase_b(rows: list[dict]) -> dict:
 
     def _identity_pass(cond: str, element: str, ref_val: float | None) -> dict:
         frac = mean_limiter(cond, element)
-        others = {k: mean_limiter(cond, k) for k in ("carbon", "nitrogen", "phosphorus")
-                 if k != element}
-        is_max = (frac is not None and all(
-            frac >= (v if v is not None else -1.0) for v in others.values()))
+        all_fracs = {k: mean_limiter(cond, k) for k in ALL_LIMITERS}
+        comparable = [v for v in all_fracs.values() if v is not None]
+        # "condition内の最大limiter" はC/N/Pだけでなく全limiterとの比較。
+        # さらに全て0のtieをidentity PASSにしないためtarget > 0を要求する。
+        is_max = bool(
+            frac is not None
+            and frac > 0.0
+            and comparable
+            and frac >= max(comparable)
+        )
         shift_ok = (frac is not None and ref_val is not None
                    and (frac - ref_val) * 100.0 >= 20.0)
-        return {"limiter_fraction_mean": frac, "reference_fraction_mean": ref_val,
-               "is_max_limiter_in_condition": is_max,
-               "shift_ge_20pp_vs_reference": shift_ok,
-               "pass": bool(frac is not None and (is_max or shift_ok))}
+        return {
+            "limiter_fraction_mean": frac,
+            "reference_fraction_mean": ref_val,
+            "all_limiter_fraction_mean": all_fracs,
+            "is_max_limiter_in_condition": is_max,
+            "shift_ge_20pp_vs_reference": shift_ok,
+            "pass": bool(frac is not None and (is_max or shift_ok)),
+        }
 
     cases = {
         "B1_low_dic": _identity_pass("B1_low_dic", "carbon", ref_c),
