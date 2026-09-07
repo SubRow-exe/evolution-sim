@@ -15,17 +15,18 @@ import math
 
 import numpy as np
 
-from . import behavior, physiology
+from . import behavior, physiology, stoichiometry
 from .config import Config
 from .daynight import daylight_factor
 from .corpse import Corpse
 from .genome import (CHEM_ABS, CORPSE_DIG, LIGHT_ABS, MEMBRANE, NUTRIENT_ABS,
-                     PREDATION, REPRO_HORIZON, REPRO_INVEST, STORAGE_CAP,
-                     diagnostic_overrides, fixed_mask_from_names,
+                     PREDATION, REPRO_HORIZON, REPRO_INVEST, STARV_HORIZON,
+                     STORAGE_CAP, diagnostic_overrides, fixed_mask_from_names,
                      initial_capability, initial_genome, mutate,
                      structural_mutate)
 from .organism import Organism
 from .recorder import Recorder
+from .stoichiometry import GROWTH_LIMITERS
 from .world import VENT_BAND_NAMES, World
 
 NB = len(VENT_BAND_NAMES)  # vent距離帯の本数 (観測専用)
@@ -78,6 +79,22 @@ class Simulation:
         # V1.9 structural innovation観測 (観測専用・進化ロジックへ不使用)
         self.phototrophy_innovation_events = 0
         self.phototrophy_loss_events = 0
+
+        # V1.10: C/N/P element ledger (docs/V1.10_CNP資源分解_実装仕様.md §7)。
+        # explicit_cnp_resources=Falseでは全て0のまま (未使用)。
+        self.c_in_external_cum = 0.0
+        self.c_out_external_cum = 0.0
+        self.n_in_external_cum = 0.0
+        self.n_out_external_cum = 0.0
+        self.p_in_external_cum = 0.0
+        self.p_out_external_cum = 0.0
+        # 生物学的uptake (fieldからbiomassへ; externalではなく内部移転)
+        self.c_uptake_cum = 0.0
+        self.n_uptake_cum = 0.0
+        self.p_uptake_cum = 0.0
+        # growth_limiter (§9)。cumulativeカウント (stats.csvへ毎回そのまま書く。
+        # 区間rateはbirths_cum等と同様、呼び出し側が差分を取る)。
+        self.growth_limiter_cum = {k: 0 for k in GROWTH_LIMITERS}
 
         # 世界全体の光供給量/tick (未利用光量の算出用・不変。昼夜cycle適用前のbase値)
         self.light_supply_per_tick = float(self.world.light.sum())
@@ -257,6 +274,29 @@ class Simulation:
                 + sum(c.matter for c in self.corpses)
                 + self.world.total_nutrients())
 
+    # --- V1.10: 元素inventory (docs/V1.10_CNP資源分解_実装仕様.md §7) ---
+    # system_matter()と異なり、explicit_cnp_resources=Trueでは
+    # Organism.matterはC/N/P台帳から独立には保存されない (残り約40%の
+    # H/O/S/ash分はimplicit/non-limiting水由来と仮定するため)。
+    # 保存則は各元素ごとにここで検証する。
+
+    def _biomass_element_totals(self) -> tuple[float, float, float]:
+        total_matter = (sum(o.matter for o in self.organisms)
+                        + sum(c.matter for c in self.corpses))
+        return stoichiometry.matter_to_element_mol(total_matter, self.cfg)
+
+    def system_carbon(self) -> float:
+        c_bio, _, _ = self._biomass_element_totals()
+        return self.world.total_dic() + c_bio
+
+    def system_nitrogen(self) -> float:
+        _, n_bio, _ = self._biomass_element_totals()
+        return self.world.total_fixed_nitrogen() + n_bio
+
+    def system_phosphorus(self) -> float:
+        _, _, p_bio = self._biomass_element_totals()
+        return self.world.total_phosphate() + p_bio
+
     # ------------------------------------------------------------------
     # メインループ
 
@@ -277,6 +317,16 @@ class Simulation:
         self.energy_out_cum += h2_loss * h2_yield
         self.h2_influx_cum += h2_influx
         self.h2_loss_cum += h2_loss
+
+        # 1.5 V1.10: C/N/P background exchange + 拡散 (H2とは独立メソッド)
+        if cfg.explicit_cnp_resources:
+            cnp = self.world.update_cnp()
+            self.c_in_external_cum += cnp["c_in"]
+            self.c_out_external_cum += cnp["c_out"]
+            self.n_in_external_cum += cnp["n_in"]
+            self.n_out_external_cum += cnp["n_out"]
+            self.p_in_external_cum += cnp["p_in"]
+            self.p_out_external_cum += cnp["p_out"]
 
         # 2. 空間ハッシュ (tick開始時の位置スナップショット)。
         #    行動決定はこの時点の刺激場・配置を見る。
@@ -388,7 +438,10 @@ class Simulation:
             areas = [physiology.effective_surface(o.matter) for o in orgs]
             self._absorb_light(orgs, phis, areas, key)
             self._absorb_h2(orgs, phis, areas, key)
-            self._absorb_nutrient(orgs, phis, areas, key)
+            if cfg.explicit_cnp_resources:
+                self._grow_cnp(orgs, phis, key)
+            else:
+                self._absorb_nutrient(orgs, phis, areas, key)
 
     @staticmethod
     def _demand_scale(demands: list[float], supply: float) -> float:
@@ -608,6 +661,166 @@ class Simulation:
         self.world.nutrients[key] = max(0.0, stock - taken)
         self.flows["nutrient"] += taken
 
+    def _grow_cnp(self, orgs: list[Organism], phis: list[float],
+                  key: tuple[int, int]) -> None:
+        """V1.10: 環境genericMatter吸収の代わりに、固定biomass組成の
+        C/N/P台帳でOrganism.matter (dry biomass) 成長を律速する
+        (docs/V1.10_CNP資源分解_実装仕様.md §4)。
+
+        各個体の最大growth requestは3つの上限のminで決める (§4.1):
+
+            dm_room    = matter_cap - current_matter
+            dm_kinetic = V1.9 growth kinetic ceiling * nutrient_absorption * dt
+            dm_energy  = E_growth_available / growth_energy_cost_per_matter
+
+        `dm_kinetic`/`dm_energy` は、Exp15 attempt2 + Exp16で実際に
+        validateされたLUCA proxy growth allocation
+        (experiments/luca_proxy/run_luca_proxy.py の
+        `_absorb_nutrient_luca` / `growth_available_energy_j`) と
+        同じ式を再利用する:
+
+            dm_kinetic     = kinetic_rate * nutrient_absorption * phi * uptake_factor
+            E_protected    = min(E_max, P_full * max(starvation_horizon, dt))
+            E_growth_avail = max(0, energy - E_protected)
+            dm_energy      = E_growth_avail / growth_energy_cost_per_matter
+
+        「growthはmaintenance用の現在runwayを侵食しない」という
+        maintenance-first allocationをV1.10でも維持する
+        (docs/V1.9_LUCA_proxy設計.md §4)。
+
+        cell全体のC/N/P要求量に対しavailable stockから共通scale
+        `s=min(1,s_C,s_N,s_P)` を求め、個体のdm_reqへ一律に掛ける
+        (順序依存を避ける)。
+        """
+        cfg = self.cfg
+        a_idx = NUTRIENT_ABS
+        kinetic_rate = cfg.nutrient_uptake_rate_matter_per_h / 3600.0 * cfg.dt_seconds
+        growth_cost_per_matter = cfg.growth_energy_j_per_kgdw * cfg.matter_unit_to_kgdw
+
+        reqs: list[float] = []
+        pre_limiters: list[str | None] = []
+        e_avail_list: list[float] = []
+        for o, phi in zip(orgs, phis):
+            a = o.genome[a_idx]
+            if a <= ABILITY_EPS:
+                reqs.append(0.0)
+                pre_limiters.append(None)
+                e_avail_list.append(0.0)
+                continue
+            dm_room = cfg.matter_cap_frac * o.target_size - o.matter
+            if dm_room <= 0.0:
+                reqs.append(0.0)
+                pre_limiters.append("room")
+                e_avail_list.append(0.0)
+                continue
+            uf = physiology.uptake_factor(o.starve_state, cfg)
+            dm_kinetic = kinetic_rate * a * phi * uf
+            p_full = physiology.full_activity_expenditure_rate(o, cfg)
+            horizon_s = max(float(o.genome[STARV_HORIZON]), cfg.dt_seconds)
+            e_protected = min(physiology.energy_max(o, cfg), max(0.0, p_full * horizon_s))
+            e_growth_available = max(0.0, o.energy - e_protected)
+            dm_energy = e_growth_available / max(growth_cost_per_matter, 1e-300)
+            limiter, dm_req = min(
+                (("room", dm_room), ("kinetic", dm_kinetic), ("energy", dm_energy)),
+                key=lambda kv: kv[1])
+            reqs.append(max(0.0, dm_req))
+            pre_limiters.append(limiter)
+            e_avail_list.append(e_growth_available)
+
+        total_dm_req = math.fsum(reqs)
+        if total_dm_req <= 0.0:
+            for lim in pre_limiters:
+                if lim is not None:
+                    self.growth_limiter_cum[lim] += 1
+            return
+
+        c_per_kgdw = stoichiometry.carbon_mol_per_kgdw(cfg)
+        n_per_kgdw = stoichiometry.nitrogen_mol_per_kgdw(cfg)
+        p_per_kgdw = stoichiometry.phosphorus_mol_per_kgdw(cfg)
+        kgdw_per_matter = cfg.matter_unit_to_kgdw
+        kgdw_req_total = total_dm_req * kgdw_per_matter
+        c_req_mol = kgdw_req_total * c_per_kgdw
+        n_req_mol = kgdw_req_total * n_per_kgdw
+        p_req_mol = kgdw_req_total * p_per_kgdw
+
+        voxel_volume = self.world.voxel_volume_m3
+        c_avail = max(0.0, float(self.world.dic[key])) * voxel_volume
+        n_avail = max(0.0, float(self.world.fixed_nitrogen[key])) * voxel_volume
+        p_avail = max(0.0, float(self.world.phosphate[key])) * voxel_volume
+
+        s_c = c_avail / c_req_mol if c_req_mol > 0.0 else 1.0
+        s_n = n_avail / n_req_mol if n_req_mol > 0.0 else 1.0
+        s_p = p_avail / p_req_mol if p_req_mol > 0.0 else 1.0
+        s = max(0.0, min(1.0, s_c, s_n, s_p))
+
+        element_limiter = None
+        if s < 1.0:
+            element_limiter = min(
+                (("carbon", s_c), ("nitrogen", s_n), ("phosphorus", s_p)),
+                key=lambda kv: kv[1])[0]
+
+        dms: list[float] = []
+        for o, dm_req, pre_lim, e_avail in zip(orgs, reqs, pre_limiters, e_avail_list):
+            if pre_lim is None:
+                continue
+            if dm_req <= 0.0:
+                self.growth_limiter_cum[pre_lim] += 1
+                continue
+            limiter = element_limiter if element_limiter is not None else pre_lim
+            self.growth_limiter_cum[limiter] += 1
+            dm = dm_req * s
+            # protected reserveを浮動小数の端数でも侵食しないための再clamp
+            # (run_luca_proxy.py の "re-evaluate immediately before spending"
+            # と同じ防御)。
+            dm = min(dm, e_avail / max(growth_cost_per_matter, 1e-300))
+            if dm <= 0.0:
+                continue
+            cost = dm * growth_cost_per_matter
+            o.matter += dm
+            o.energy -= cost
+            # V1.9 §4.2と同じ会計原則: system_energy()はbiomass化学potential
+            # を計上しないため、合成に使ったEnergyはledger上out (熱扱い)。
+            self.energy_out_cum += cost
+            dms.append(dm)
+
+        dm_actual = math.fsum(dms)
+        if dm_actual <= 0.0:
+            return
+        kgdw_actual = dm_actual * kgdw_per_matter
+        c_used = kgdw_actual * c_per_kgdw
+        n_used = kgdw_actual * n_per_kgdw
+        p_used = kgdw_actual * p_per_kgdw
+        self.world.dic[key] = max(0.0, float(self.world.dic[key]) - c_used / voxel_volume)
+        self.world.fixed_nitrogen[key] = max(
+            0.0, float(self.world.fixed_nitrogen[key]) - n_used / voxel_volume)
+        self.world.phosphate[key] = max(
+            0.0, float(self.world.phosphate[key]) - p_used / voxel_volume)
+        self.c_uptake_cum += c_used
+        self.n_uptake_cum += n_used
+        self.p_uptake_cum += p_used
+        self.flows["nutrient"] += dm_actual
+
+    def _return_matter_to_field(self, ix: int, iy: int, matter_amount: float) -> None:
+        """decay/waste由来のmatterを環境へ戻す共通経路 (V1.9 nutrient /
+        V1.10 C/N/P)。corpse decay・predation waste・corpse捕食の排泄は
+        すべてここを通す (docs/V1.10_CNP資源分解_実装仕様.md §6)。
+
+        V1.10 (explicit_cnp_resources=True): 固定biomass組成でC/N/Pへ
+        戻す (internal transfer。externalledgerには数えない)。
+        V1.9 (False): 従来通りworld.nutrientsへ (挙動不変)。
+        """
+        if matter_amount <= 0.0:
+            return
+        cfg = self.cfg
+        if cfg.explicit_cnp_resources:
+            c_mol, n_mol, p_mol = stoichiometry.matter_to_element_mol(matter_amount, cfg)
+            vv = self.world.voxel_volume_m3
+            self.world.dic[ix, iy] += c_mol / vv
+            self.world.fixed_nitrogen[ix, iy] += n_mol / vv
+            self.world.phosphate[ix, iy] += p_mol / vv
+        else:
+            self.world.nutrients[ix, iy] += matter_amount
+
     def _eat_corpse(self, org: Organism) -> None:
         cfg = self.cfg
         g = org.genome
@@ -650,7 +863,7 @@ class Simulation:
         waste = bite - assim
         org.matter += assim
         cx, cy = self.world.cell_index(target.x, target.y)
-        self.world.nutrients[cx, cy] += waste
+        self._return_matter_to_field(cx, cy, waste)
         # エネルギー: 死骸の残エネルギーを物質比で同時取得
         e_frac = bite / target.matter if target.matter > 0 else 0.0
         e_take = target.energy * e_frac
@@ -720,7 +933,7 @@ class Simulation:
         self.flows["predation_energy"] += e_gain
         self.flows["predation_matter"] += m_gain
         tx, ty = self.world.cell_index(target.x, target.y)
-        self.world.nutrients[tx, ty] += m_take - m_gain
+        self._return_matter_to_field(tx, ty, m_take - m_gain)
         # 咬まれて身体を失った獲物のエネルギー上限超過分は散逸
         overflow = physiology.clamp_energy_to_capacity(target, cfg)
         self.energy_out_cum += overflow
@@ -749,12 +962,12 @@ class Simulation:
             ix, iy = self.world.cell_index(c.x, c.y)
             decay_m = c.matter * cfg.corpse_decay
             c.matter -= decay_m
-            self.world.nutrients[ix, iy] += decay_m
+            self._return_matter_to_field(ix, iy, decay_m)
             decay_e = c.energy * cfg.corpse_energy_decay
             c.energy -= decay_e
             self.energy_out_cum += decay_e
             if c.matter < cfg.corpse_min_matter:
-                self.world.nutrients[ix, iy] += c.matter
+                self._return_matter_to_field(ix, iy, c.matter)
                 self.energy_out_cum += c.energy
                 continue
             survivors.append(c)

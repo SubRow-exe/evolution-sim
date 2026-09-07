@@ -33,7 +33,11 @@ from .genome import (BODY_SIZE, GENE_NAMES, LIGHT_ABS, MOVE_POWER,
 from .runmeta import run_metadata
 from .spatial import (BAND_NAMES, lineage_spatial, population_spatial,
                       save_environment_snapshot, save_static_environment)
+from .stoichiometry import GROWTH_LIMITERS
 from .world import VENT_BAND_NAMES
+
+# V1.10 C/N/P列数 (explicit_cnp_resources=Falseのときは同数の""で埋める)
+_N_CNP_SCALAR_COLS = 9 + 3 + 6 + 3  # mean/median/min x3資源 + uptake + exchange io + total
 
 TOP_LINEAGES = 8  # lineages.csv に記録する上位系統数
 
@@ -100,6 +104,18 @@ class Recorder:
             "h2_total", "h2_source_influx_rate", "h2_environment_loss_cum",
             "h2_conversion_loss_cum", "storage_overflow_cum",
             *[f"h2_{b}_band" for b in VENT_BAND_NAMES],
+            # V1.10 (docs/V1.10_CNP資源分解_実装仕様.md §9): explicit_cnp_
+            # resources=Falseでは全列""。growth_limiter_*_cumはExp17の
+            # 中心readout。
+            "dic_mean_molm3", "dic_median_molm3", "dic_min_molm3",
+            "fixed_n_mean_molm3", "fixed_n_median_molm3", "fixed_n_min_molm3",
+            "phosphate_mean_molm3", "phosphate_median_molm3", "phosphate_min_molm3",
+            "c_uptake_cum_mol", "n_uptake_cum_mol", "p_uptake_cum_mol",
+            "c_in_external_cum_mol", "c_out_external_cum_mol",
+            "n_in_external_cum_mol", "n_out_external_cum_mol",
+            "p_in_external_cum_mol", "p_out_external_cum_mol",
+            "dic_total_mol", "fixed_n_total_mol", "phosphate_total_mol",
+            *[f"growth_limiter_{k}_cum" for k in GROWTH_LIMITERS],
             # 空間指標 (V1.2.1)。地理帯は Control/Treatment 共通の固定定義
             *[f"pop_{b}_band" for b in BAND_NAMES],
             *[f"frac_{b}_band" for b in BAND_NAMES],
@@ -233,6 +249,29 @@ class Recorder:
             band_vals = sim.world.h2[sim.world.vent_band == bi]
             h2_band_means.append(round(float(band_vals.mean()), 6) if band_vals.size else "")
 
+        # V1.10: C/N/P (explicit_cnp_resources=Falseなら全列"")
+        if sim.cfg.explicit_cnp_resources:
+            dic, fn, ph = sim.world.dic, sim.world.fixed_nitrogen, sim.world.phosphate
+            cnp_cols = [
+                round(float(dic.mean()), 8), round(float(np.median(dic)), 8),
+                round(float(dic.min()), 8),
+                round(float(fn.mean()), 8), round(float(np.median(fn)), 8),
+                round(float(fn.min()), 8),
+                round(float(ph.mean()), 8), round(float(np.median(ph)), 8),
+                round(float(ph.min()), 8),
+                round(sim.c_uptake_cum, 6), round(sim.n_uptake_cum, 6),
+                round(sim.p_uptake_cum, 6),
+                round(sim.c_in_external_cum, 6), round(sim.c_out_external_cum, 6),
+                round(sim.n_in_external_cum, 6), round(sim.n_out_external_cum, 6),
+                round(sim.p_in_external_cum, 6), round(sim.p_out_external_cum, 6),
+                round(sim.world.total_dic(), 6), round(sim.world.total_fixed_nitrogen(), 6),
+                round(sim.world.total_phosphate(), 6),
+            ]
+            limiter_cols = [sim.growth_limiter_cum[k] for k in GROWTH_LIMITERS]
+        else:
+            cnp_cols = [""] * _N_CNP_SCALAR_COLS
+            limiter_cols = [""] * len(GROWTH_LIMITERS)
+
         # 空間指標 (V1.2.1)。読み取り専用でRNG・個体状態に触れない
         sp_pop = population_spatial(sim)
         mean_move = (round(sim._move_sum / sim._move_count, 6)
@@ -320,6 +359,7 @@ class Recorder:
             round(sim.h2_influx_cum, 4), round(sim.h2_loss_cum, 4),
             round(sim.h2_conversion_loss_cum, 4), round(sim.storage_overflow_cum, 4),
             *h2_band_means,
+            *cnp_cols, *limiter_cols,
             *[sp_pop[f"pop_{b}_band"] for b in BAND_NAMES],
             *[sp_pop[f"frac_{b}_band"] for b in BAND_NAMES],
             sp_pop["mean_local_light"], sp_pop["vent_cell_population"],

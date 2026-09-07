@@ -162,15 +162,20 @@ def _equilibrium_h2(source_flux: np.ndarray, loss_frac: float,
 # 混合/移流損失を粗視化した項。
 
 
-def _h2_subcycle_params(cfg: Config) -> tuple[int, float, float]:
-    dx = cfg.cell_size
-    D = cfg.h2_diffusion_m2s
-    dt = cfg.dt_seconds
-    alpha_max = cfg.h2_subcycle_alpha_max
+def _cfl_subcycle_params(D: float, dt: float, dx: float,
+                         alpha_max: float) -> tuple[int, float, float]:
+    """CFL条件 alpha=D*dt_sub/dx^2 <= alpha_max を満たすsubstep数を求める
+    共通helper (H2 / V1.10 C/N/Pで共有。docs/V1.9_検証実装仕様_物理スケール版.md §5,
+    docs/V1.10_CNP資源分解_実装仕様.md §5)。"""
     n_sub = max(1, math.ceil(D * dt / (alpha_max * dx * dx)))
     dt_sub = dt / n_sub
     alpha = D * dt_sub / (dx * dx)
     return n_sub, dt_sub, alpha
+
+
+def _h2_subcycle_params(cfg: Config) -> tuple[int, float, float]:
+    return _cfl_subcycle_params(cfg.h2_diffusion_m2s, cfg.dt_seconds,
+                                cfg.cell_size, cfg.h2_subcycle_alpha_max)
 
 
 def _diffuse_h2_physical(h2: np.ndarray, cfg: Config,
@@ -214,6 +219,44 @@ def _equilibrium_h2_physical(cfg: Config, source_mask: np.ndarray,
     for _ in range(_H2_WARMUP_ITERS_PHYSICAL):
         h2, _, _ = _diffuse_h2_physical(h2, cfg, source_mask)
     return h2
+
+
+# --- V1.10: C/N/P resource fields (docs/V1.10_CNP資源分解_実装仕様.md §5) ---
+#
+# H2と異なり、C/N/PはDirichlet source cellを持たない。world全体が
+# uniform background reservoir (海水由来) とtimescale tauで交換する
+# (dC/dt=(background-C)/tau)。生物不在の定常場は解析的にbackground濃度
+# そのものなので、H2のようなwarm-up反復は不要 (乱数も使わない)。
+
+
+def _diffuse_cnp_field_physical(c: np.ndarray, cfg: Config, D: float, tau: float,
+                                background: float) -> tuple[np.ndarray, float, float]:
+    """C/N/P 1資源場の1 step分 (dt_seconds) の更新。
+
+    1 stepをCFL条件を満たすsubstep数へ分割し、各substepで
+    (1) background exchange (2) 4近傍拡散、の順に適用する。
+    `cfg.cnp_background_exchange_enabled=False` ならexchangeをskipし
+    (closed-system mechanical test用)、拡散だけで総量厳密保存になる。
+    戻り値: (新しい濃度場, exchange流入量[mol], exchange流出量[mol])。
+    """
+    n_sub, dt_sub, alpha = _cfl_subcycle_params(
+        D, cfg.dt_seconds, cfg.cell_size, cfg.cnp_subcycle_alpha_max)
+    voxel_volume = cfg.cell_size * cfg.cell_size * cfg.effective_depth_m
+    exchange_in_mol = 0.0
+    exchange_out_mol = 0.0
+    for _ in range(n_sub):
+        if cfg.cnp_background_exchange_enabled and tau > 0.0:
+            delta = (background - c) * (dt_sub / tau)
+            pos = delta[delta > 0.0]
+            neg = delta[delta < 0.0]
+            exchange_in_mol += float(pos.sum()) * voxel_volume
+            exchange_out_mol += float(-neg.sum()) * voxel_volume
+            c = c + delta
+        padded = np.pad(c, 1, mode="edge")
+        lap = (padded[:-2, 1:-1] + padded[2:, 1:-1]
+               + padded[1:-1, :-2] + padded[1:-1, 2:] - 4.0 * c)
+        c = c + alpha * lap
+    return c, exchange_in_mol, exchange_out_mol
 
 
 class World:
@@ -270,6 +313,15 @@ class World:
             # 初期stockはdeterministicなfixed-point iterationで求める
             # (生物不在・RNG不使用。docs/V1.9_iLUCA再設計仕様.md §10.2)。
             self.h2 = _equilibrium_h2(self.h2_source_flux, cfg.h2_loss_frac, cfg.h2_diffusion)
+
+        # --- V1.10: C/N/P resource fields (docs/V1.10_CNP資源分解_実装仕様.md §1/5) ---
+        # explicit_cnp_resources=Falseでは一切生成しない (既存V1.9経路に
+        # 影響を与えない)。Dirichlet sourceを持たないため、生物不在の定常場は
+        # 解析的にbackground濃度そのもの (RNG不使用・warm-up不要)。
+        if cfg.explicit_cnp_resources:
+            self.dic = np.full((gw, gh), cfg.dic_background_molm3)
+            self.fixed_nitrogen = np.full((gw, gh), cfg.fixed_n_background_molm3)
+            self.phosphate = np.full((gw, gh), cfg.phosphate_background_molm3)
 
     # --- 座標 → セル ---
 
@@ -387,6 +439,26 @@ class World:
         self.nutrients = n + d * lap
         return h2_influx, h2_loss
 
+    def update_cnp(self) -> dict[str, float]:
+        """V1.10: C/N/P 3 fieldのbackground exchange + 拡散 (1 dt_seconds分)。
+
+        H2と分離した独立メソッドにする理由: `update()` の戻り値型
+        (h2_influx, h2_loss) を変えると既存呼び出し・testに影響するため。
+        `cfg.explicit_cnp_resources=True` のときだけ呼ばれる想定
+        (docs/V1.10_CNP資源分解_実装仕様.md §5)。
+        """
+        cfg = self.cfg
+        self.dic, c_in, c_out = _diffuse_cnp_field_physical(
+            self.dic, cfg, cfg.d_dic_m2s, cfg.cnp_exchange_tau_s, cfg.dic_background_molm3)
+        self.fixed_nitrogen, n_in, n_out = _diffuse_cnp_field_physical(
+            self.fixed_nitrogen, cfg, cfg.d_fixed_n_m2s, cfg.cnp_exchange_tau_s,
+            cfg.fixed_n_background_molm3)
+        self.phosphate, p_in, p_out = _diffuse_cnp_field_physical(
+            self.phosphate, cfg, cfg.d_phosphate_m2s, cfg.cnp_exchange_tau_s,
+            cfg.phosphate_background_molm3)
+        return {"c_in": c_in, "c_out": c_out, "n_in": n_in, "n_out": n_out,
+               "p_in": p_in, "p_out": p_out}
+
     # --- 集計 (保存則検証・統計用) ---
 
     def total_nutrients(self) -> float:
@@ -398,3 +470,13 @@ class World:
         if self.cfg.physical_mode:
             return float(self.h2.sum()) * self.voxel_volume_m3
         return float(self.h2.sum())
+
+    def total_dic(self) -> float:
+        """総DIC量 [mol]。concentration場にvoxel体積を掛けて変換する。"""
+        return float(self.dic.sum()) * self.voxel_volume_m3
+
+    def total_fixed_nitrogen(self) -> float:
+        return float(self.fixed_nitrogen.sum()) * self.voxel_volume_m3
+
+    def total_phosphate(self) -> float:
+        return float(self.phosphate.sum()) * self.voxel_volume_m3

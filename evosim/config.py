@@ -294,6 +294,42 @@ class Config:
     water_viscosity_pa_s: float = 1.0e-3
     motor_efficiency: float = 0.10
 
+    # --- V1.10: C/N/P資源分解 (docs/V1.10_CNP資源分解_実装仕様.md) ---
+    # explicit_cnp_resources=False (既定) ではV1.9のgeneric `nutrient`成長
+    # 経路を完全に維持する (既存test・既存挙動に一切影響しない)。Trueの
+    # ときだけ、環境のgeneric Matter吸収を廃止し、Organism.matter(dry
+    # biomass)成長を固定biomass組成のC/N/P台帳で律速する。physical_mode
+    # 前提 (matter_unit_to_kgdw / growth_energy_j_per_kgdw等を再利用するため)。
+    explicit_cnp_resources: bool = False
+
+    # biomass stoichiometry (§2): dry biomassに対する質量分率。残り約40%は
+    # H/O/S/ash等としてimplicit (V1.10では非limiting)。新geneにはしない。
+    biomass_carbon_mass_frac: float = 0.47
+    biomass_nitrogen_mass_frac: float = 0.11
+    biomass_phosphorus_mass_frac: float = 0.02
+
+    # background reference濃度 [mol X/m^3] (§1.1-1.3)。Lost City周辺の
+    # ambient seawater DIC ~2.2 mM / hydrothermal-mixed fixed N ~10 uM /
+    # phosphate ~1 uMをorder anchorとする (LUCA海洋の真値ではない)。
+    dic_background_molm3: float = 2.2
+    fixed_n_background_molm3: float = 0.010
+    phosphate_background_molm3: float = 0.001
+
+    # 拡散係数 [m^2/s] (§5)
+    d_dic_m2s: float = 2.0e-9
+    d_fixed_n_m2s: float = 2.0e-9
+    d_phosphate_m2s: float = 0.8e-9
+
+    # background exchange timescale [s] (§5.1)。H2のh2_exchange_tau_sと
+    # 同order。分子固有値ではなく、未解決hydrodynamic mixingの粗視化項。
+    cnp_exchange_tau_s: float = 900.0
+    # CFL部分刻み: alpha=D*dt_sub/dx^2 <= cnp_subcycle_alpha_max
+    cnp_subcycle_alpha_max: float = 0.20
+    # Phase 0 P0-A/B/C等のclosed-system mechanical testでbackground
+    # exchangeを無効化するスイッチ (§7の「closed-mode」用)。既定Trueは
+    # formal open-environment run向け。
+    cnp_background_exchange_enabled: bool = True
+
     # --- 災害 ---
     disaster_kill_frac: float = 0.9
 
@@ -395,6 +431,28 @@ class Config:
                 raise ValueError("nutrient_uptake_rate_matter_per_h は0以上でなければなりません。")
             if self.water_viscosity_pa_s <= 0.0 or self.motor_efficiency <= 0.0:
                 raise ValueError("water_viscosity_pa_s / motor_efficiency は正でなければなりません。")
+        # --- V1.10 C/N/P validation (docs/V1.10_CNP資源分解_実装仕様.md §2/8) ---
+        frac_sum = (self.biomass_carbon_mass_frac + self.biomass_nitrogen_mass_frac
+                   + self.biomass_phosphorus_mass_frac)
+        if (self.biomass_carbon_mass_frac < 0.0 or self.biomass_nitrogen_mass_frac < 0.0
+                or self.biomass_phosphorus_mass_frac < 0.0):
+            raise ValueError("biomass_{carbon,nitrogen,phosphorus}_mass_frac は0以上でなければなりません。")
+        if frac_sum >= 1.0:
+            raise ValueError(f"biomass_*_mass_frac の合計が1.0以上です: {frac_sum}")
+        if self.explicit_cnp_resources:
+            if not self.physical_mode:
+                raise ValueError(
+                    "explicit_cnp_resources=True には physical_mode=True が必要です "
+                    "(matter_unit_to_kgdw / growth_energy_j_per_kgdw等を再利用するため)。")
+            if self.dic_background_molm3 < 0.0 or self.fixed_n_background_molm3 < 0.0 \
+                    or self.phosphate_background_molm3 < 0.0:
+                raise ValueError("*_background_molm3 は0以上でなければなりません。")
+            if self.d_dic_m2s <= 0.0 or self.d_fixed_n_m2s <= 0.0 or self.d_phosphate_m2s <= 0.0:
+                raise ValueError("d_{dic,fixed_n,phosphate}_m2s は正でなければなりません。")
+            if self.cnp_exchange_tau_s <= 0.0:
+                raise ValueError(f"cnp_exchange_tau_s={self.cnp_exchange_tau_s} は正でなければなりません。")
+            if not (0.0 < self.cnp_subcycle_alpha_max <= 1.0):
+                raise ValueError("cnp_subcycle_alpha_max は 0 < x <= 1 でなければなりません。")
         if self.n_vents > 0:
             r = self.vent_radius_cells
             lo_x, hi_x = r, self.grid_w - r - 1
