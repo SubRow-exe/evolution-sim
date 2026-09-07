@@ -44,7 +44,7 @@ def _run(overrides: dict, seed: int, ticks: int, record: bool):
             "deaths": sim.deaths_cum,
             "orgs": [(o.id, o.x, o.y, o.energy, o.matter, o.damage,
                       tuple(float(g) for g in o.genome)) for o in sim.organisms],
-            "chemical": sim.world.chemical.copy(),
+            "chemical": sim.world.h2.copy(),
             "nutrients": sim.world.nutrients.copy(),
             "rng": sim.rng.bit_generator.state,
         }
@@ -67,7 +67,7 @@ def test_observation_does_not_change_results(name, overrides, seed, ticks):
     assert on["births"] == off["births"]
     assert on["deaths"] == off["deaths"]
     assert on["orgs"] == off["orgs"], "個体のid/順序/位置/状態/遺伝子が一致しない"
-    assert np.array_equal(on["chemical"], off["chemical"])
+    assert np.array_equal(on["chemical"], off["chemical"])  # dict key kept for diff-minimality; value is world.h2
     assert np.array_equal(on["nutrients"], off["nutrients"])
     assert on["rng"] == off["rng"], "乱数状態が一致しない (観測がRNGを消費した)"
 

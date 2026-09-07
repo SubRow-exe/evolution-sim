@@ -1,173 +1,204 @@
 # AI協働開発ガイドライン (AGENTS.md)
 
-本リポジトリは複数AIと人間で共同開発する。コード変更前に現在の正本を必ず読むこと。
+本リポジトリは複数AIと人間で共同開発する。コード変更前に本書と現在の正本を必ず読むこと。
 
 ---
 
-# 1. 最優先参照順
+# 1. 現在の最優先参照順
 
-1. `docs/V1.9_現状ステータス.md` — **現在地・権限**
-2. `docs/V1.9_検証実装仕様_物理スケール版.md` — **CURRENT IMPLEMENTATION SPEC**
-3. `docs/Exp15_V1.9_実験計画案.md` — **implementation-ready Exp15 / Phase 0 gate**
-4. `docs/V1.9_iLUCA再設計仕様.md` — V1.9機構設計
-5. PR #67 `docs/V1.9_実装報告.md` — mechanism checkpoint
-6. `docs/V1.9_物理スケール再校正方針.md` — 方針転換の背景
-7. Issue #68 — Opus 5レビュー履歴
-8. `docs/次の実験計画.md`
-9. `docs/V1.8_総括.md`
-10. `docs/環境因子追加・校正方針.md`
+1. `docs/V1.9_総括.md` — **直前versionのclose正本**
+2. `docs/次の実験計画.md` — **現在作業の司令塔**
+3. `docs/V1.10_CNP資源分解_実装仕様.md` — **V1.10実装正本**
+4. `docs/Exp17_V1.10_CNP資源分解_実験計画.md` — **次formal experiment正本**
+5. `docs/長期ロードマップ.md`
+6. `docs/V1.9_現状ステータス.md`
+7. `docs/Exp16_V1.9_結果考察.md`
+8. `docs/V1.9_LUCA_proxy設計.md`
+9. `docs/環境因子追加・校正方針.md`
+10. `docs/バージョニング方針.md`
+11. `docs/実験結果保存方針.md`
+12. `docs/数値再現性・Actions実行環境方針.md`
 
-旧arbitrary numeric referenceより`V1.9_検証実装仕様_物理スケール版.md`を優先する。
+旧V1.9 draft・旧Exp15計画より上記正本を優先する。
 
 ---
 
 # 2. 現在地
 
 ```text
-V1.8                       CLOSED
-V1.9 mechanism design      CLOSED
-PR #67 mechanism patch     DONE / CHECKPOINT
-V1.9 physical patch        IMPLEMENTATION AUTHORIZED / CURRENT TASK
-Exp15 Phase 0              NEXT
-Exp15 formal Phase A/B     BLOCKED UNTIL PHASE 0 PASS
+V1.8                         CLOSED
+V1.9                         CLOSED
+Exp15 Attempt 2 Phase A      SCIENTIFIC PASS
+Exp15 Attempt 2 Phase B      NOT RUN / DEFERRED
+Exp16                        COMPLETE / 55 runs analyzed
+V1.10 C/N/P resource closure NEXT
+Exp17                        PLAN READY
 ```
+
+V1.9を再オープンして細部校正を続けない。
+V1.10は独立versionとして扱う。
 
 ---
 
-# 3. V1.9検証baselineの重要判断
+# 3. 現在の作業
+
+## V1.10
+
+environmental generic `nutrient/Matter`を:
 
 ```text
-1 agent = 1 cell
-reference dry mass = 0.28 pgDW
-1 matter unit = 0.28 pgDW
-physical time unit = second
-biology dt = 10 s
-world = 20 mm x 20 mm
-40x40 / dx=0.5 mm / depth=0.5 mm
-H2 source = 4 point cells, resolved concentration 1 mM
-D_H2 = 5e-9 m2/s
-H2 exchange tau = 900 s
-diffusion = CFL-safe automatic subcycling
-H2 uptake = physical Michaelis-Menten
-Energy = J / power = W
-H2 usable Energy = 3750 J/mol
-baseline maintenance from 0.116 mmol ATP/(gDW h)
-Matter growth cost from Y_ATP=10 gDW/mol ATP
-binary fission = 50:50 Matter
-Exp15 damage axes = OFF
+DIC / CO2-equivalent inorganic carbon
+fixed nitrogen
+phosphate phosphorus
 ```
 
-`cells_per_agent` / super-agentは導入しない。
-H2 depletion competitionはExp15成功条件にしない。
+へ分解する。
 
-Exp15の主要圧はH2-rich / H2-poor spatial Energy heterogeneity。
+`Organism.matter`はdry biomassとして維持。
+水およびS/Fe/Mg/K/Na/Ca/trace metalsは当面implicit/non-limiting。
 
----
+fixed biomass stoichiometryでgrowth / corpse / waste / predationをC/N/P ledgerへ接続する。
 
-# 4. 維持するV1.9機構
+## Exp17
 
 ```text
-17 genes
-1-pool Energy
-storage_capacity
-runway / starvation_horizon
-reproduction_horizon
-H2 explicit / CO2 implicit
-uniform random spawn
-PHOTOTROPHY structural innovation gate
-PREDATION locked
-conservation / determinism / Recorder
+Phase 0  C/N/P conservation + limiter mechanical tests
+Phase A  fixed iLUCA reference / 5 seeds x 10 physical days
+Phase B  low-C / low-N / low-P identity tests
+Phase C  depletion diagnostic only if needed; auto-runしない
 ```
 
-未来情報を使わない。
+V1.9 final populationを再現するためのC/N/P調整は禁止。
+
+---
+
+# 4. LUCA fidelity HARD RULE
+
+**歴史上のLUCAを完璧に再現することはmainstreamの目的ではない。**
+
+iLUCAはoriginの妥当性を上げるためLUCA-likeへ寄せるが、以下の場合だけ追加実装を優先する。
+
+1. 欠落が現在結果を強く支配する
+2. 次の進化圧へ応答するため必要
+3. 現仕様が明らかに非生物学的
+4. 物理scale・保存則・解釈性を大きく改善する
+
+分子詳細の未実装を理由にmainstreamを延期しない。
+
+---
+
+# 5. 校正・実験 HARD RULE
+
+環境を生存側へ曲げる前に:
+
+> その環境が要求する応答を、生物側が現在または進化によって原理的に実現できるか
+
+を確認する。
+
+原則:
 
 ```text
-NG: 日没予測
-NG: 将来Energy収益予測
-OK: current Energy / current P_full -> runway
+mechanism test
+-> fixed ancestor sanity
+-> 必要ならevolution ON
+-> minimal interaction
+-> close
 ```
+
+成立域がrobustならglobal optimum探索をしない。
+実験結果を見てreference値を生存側へ自動最適化しない。
 
 ---
 
-# 5. 現在AIが実施してよいこと
+# 6. H2 environment HARD RULE
 
-PR #67 branchを土台に:
+V1.9のH2はEnergyそのものではなくsubstrate。
 
 ```text
-physical scaling patch implementation
-unit/integration tests
-Energy/Matter/H2 conservation
-same-seed determinism
-H2 diffusion subcycling
-physical Recorder
-Phase 0 harness implementation
-Phase 0 P0-A/B/C/D execution
-implementation/preflight report
+H2 -> uptake -> metabolism -> usable Energy + heat
 ```
 
-ここまでは人間の追加承認なしで進めてよい。
-
----
-
-# 6. HARD STOP
-
-Phase 0 PASS前にformal Exp15 Phase A/Bをdispatchしてはいけない。
-
-また以下は禁止:
-
-- PASSさせるためのparameter sweep
-- Phase 0 FAIL時の自動tuning
-- cells_per_agentの勝手な導入
-- phototrophy formal run
-- temperature / oxygen / pH等の新軸追加
-- historical experimentの書き換え
-
-Phase 0 FAIL時は結果と原因候補を報告してSTOP。
-
----
-
-# 7. Phase 0 gate
-
-正本: `docs/Exp15_V1.9_実験計画案.md`
+V1.9 reference:
 
 ```text
-P0-A no-organism H2 field
-P0-B radial fixed single-cell Energy balance
-P0-C random movement exposure
-P0-D dt=2.5/5/10 s convergence
+H2 source = 10 mM
+D = 5e-9 m2/s
+exchange/loss tau = 900 s
+4-source distributed layout
 ```
 
-最重要:
+既知制約:
 
-> world内に net power positive region と negative region の両方が存在すること。
-
-全域positive / 全域negativeならformal Exp15へ進まない。
+- sourceはDirichlet concentration boundaryで実質無限供給
+- 現状はH2 depletion competitionよりpatch accessが主要圧
+- dynamic source化はV1.11予定
 
 ---
 
-# 8. 絶対設計原則
+# 7. Structural innovation HARD RULE
+
+continuous mutationと能力起源を分離する。
+
+```text
+PHOTOTROPHY: innovation-gated
+PREDATION:   V1.9ではlocked
+```
+
+現状のlight routeはphysical scale未対応なので、**V1.12以前にphototrophy formal experimentを開始しない。**
+
+innovation probabilityを結果を見ながら調整しない。
+
+---
+
+# 8. 未来予測禁止 / homeostasis許可
+
+```text
+NG: 日没が近いからEnergyを貯める
+NG: 将来収益を予測して行動する
+OK: 現在Energyと現在支出からrunwayを計算
+OK: 現在runway不足に応じて生理を調節
+```
+
+---
+
+# 9. 絶対設計原則
 
 - 適応度関数を直接置かない
 - 特定生態型への固定bonus/penaltyを置かない
-- 将来予測を埋め込まない
+- 将来を予測するAI的行動を入れない
 - 保存則を破らない
-- Recorderをsimulationへフィードバックしない
-- same-seed determinism
-- capability originをcontinuous mutationで迂回しない
-- historical experimentを書き換えない
-- 生存するようarbitrary値を自動校正しない
-- physical unit化できる量はSI/physical semanticsを優先する
+- 観測/Recorderをsimulationへフィードバックしない
+- same-seed determinismを守る
+- 能力起源をcontinuous mutationの裏口で起こさない
+- 歴史的experimentを現在仕様へ書き換えない
+- 過去worldの再現はversion ref/tagから行う
+- 生存するようenvironment parameterを自動校正しない
+- LUCA fidelityを目的化しない
+- version境界を跨いだ変更を同一versionへ後付けしない
 
 ---
 
-# 9. 実行順
+# 10. Formal experiment運用
+
+- `effective_config.json` / `initial_genome.json` を成果物へ必ず保存
+- preregistered gateでartifact不足があればsilent SKIPせずFAIL
+- formal開始後にreference parameterを変更しない
+- 変更が必要ならAttempt 2として履歴を残す
+- Phase C等の条件付きrunを勝手に開始しない
+
+---
+
+# 11. 直近作業
 
 ```text
-1. PR #67 branchへphysical patch
-2. tests / conservation / determinism
-3. Phase 0 harness
-4. P0-A/B/C/D run
-5. report
-6. STOPして人間レビュー
-7. PASSならExp15 Phase A dispatch
+1. V1.9 branch/PR状態を確認しversion境界を確定
+2. V1.10 C/N/P実装
+3. unit / conservation / determinism tests
+4. Exp17 Phase 0
+5. Exp17 Phase A
+6. Exp17 Phase B
+7. 結果保存・考察
+8. Phase Cは必要時のみ人間判断
 ```
+
+長期順序は `docs/長期ロードマップ.md` を参照する。

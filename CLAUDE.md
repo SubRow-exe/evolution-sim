@@ -1,10 +1,11 @@
 @AGENTS.md
+@docs/V1.9_総括.md
 @docs/V1.9_現状ステータス.md
-@docs/V1.9_検証実装仕様_物理スケール版.md
-@docs/Exp15_V1.9_実験計画案.md
-@docs/V1.9_iLUCA再設計仕様.md
-@docs/V1.9_物理スケール再校正方針.md
 @docs/次の実験計画.md
-@docs/V1.8_総括.md
+@docs/V1.10_CNP資源分解_実装仕様.md
+@docs/Exp17_V1.10_CNP資源分解_実験計画.md
+@docs/長期ロードマップ.md
+@docs/V1.9_LUCA_proxy設計.md
 @docs/環境因子追加・校正方針.md
+@docs/バージョニング方針.md
 @docs/実験結果保存方針.md

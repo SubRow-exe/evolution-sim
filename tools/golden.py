@@ -49,8 +49,8 @@ CASES = [
 # (docs/Exp09_実験計画.md §5-5 / §10 の停止条件)。
 #   uv run python tools/verify_vs_ref.py --ref v1.4-final --single-source
 SINGLE_SOURCE_CASES = [
-    ("light_only_s1_1500", 1, 1500, {"chem_vent_flux": 0.0}),
-    ("light_only_s4_1200", 4, 1200, {"chem_vent_flux": 0.0}),
+    ("light_only_s1_1500", 1, 1500, {"h2_vent_flux": 0.0}),
+    ("light_only_s4_1200", 4, 1200, {"h2_vent_flux": 0.0}),
     ("chem_only_s1_1500", 1, 1500, {
         "light_pattern": "uniform", "light_max": 0.0,
         "diagnostic_placement": "vent",
@@ -94,7 +94,7 @@ def fingerprint(sim: Simulation) -> str:
         f(c.x, c.y, c.matter, c.energy)
 
     h.update(sim.world.nutrients.tobytes())
-    h.update(sim.world.chemical.tobytes())
+    h.update(sim.world.h2.tobytes())
     h.update(sim.world.light.tobytes())
     return h.hexdigest()
 

@@ -48,7 +48,7 @@ def population_spatial(sim) -> dict:
     counts = band_counts(orgs, cfg.world_height)
 
     light = sim.world.light
-    chem_mask = sim.world.chem_mask
+    h2_mask = sim.world.h2_mask
     hi_q = sim.hi_q_mask
     local_light = 0.0
     vent_pop = 0
@@ -56,7 +56,7 @@ def population_spatial(sim) -> dict:
     for o in orgs:
         ix, iy = sim.world.cell_index(o.x, o.y)
         local_light += float(light[ix, iy])
-        if chem_mask[ix, iy]:
+        if h2_mask[ix, iy]:
             vent_pop += 1
         if hi_q[ix, iy]:
             hi_q_pop += 1
@@ -95,7 +95,7 @@ def lineage_spatial(sim, members: list) -> dict:
         sx += o.x
         sy += o.y
         local_light += float(world.light[ix, iy])
-        if world.chem_mask[ix, iy]:
+        if world.h2_mask[ix, iy]:
             vent += 1
     cx, cy = sx / n, sy / n
     radius = sum(math.hypot(o.x - cx, o.y - cy) for o in members) / n
@@ -121,10 +121,10 @@ def lineage_spatial(sim, members: list) -> dict:
 
 def save_static_environment(path, sim) -> None:
     """実行を通じて不変な環境 (光場・噴出口配置) を1度だけ保存する。"""
-    np.savez_compressed(path, light=sim.world.light, chem_mask=sim.world.chem_mask)
+    np.savez_compressed(path, light=sim.world.light, h2_mask=sim.world.h2_mask)
 
 
 def save_environment_snapshot(path, sim) -> None:
     """時間変化する環境 (化学ストック・無機栄養) を保存する。"""
-    np.savez_compressed(path, chemical=sim.world.chemical,
+    np.savez_compressed(path, h2=sim.world.h2,
                         nutrients=sim.world.nutrients)

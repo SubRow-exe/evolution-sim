@@ -1,0 +1,30 @@
+name: V1.9 Phase0 Preflight
+
+on:
+  push:
+    branches:
+      - claude/pr-50-v1.6-exp11-iuhnzm
+    paths:
+      - experiments/exp15_v19_preflight/**
+      - .github/workflows/v19_phase0.yml
+  workflow_dispatch:
+
+jobs:
+  phase0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run V1.9 corrected physical Phase0 preflight
+        run: |
+          uv run python experiments/exp15_v19_preflight/run_phase0_corrected.py --out phase0_results.json | tee phase0.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v19-phase0-preflight
+          path: |
+            phase0_results.json
+            phase0.log

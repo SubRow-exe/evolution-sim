@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from evosim import behavior
 from evosim.config import Config
 from evosim.genome import (CHEM_ABS, LIGHT_ABS, MOVE_EFF, MOVE_POWER, N_GENES,
-                           SENSORY)
+                           SENSORY, STORAGE_CAP)
 from evosim.organism import Organism
 from evosim.simulation import Simulation
 from evosim.world import World
@@ -31,7 +31,7 @@ CUR = (5, 5)   # 個体を置くセル
 
 def _sim(**kw) -> Simulation:
     """刺激を明示的に置くための空世界。"""
-    base = dict(light_pattern="uniform", light_max=0.0, chem_vent_flux=0.0,
+    base = dict(light_pattern="uniform", light_max=0.0, h2_vent_flux=0.0,
                 nutrient_initial=0.0, initial_population=0)
     base.update(kw)
     return Simulation(Config(**base), 1)
@@ -47,6 +47,7 @@ def _place(sim: Simulation, light_abs: float, chem_abs: float,
     g[SENSORY] = sensory
     g[LIGHT_ABS] = light_abs
     g[CHEM_ABS] = chem_abs
+    g[STORAGE_CAP] = 1.0       # E_max>0 (V1.9)
     cs = sim.cfg.cell_size
     o = Organism(0, -1, 0, 0, 0, g,
                  (cell[0] + 0.5) * cs, (cell[1] + 0.5) * cs, 0.0, energy, 0.8)
@@ -100,8 +101,8 @@ def test_interpolation_matches_the_field_at_cell_centers():
         for iy in range(0, cfg.grid_h, 7):
             got = w.sample(w.light, (ix + 0.5) * cs, (iy + 0.5) * cs)
             assert got == pytest.approx(float(w.light[ix, iy]), abs=1e-12)
-            got_c = w.sample(w.chemical, (ix + 0.5) * cs, (iy + 0.5) * cs)
-            assert got_c == pytest.approx(float(w.chemical[ix, iy]), abs=1e-12)
+            got_c = w.sample(w.h2, (ix + 0.5) * cs, (iy + 0.5) * cs)
+            assert got_c == pytest.approx(float(w.h2[ix, iy]), abs=1e-12)
 
 
 def test_interpolation_is_continuous_across_cell_boundaries():
@@ -159,9 +160,9 @@ def test_absorption_still_uses_cell_values_not_interpolation():
 
 def test_q_stays_in_the_unit_interval():
     """Phase 0-4: 0 <= Q < 1。"""
-    sim = _sim(light_pattern="vertical", light_max=1.2, chem_vent_flux=64.0)
+    sim = _sim(light_pattern="vertical", light_max=1.2, h2_vent_flux=64.0)
     for la, ca in ((2.0, 0.3), (0.3, 2.0), (1.0, 1.0), (5.0, 5.0)):
-        s = _sim(light_pattern="vertical", light_max=1.2, chem_vent_flux=64.0)
+        s = _sim(light_pattern="vertical", light_max=1.2, h2_vent_flux=64.0)
         o = _place(s, la, ca)
         obs = _decide(s, o)
         q = obs["q_sum"] / obs["stim_events"]
@@ -171,7 +172,7 @@ def test_q_stays_in_the_unit_interval():
 def test_q_is_invariant_to_uniform_ability_scaling():
     """Phase 0-5: 全abilityを同率で2倍してもQは変わらない (能力加重平均)。"""
     def q_of(la, ca):
-        s = _sim(light_pattern="vertical", light_max=1.2, chem_vent_flux=64.0)
+        s = _sim(light_pattern="vertical", light_max=1.2, h2_vent_flux=64.0)
         o = _place(s, la, ca)
         obs = _decide(s, o)
         return obs["q_sum"] / obs["stim_events"]
@@ -184,7 +185,7 @@ def test_q_is_invariant_to_uniform_ability_scaling():
 
 def test_zero_ability_stimulus_does_not_contribute_to_q():
     """Phase 0-6: ability 0 の刺激はQへ寄与しない。"""
-    s = _sim(light_pattern="vertical", light_max=1.2, chem_vent_flux=64.0)
+    s = _sim(light_pattern="vertical", light_max=1.2, h2_vent_flux=64.0)
     o = _place(s, 1.0, 0.0)          # chemicalは使えない
     # 知覚は行動前の位置で起きるので、先に期待値を取る
     r_l = behavior.response(
@@ -304,7 +305,7 @@ def test_uniform_world_is_identical_for_any_gain():
 
     Phase 0-13 も兼ねる: 知覚・観測の追加がRNG系列や分岐を変えていない。
     """
-    kw = dict(light_pattern="uniform", light_max=0.8, chem_vent_flux=0.0)
+    kw = dict(light_pattern="uniform", light_max=0.8, h2_vent_flux=0.0)
     a = Simulation(Config(response_gain=0.0, **kw), 5)
     b = Simulation(Config(response_gain=256.0, **kw), 5)
     for _ in range(150):
@@ -321,7 +322,7 @@ def test_primary_energy_never_sets_a_target():
     一次Energy以外の能力を0にしてあるので、targetを作れるのはV1.5経路だけ。
     V1.6ではその経路が無いので、行動は毎回random walkになる。
     """
-    s = _sim(light_pattern="vertical", light_max=1.2, chem_vent_flux=64.0)
+    s = _sim(light_pattern="vertical", light_max=1.2, h2_vent_flux=64.0)
     o = _place(s, 2.0, 2.0, sensory=4.0)   # 広い感覚半径でも探しに行かない
     n = 40
     s.stim_obs = s._new_stim_obs()
@@ -337,7 +338,7 @@ def test_sensory_range_does_not_affect_primary_energy_behavior():
     他刺激の能力を0にした個体では、感覚半径を変えても軌跡が完全に一致する。
     """
     def run(sensory):
-        s = _sim(light_pattern="vertical", light_max=1.2, chem_vent_flux=64.0,
+        s = _sim(light_pattern="vertical", light_max=1.2, h2_vent_flux=64.0,
                  response_gain=64.0)
         o = _place(s, 1.0, 1.0, sensory=sensory)
         for _ in range(60):

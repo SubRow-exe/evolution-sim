@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__
+from . import __version__, physiology
 from .config import Config
 from .genome import (BODY_SIZE, GENE_NAMES, LIGHT_ABS, MOVE_POWER,
                      MUTATION_RATE, REPRO_INVEST)
@@ -87,6 +87,19 @@ class Recorder:
             "p10_body_size", "p90_body_size",
             "p10_reproduction_investment", "p90_reproduction_investment",
             "p10_movement_power", "p90_movement_power",
+            # V1.9 (docs/V1.9_iLUCA再設計仕様.md §18): storage_capacity/
+            # starvation_horizon/reproduction_horizonの平均・分散は既存の
+            # mean_{n}/var_{n} (GENE_NAMES由来、下記) が既に含む。ここでは
+            # runway/starvation factor/capabilityなど、genomeだけでは
+            # 復元できない状態量だけを追加する。読み取り専用。
+            "runway_mean", "runway_p10", "runway_p50", "runway_p90",
+            "metabolic_factor_mean", "uptake_factor_mean",
+            "phototrophy_count", "phototrophy_frac",
+            "phototrophy_innovation_events_cum", "phototrophy_loss_events_cum",
+            "light_absorption_mean_capable",
+            "h2_total", "h2_source_influx_rate", "h2_environment_loss_cum",
+            "h2_conversion_loss_cum", "storage_overflow_cum",
+            *[f"h2_{b}_band" for b in VENT_BAND_NAMES],
             # 空間指標 (V1.2.1)。地理帯は Control/Treatment 共通の固定定義
             *[f"pop_{b}_band" for b in BAND_NAMES],
             *[f"frac_{b}_band" for b in BAND_NAMES],
@@ -179,7 +192,7 @@ class Recorder:
 
         # Exp14: Energy/capacity・Phase C対象形質の分布 (読み取り専用)
         if n > 0:
-            e_frac = np.array([o.energy / o.energy_max(sim.cfg.energy_capacity)
+            e_frac = np.array([o.energy / physiology.energy_max(o, sim.cfg)
                                 for o in orgs])
             energy_frac_cols = [
                 round(float(e_frac.mean()), 6), round(float(np.median(e_frac)), 6),
@@ -191,9 +204,34 @@ class Recorder:
                 col = genomes[:, gi]
                 trait_cols += [round(float(np.percentile(col, 10)), 6),
                                round(float(np.percentile(col, 90)), 6)]
+            runways = np.array([physiology.runway(o, sim.cfg) for o in orgs])
+            states = np.array([o.starve_state for o in orgs])
+            v19_cols = [
+                round(float(runways.mean()), 4),
+                round(float(np.percentile(runways, 10)), 4),
+                round(float(np.percentile(runways, 50)), 4),
+                round(float(np.percentile(runways, 90)), 4),
+                round(float(np.mean([physiology.metabolic_factor(s, sim.cfg) for s in states])), 6),
+                round(float(np.mean([physiology.uptake_factor(s, sim.cfg) for s in states])), 6),
+            ]
+            photo_mask = np.array([o.phototrophy_on for o in orgs])
+            photo_count = int(photo_mask.sum())
+            photo_frac = photo_count / n
+            if photo_count > 0:
+                la_capable = round(float(genomes[photo_mask, LIGHT_ABS].mean()), 6)
+            else:
+                la_capable = ""
         else:
             energy_frac_cols = ["", "", "", ""]
             trait_cols = ["", "", "", "", "", ""]
+            v19_cols = ["", "", "", "", "", ""]
+            photo_count, photo_frac, la_capable = 0, 0.0, ""
+
+        # V1.9: vent距離帯別H2平均濃度 (読み取り専用、staticなvent_bandを使う)
+        h2_band_means = []
+        for bi in range(len(VENT_BAND_NAMES)):
+            band_vals = sim.world.h2[sim.world.vent_band == bi]
+            h2_band_means.append(round(float(band_vals.mean()), 6) if band_vals.size else "")
 
         # 空間指標 (V1.2.1)。読み取り専用でRNG・個体状態に触れない
         sp_pop = population_spatial(sim)
@@ -264,16 +302,24 @@ class Recorder:
             round(sum(c.energy for c in sim.corpses), 6),
             round(tot_e, 6), round(tot_m, 6),
             round(sim.world.total_nutrients(), 6),
-            round(sim.world.total_chemical(), 6),
+            round(sim.world.total_h2(), 6),
             round(mean_age, 2), max_age, max_gen, n_lin,
             round(sim.light_supply_cum, 4),
             round(sim.daylight_factor_now, 8),
             round(sim.light_supply_per_tick * sim.daylight_factor_now, 6),
             *[round(sim.flows[k], 4) for k in
-              ("light", "chemical", "nutrient", "corpse_matter",
+              ("light", "h2", "nutrient", "corpse_matter",
                "corpse_energy", "predation_energy", "predation_matter")],
             top_id, round(top_frac, 6),
             *energy_frac_cols, *trait_cols,
+            *v19_cols,
+            photo_count, round(photo_frac, 6),
+            sim.phototrophy_innovation_events, sim.phototrophy_loss_events,
+            la_capable,
+            round(sim.world.total_h2(), 6),
+            round(sim.h2_influx_cum, 4), round(sim.h2_loss_cum, 4),
+            round(sim.h2_conversion_loss_cum, 4), round(sim.storage_overflow_cum, 4),
+            *h2_band_means,
             *[sp_pop[f"pop_{b}_band"] for b in BAND_NAMES],
             *[sp_pop[f"frac_{b}_band"] for b in BAND_NAMES],
             sp_pop["mean_local_light"], sp_pop["vent_cell_population"],

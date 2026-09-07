@@ -48,19 +48,19 @@ class TestConfig:
         assert cfg.primary_energy_density_response is False
         assert cfg.light_cycle_enabled is False
         assert cfg.light_uptake_half == 0.6
-        assert cfg.chemical_uptake_half == 6.15
+        assert cfg.h2_uptake_half == 6.15
         assert cfg.light_cycle_period_ticks == 200
         assert cfg.light_day_fraction == 0.5
 
     def test_round_trip(self, tmp_path):
         cfg = Config(primary_energy_density_response=True, light_cycle_enabled=True,
-                     light_uptake_half=1.5, chemical_uptake_half=3.0,
+                     light_uptake_half=1.5, h2_uptake_half=3.0,
                      light_cycle_period_ticks=400, light_day_fraction=0.4)
         p = tmp_path / "cfg.json"
         cfg.to_json(p)
         data = json.loads(p.read_text())
         for key in ("primary_energy_density_response", "light_cycle_enabled",
-                   "light_uptake_half", "chemical_uptake_half",
+                   "light_uptake_half", "h2_uptake_half",
                    "light_cycle_period_ticks", "light_day_fraction"):
             assert key in data, f"{key} がJSONに保存されていない"
         loaded = Config.from_json(p)
@@ -69,8 +69,8 @@ class TestConfig:
     @pytest.mark.parametrize("kw", [
         {"light_uptake_half": 0.0},
         {"light_uptake_half": -1.0},
-        {"chemical_uptake_half": 0.0},
-        {"chemical_uptake_half": -1.0},
+        {"h2_uptake_half": 0.0},
+        {"h2_uptake_half": -1.0},
         {"light_cycle_period_ticks": 0},
         {"light_cycle_period_ticks": -10},
         {"light_day_fraction": 0.0},
@@ -205,7 +205,7 @@ class TestFactorConsistencyWithinStep:
         """night中はfeature ONでもlight gainが厳密0。"""
         cfg = Config(light_cycle_enabled=True, light_cycle_period_ticks=200,
                      light_day_fraction=0.5, primary_energy_density_response=True,
-                     light_pattern="uniform", light_max=2.0, chem_vent_flux=0.0)
+                     light_pattern="uniform", light_max=2.0, h2_vent_flux=0.0)
         sim = Simulation(cfg, seed=1)
         # tick 100..199 は night
         for _ in range(150):
@@ -225,7 +225,7 @@ class TestFactorConsistencyWithinStep:
 
 class TestLightUptake:
     def _light_only_cfg(self, **kw):
-        base = dict(light_pattern="uniform", light_max=2.0, chem_vent_flux=0.0,
+        base = dict(light_pattern="uniform", light_max=2.0, h2_vent_flux=0.0,
                    initial_population=30, primary_energy_density_response=True)
         base.update(kw)
         return Config(**base)
@@ -266,7 +266,7 @@ class TestLightUptake:
 
 class TestChemicalUptake:
     def _chem_only_cfg(self, **kw):
-        base = dict(light_max=0.0, chem_vent_flux=16.0,
+        base = dict(light_max=0.0, h2_vent_flux=16.0,
                    diagnostic_placement="vent",
                    fixed_genes=["chemical_absorption"],
                    diagnostic_gene_overrides={"chemical_absorption": 2.0},
@@ -277,27 +277,27 @@ class TestChemicalUptake:
     def test_gain_le_stock_density_on(self):
         cfg = self._chem_only_cfg()
         sim = Simulation(cfg, seed=3)
-        stock0 = sim.world.total_chemical()
+        stock0 = sim.world.total_h2()
         for _ in range(50):
-            stock_before = sim.world.total_chemical()
+            stock_before = sim.world.total_h2()
             sim.step()
             # 1 tickでの吸収は t直前のstock + sourceを超えられない
-            assert sim.world.total_chemical() >= -1e-6
+            assert sim.world.total_h2() >= -1e-6
 
     def test_stock_deplete_with_high_uptake_low_half(self):
-        """chemical_uptake_half を小さく・chem_uptakeを大きくすると
+        """h2_uptake_half を小さく・h2_uptake_coefを大きくすると
         occupied vent stockがbiological-free平衡より下がる (depletion)。"""
-        cfg = self._chem_only_cfg(chemical_uptake_half=0.5, chem_uptake=4.0,
+        cfg = self._chem_only_cfg(h2_uptake_half=0.5, h2_uptake_coef=4.0,
                                   initial_population=50)
         sim = Simulation(cfg, seed=1)
-        free_eq = float(sim.world.chem_source_flux.sum()) / cfg.chem_loss_frac / max(
+        free_eq = float(sim.world.h2_source_flux.sum()) / cfg.h2_loss_frac / max(
             len([1 for _ in sim.world.vent_centers]), 1)
         for _ in range(500):
             sim.step()
-        occupied_stock = sim.world.total_chemical()
+        occupied_stock = sim.world.total_h2()
         # 個体群がstockを消費するので、生物不在平衡 (biological-free) より
         # 世界合計stockが下がっているはず (占有域が枯渇するため)
-        biological_free_total = float(sim.world.chem_source_flux.sum()) / cfg.chem_loss_frac
+        biological_free_total = float(sim.world.h2_source_flux.sum()) / cfg.h2_loss_frac
         assert occupied_stock < biological_free_total
 
     def test_organism_order_invariant_determinism(self):
@@ -318,7 +318,7 @@ class TestDensityResponseScope:
     def test_nutrient_absorption_unaffected_by_density_flag(self):
         """primary_energy_density_response のON/OFFで無機栄養吸収式が変わらない。"""
         seed, ticks = 2, 80
-        common = dict(light_max=0.0, chem_vent_flux=0.0)
+        common = dict(light_max=0.0, h2_vent_flux=0.0)
         sim_off = _run(seed=seed, ticks=ticks, primary_energy_density_response=False, **common)
         sim_on = _run(seed=seed, ticks=ticks, primary_energy_density_response=True, **common)
         assert sim_off.flows["nutrient"] == pytest.approx(sim_on.flows["nutrient"], rel=1e-9)
@@ -333,7 +333,7 @@ class TestSensing:
         from evosim import behavior
         cfg = Config(light_cycle_enabled=True, light_cycle_period_ticks=200,
                      light_day_fraction=0.5, light_pattern="uniform", light_max=2.0,
-                     chem_vent_flux=0.0)
+                     h2_vent_flux=0.0)
         sim = Simulation(cfg, seed=1)
         for _ in range(150):  # tick=150 -> night
             sim.step()
@@ -360,7 +360,7 @@ class TestFeatureFlagCombinations:
 
     @pytest.mark.parametrize("density,cycle", COMBOS)
     def test_short_run_completes_without_error(self, density, cycle):
-        cfg = Config(light_pattern="uniform", light_max=2.0, chem_vent_flux=0.0,
+        cfg = Config(light_pattern="uniform", light_max=2.0, h2_vent_flux=0.0,
                      primary_energy_density_response=density, light_cycle_enabled=cycle,
                      initial_population=20)
         sim = Simulation(cfg, seed=1)
@@ -377,11 +377,16 @@ class TestFeatureFlagCombinations:
         sim_default = _run(seed=seed, ticks=ticks)  # default is also OFF/OFF
         assert _fingerprint(sim_off) == _fingerprint(sim_default)
 
+    @pytest.mark.skip(
+        reason="V1.9: primary_energy_density_response はもはやtoggleではなく"
+               "常時適用 (docs/V1.9_iLUCA再設計仕様.md §11)。この組合せ比較の"
+               "前提が成立しない。cycle単独の効果はtest_v18内の他test、"
+               "density response自体はtests/test_v14_uptake.pyでカバーする。")
     def test_flags_independent(self):
         """density単独・cycle単独・両方ONの結果が互いに異なる
         (機構が独立に効いていることの確認、絶滅などで偶然一致しない代表的条件)。"""
         seed, ticks = 8, 200
-        common = dict(light_pattern="uniform", light_max=2.0, chem_vent_flux=0.0,
+        common = dict(light_pattern="uniform", light_max=2.0, h2_vent_flux=0.0,
                       initial_population=40)
         results = {}
         for density, cycle in self.COMBOS:
@@ -402,7 +407,7 @@ class TestLedgerWithV18Features:
     def test_light_ledger_matches_effective_supply(self):
         cfg = Config(light_cycle_enabled=True, light_cycle_period_ticks=200,
                      light_day_fraction=0.5, primary_energy_density_response=True,
-                     light_pattern="uniform", light_max=2.0, chem_vent_flux=0.0,
+                     light_pattern="uniform", light_max=2.0, h2_vent_flux=0.0,
                      initial_population=30)
         sim = Simulation(cfg, seed=2)
         for _ in range(250):
@@ -436,15 +441,15 @@ class TestLedgerWithV18Features:
 
     def test_determinism_with_v18_features(self):
         cfg = Config(light_cycle_enabled=True, primary_energy_density_response=True,
-                     light_pattern="uniform", light_max=2.0, chemical_uptake_half=1.5,
-                     chem_uptake=2.0)
+                     light_pattern="uniform", light_max=2.0, h2_uptake_half=1.5,
+                     h2_uptake_coef=2.0)
         seed = 42
         sim_a = _run(seed=seed, ticks=100, light_cycle_enabled=True,
                     primary_energy_density_response=True, light_pattern="uniform",
-                    light_max=2.0, chemical_uptake_half=1.5, chem_uptake=2.0)
+                    light_max=2.0, h2_uptake_half=1.5, h2_uptake_coef=2.0)
         sim_b = _run(seed=seed, ticks=100, light_cycle_enabled=True,
                     primary_energy_density_response=True, light_pattern="uniform",
-                    light_max=2.0, chemical_uptake_half=1.5, chem_uptake=2.0)
+                    light_max=2.0, h2_uptake_half=1.5, h2_uptake_coef=2.0)
         assert _fingerprint(sim_a) == _fingerprint(sim_b)
 
 
