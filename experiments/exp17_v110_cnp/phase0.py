@@ -230,40 +230,50 @@ def p0_d() -> dict:
 # --- P0-E: dt convergence ---------------------------------------------------
 
 def _dt_case(dt: float) -> dict:
-    """dt convergenceはgrowthの定常trickle-phaseで測る。
+    """dt convergenceは単一の非移動・非繁殖reference organismで測る
+    (V1.9 P0-D の `set_reference_org` と同じ考え方: 個体群動態
+    (死亡・繁殖・H2競合) の交絡を避け、growth mechanism自体のdt感度だけを
+    見る)。vent中心に固定配置しH2を十分与える。
 
-    診断: energy=E_max付近から出発すると、protected reserve
-    (E_protected=min(E_max, P_full*starvation_horizon)) を超える大きな
-    初期surplusを数stepだけで一気に使い切る短いburst transientが起こり、
-    そのburstの長さがdtのオーダーと同程度なので、burst分の成長量がdtに
-    強く依存してしまう (V1.9のenergy/maintenance機構自体は変更していない —
-    これはV1.10のgrowth requestがそのtransientをそのまま反映するために
-    見える性質)。定常状態のgrowthメカニズム収束を見るには、burst分を
-    burn-inで先に消化してから測定区間だけを比較する。
+    E_max付近から出発するとprotected reserve超過分を数stepで使い切る
+    burst transientが起きる (V1.9のenergy/maintenance機構そのものの性質。
+    docs/V1.9_LUCA_proxy設計.md §4)。定常trickle-phaseの収束を見るため、
+    burn-inで先に消化してから測定区間のgrowth incrementを比較する。
     """
+    from evosim.genome import MOVE_POWER
     # light_cycle_period_ticks/memory_tauはtick単位のConfigなので、dtを変える
     # ときは実時間 (24h周期・20s記憶) を保つよう明示的に再計算する
     # (base run_exp15.make_cfgはDT=10.0固定でこれらを計算しているため)。
     cfg = _closed_cfg(
-        initial_population=20, dt_seconds=dt, repro_matter_frac=999.0,
+        initial_population=1, dt_seconds=dt, repro_matter_frac=999.0,
+        # matter_cap_fracを緩めてroom capに当たらないようにする。診断:
+        # 既定matter_cap_frac=1.2だと24h burn-inの初期burstだけでroomへ
+        # 到達し、測定区間がずっとdm_room<=0のまま (0=0で数学的には
+        # "収束" するが、trickle-phase growthの収束性を何も見ていない)。
+        matter_cap_frac=20.0,
         light_cycle_period_ticks=max(1, int(round(86400.0 / dt))),
         memory_tau=20.0 / dt,
     )
     sim = core.setup_sim(cfg, seed=17107)
-    for o in sim.organisms:
-        o.energy = physiology.energy_max(o, cfg)
+    o = sim.organisms[0]
+    o.genome = o.genome.copy()
+    o.genome[MOVE_POWER] = 0.0  # 固定位置 (個体群動態の交絡を避ける)
+    vx, vy = sim.world.vent_centers[0]
+    o.x, o.y = sim.world.cell_center(vx, vy)  # H2十分な位置
+    o.energy = physiology.energy_max(o, cfg)
     burn_in_steps = int(round(24 * 3600.0 / dt))
     for _ in range(burn_in_steps):
         sim.step()
-    m0 = sum(o.matter for o in sim.organisms)
+    m0 = o.matter
     measure_steps = int(round(24 * 3600.0 / dt))
     for _ in range(measure_steps):
         sim.step()
-    dm = sum(o.matter for o in sim.organisms) - m0
+    dm = o.matter - m0
     return {
         "dt_s": dt,
+        "alive": bool(sim.organisms),
         "growth_increment_matter": dm,
-        "total_biomass_kgdw": sum(o.matter for o in sim.organisms) * cfg.matter_unit_to_kgdw,
+        "total_biomass_kgdw": o.matter * cfg.matter_unit_to_kgdw if sim.organisms else 0.0,
         "dic_total_mol": sim.world.total_dic(),
         "fixed_n_total_mol": sim.world.total_fixed_nitrogen(),
         "phosphate_total_mol": sim.world.total_phosphate(),
