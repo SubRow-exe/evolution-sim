@@ -6,180 +6,155 @@
 
 # 1. 現在の最優先参照順
 
-1. `docs/V1.9_現状ステータス.md` — **現在地・権限の正本**
-2. `docs/V1.9_iLUCA再設計仕様.md` — **V1.9 world-rule FINAL仕様**
-3. `docs/V1.9_実装チェックリスト.md` — **実装順・完了条件**
-4. `docs/次の実験計画.md` — 現在の司令塔
-5. `docs/V1.8_総括.md` — V1.8 close / 方針転換
-6. `docs/環境因子追加・校正方針.md` — 恒久設計原則
-7. `docs/バージョニング方針.md`
-8. `docs/メインストリーム開発ストーリー.md`
-9. `docs/実験結果保存方針.md`
-10. `docs/数値再現性・Actions実行環境方針.md`
+1. `docs/V1.9_現状ステータス.md` — **現在地の正本**
+2. `docs/次の実験計画.md` — **直近作業の司令塔**
+3. `docs/長期ロードマップ.md` — **中長期phaseの正本**
+4. `docs/Exp16_V1.9_結果考察.md`
+5. `docs/V1.9_LUCA_proxy設計.md`
+6. `docs/V1.9_iLUCA再設計仕様.md`
+7. `docs/環境因子追加・校正方針.md`
+8. `docs/バージョニング方針.md`
+9. `docs/メインストリーム開発ストーリー.md`
+10. `docs/実験結果保存方針.md`
+11. `docs/数値再現性・Actions実行環境方針.md`
 
-過去のExp15計画・V1.9旧draft・historical experimentより、上記FINAL仕様を優先する。
+旧Exp15計画・V1.9旧draft・historical experimentより上記正本を優先する。
 
 ---
 
 # 2. 現在地
 
 ```text
-V1.7                         CLOSED
-V1.8 scientific phase        CLOSED
-original Exp15               SUPERSEDED / DO NOT DISPATCH
-V1.9 design                  FINAL
-V1.9 implementation          AUTHORIZED / CURRENT TASK
-next formal experiment       NOT DESIGNED
+V1.8                         CLOSED
+V1.9 implementation          IMPLEMENTED
+Exp15 Attempt 2 Phase A      SCIENTIFIC PASS
+Exp16                        COMPLETE / 55 runs analyzed
+Exp15 Attempt 2 Phase B      NEXT
+V1.9 Origin Lock             CURRENT PHASE
 ```
 
-現在AIが行ってよいこと:
-
-- V1.9 FINAL仕様のコード実装
-- unit/integration test追加・更新
-- conservation / determinism検証
-- 短いmechanical sanity
-- 実装監査・ドキュメント更新
-
-現在AIが勝手に行ってはいけないこと:
-
-- 旧Exp15 dispatch
-- formal experiment設計/dispatch
-- parameter sweep
-- 生存させるためのenvironment tuning
-- V1.8 parameter tuningへの回帰
+Exp15 Phase B後はOrigin Audit / mutation-innovation auditを必要範囲で行い、V1.9 close判断へ進む。
 
 ---
 
 # 3. V1.9の目的
 
-V1.9 = **より妥当なchemical-first iLUCA baselineの再構築**。
+V1.9 = **今後の進化を始めるのに十分妥当なchemical-first LUCA-like iLUCA originの構築**。
 
-環境側を生存に合わせて曲げるのではなく、生物自身が自然な環境圧へ生理・進化で応答できる構造を作る。
-
-主要FINAL変更:
+主要構造:
 
 ```text
-INITIAL light_absorption = 0
-INITIAL predation_efficiency = 0
+INITIAL phototrophy OFF
+INITIAL predation OFF
 Energy = 1-pool
-storage_capacity gene + storage upkeep
-starvation signal = runway / starvation_horizon
-reproduction gate = runway >= reproduction_horizon
-H2 explicit / CO2 implicit
-H2 diffusion halo
-uniform random initial spawn
+storage_capacity / starvation_horizon / reproduction_horizon
+runway homeostasis
+H2 explicit substrate / CO2 implicit
+physical H2 diffusion + exchange/loss
+LUCA-like acetogen proxy
+maintenance-first growth allocation
 phototrophy = structural innovation gated
-predation = V1.9 locked
 ```
-
-V1.8 day/nightは残す。初期iLUCAにはlight routeが無いため直接影響せず、phototrophy出現後に意味のある周期圧となることを狙う。
 
 ---
 
-# 4. 旧V1.9 draftからの廃止事項
+# 4. LUCA fidelity HARD RULE
 
-以下を実装しない。
+**歴史上のLUCAを完璧に再現することはmainstreamの目的ではない。**
 
-```text
-Operational Energy + Reserve 2-pool
-E_target controller
-reserve_store_eff
-reserve_mobilize_eff
-starvation_sensitivity gene
-reserve_capacity gene
-reproduction_threshold fraction gene
-source-biased initial spawn
-```
+iLUCAはoriginの妥当性を上げるためLUCA-likeへ寄せるが、以下の場合だけ追加実装を優先する。
 
-代わりにFINAL仕様の:
+1. 欠落が現在結果を強く支配する
+2. 次の進化圧へ応答するため必要
+3. 現仕様が明らかに非生物学的
+4. 物理scale・保存則・解釈性を大きく改善する
+
+分子詳細の未実装を理由にmainstreamを無期限延期しない。
+
+例:
 
 ```text
-storage_capacity
-starvation_horizon
-reproduction_horizon
-runway signal
-```
+重要なら実装:
+  movementがH2到達を不自然に支配
+  temperatureが次のselection axisに必要
+  carbon balanceがMatter解釈を支配
 
-を使う。
+原則後回し:
+  WLP全酵素反応
+  ATP/ADP分子個別追跡
+  LUCA膜脂質組成の完全再現
+```
 
 ---
 
-# 5. V1.9 homeostasis HARD RULE
+# 5. 校正・実験 HARD RULE
 
-未来情報を使わない。
+環境を生存側へ曲げる前に:
+
+> その環境が要求する応答を、生物側が現在または進化によって原理的に実現できるか
+
+を確認する。
+
+原則:
 
 ```text
-NG: 日没が近いから活動を止める
-NG: 将来のEnergy収益を予測して貯蔵する
-OK: 現在Energyと現在のfull-activity支出からrunwayを計算する
-OK: runway不足に応じて現在代謝を調節する
+fixed ancestor sanity
++
+evolution ON
 ```
 
-FINAL仕様:
+を分離する。
 
-- BMR可変部/repairは強く抑制
-- H2/light/nutrient uptakeは弱く抑制
-- bmr_coreは抑制しない
-- structural upkeepは抑制しない
-- movementはV1.9 starvation responseでは抑制しない
+成立域がrobustなら細かなglobal optimum探索を行わない。
+
+通常は1 world-rule軸あたり:
+
+```text
+mechanism
+ -> fixed sanity
+ -> evolution ON
+ -> minimal interaction
+ -> close
+```
+
+の1〜3 experiment程度を目安とする。
 
 ---
 
-# 6. V1.9 storage / reproduction
+# 6. H2 environment HARD RULE
 
-storage:
-
-```text
-E_max = energy_capacity_base * storage_capacity * matter
-storage_upkeep ∝ storage_capacity * matter
-```
-
-容量を無料形質にしない。
-
-reproduction:
+V1.9のH2はEnergyそのものではなくsubstrate。
 
 ```text
-runway >= reproduction_horizon
-AND
-existing Matter gate
-```
-
-capacity fractionを繁殖条件へ直接使わない。
-
----
-
-# 7. H2 environment HARD RULE
-
-V1.9ではH2をEnergyそのものではなくsubstrateとして扱う。
-
-```text
-H2 substrate
+H2
  -> uptake
- -> chemical free energy
- -> conversion efficiency
+ -> metabolism
  -> usable Energy + heat
 ```
 
-vent:
+physical field:
 
-- equal total flux
-- world edgeからr以上内側
-- source disk非重複
-- fixed
-- V1.9ではvent間flux差なし
+- source concentration
+- diffusion
+- exchange/loss
+- biological uptake
 
-H2:
+Exp16から、iLUCA成立性はsource peakだけでなくH2-rich areaの面積・連結性・到達性へ強く依存することが確認された。
 
-- environmental loss
-- reflecting diffusion
-- explicit consumption
-- halo/gradient形成
+baseline referenceは当面:
 
-baseline initial spawnはworld uniform random。vent座標を個体へ教えない。
+```text
+H2 source = 10 mM
+D = 5e-9 m2/s
+exchange/loss tau = 900 s
+4-source square layout
+```
+
+Exp16結果を見て生存側へ最適化し直さない。
 
 ---
 
-# 8. Structural innovation HARD RULE
+# 7. Structural innovation HARD RULE
 
 continuous mutationと能力起源を分離する。
 
@@ -189,32 +164,25 @@ PREDATION:   V1.9 locked
 ```
 
 PHOTOTROPHY OFFならLIGHT_ABSは常に0として機能する。
-PREDATION OFFならPREDATION geneが加算変異で正値になっても捕食機能を持たせない。
+PREDATION OFFならpredation geneが正値でも機能しない。
 
 innovation probabilityはfitness・環境・観測値を参照しない。
-phototrophyを出す目的でrun中に確率を調整しない。
+run中に「出現させるため」確率を調整しない。
 
 ---
 
-# 9. 進化可能性とsanityの区別
-
-今後の科学確認では原則:
+# 8. 未来予測禁止 / homeostasis許可
 
 ```text
-fixed ancestor sanity
-+
-evolution-ON sanity/experiment
+NG: 日没が近いからEnergyを貯める
+NG: 将来収益を予測して行動する
+OK: 現在Energyと現在支出からrunwayを計算する
+OK: 現在runway不足に応じて代謝を調節する
 ```
-
-を分離する。
-
-固定祖先が死んでも、進化ONで適応可能なら環境FAILとは限らない。
-
-ただし現在はexperiment設計段階ではない。
 
 ---
 
-# 10. 絶対設計原則
+# 9. 絶対設計原則
 
 - 適応度関数を直接置かない
 - 特定生態型への固定bonus/penaltyを置かない
@@ -222,28 +190,25 @@ evolution-ON sanity/experiment
 - 保存則を破らない
 - 観測/Recorderをsimulationへフィードバックしない
 - same-seed determinismを守る
-- 能力起源を通常continuous mutationの裏口で起こさない
+- 能力起源をcontinuous mutationの裏口で起こさない
 - 歴史的experimentを現在仕様へ書き換えない
 - 過去worldの再現はversion ref/tagから行う
 - 生存するようにenvironment parameterを自動校正しない
+- LUCA fidelityを目的化しない
 
 ---
 
-# 11. 実装手順
+# 10. 直近作業
 
 ```text
-1. 現main SHA / baseline tests記録
-2. V1.9 FINAL仕様実装
-3. V1.9 tests追加・既存tests更新
-4. Energy/Matter/H2 conservation
-5. determinism
-6. mechanical sanity
-7. implementation report
-8. STOPして人間レビュー
+1. Exp15 Phase B gate/artifact handling修正
+2. Phase B実行・考察
+3. Origin Audit（必要なlegacy/proxy parameterのみ粗い感度）
+4. mutation / innovation scale audit
+5. V1.9 close / main merge判断
+6. 次world-rule phaseへ
 ```
 
-細目は `docs/V1.9_実装チェックリスト.md`。
+formal experimentの新規追加・parameter sweep・新world-rule実装は人間の明示判断なしに開始しない。
 
-world rule / gene meaning / conservation / capability semanticsを変更しないと実装不能な場合は勝手に仕様変更せず、人間へ報告する。
-
-formal experimentは人間の明示判断なしに開始しない。
+長期順序は `docs/長期ロードマップ.md` を参照し、直前結果で更新する。
