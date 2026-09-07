@@ -221,6 +221,139 @@ def _equilibrium_h2_physical(cfg: Config, source_mask: np.ndarray,
     return h2
 
 
+# --- V1.10.1: dynamic hydrothermal vent (docs/V1.10.1_動的熱水噴出口_実装方針.md) ---
+#
+# h2_source_mode="dirichlet" (既定) では上記の既存コードのみを使い、以下は
+# 一切呼ばれない。"flux"のときだけ、source cellを固定mol/s供給の
+# finite-flux vent (1 vent = 1 cell) として扱う。vent位置はharnessが
+# `World.configure_flux_vents()` で明示的に与える (Exp15/16/17の
+# `set_sources()` patternを踏襲)。
+
+# turnover scheduleは決定的にrun開始時へ一括precomputeする (docs §6)。
+# 200 events * 48h ≈ 400日分の余裕を持たせ、formal Exp18 (最長20日) を
+# 十分カバーする。
+_TURNOVER_SCHEDULE_EVENTS = 200
+
+
+def _diffuse_h2_flux_physical(
+    h2: np.ndarray, cfg: Config, positions: list[tuple[int, int]],
+    flux_per_vent: np.ndarray,
+) -> tuple[np.ndarray, float, float]:
+    """finite-flux H2 sourceの1 step分 (dt_seconds) の更新。
+
+    1 stepをCFL条件を満たすsubstep数へ分割し、各substepで
+    (1) source injection (2) exchange sink (3) 4近傍拡散、の順に適用する
+    (docs §2)。Dirichlet復元と異なり供給量はsource cellの現在濃度に
+    依存しない (生物消費に応じてsourceが自動増量しない、が意図した差)。
+    濃度上限はclampしない。戻り値: (新しい濃度場, source注入量[mol],
+    exchange loss量[mol])。
+    """
+    n_sub, dt_sub, alpha = _h2_subcycle_params(cfg)
+    voxel_volume = cfg.cell_size * cfg.cell_size * cfg.effective_depth_m
+    tau = cfg.h2_exchange_tau_s
+    c = h2
+    source_in_mol = 0.0
+    exchange_loss_mol = 0.0
+    has_vents = len(positions) > 0
+    if has_vents:
+        idx_x = np.fromiter((p[0] for p in positions), dtype=int, count=len(positions))
+        idx_y = np.fromiter((p[1] for p in positions), dtype=int, count=len(positions))
+    for _ in range(n_sub):
+        if has_vents:
+            delta_n_mol = flux_per_vent * dt_sub
+            c = c.copy()
+            c[idx_x, idx_y] = c[idx_x, idx_y] + delta_n_mol / voxel_volume
+            source_in_mol += float(delta_n_mol.sum())
+        loss = c * (dt_sub / tau)
+        exchange_loss_mol += float(loss.sum()) * voxel_volume
+        c = c - loss
+        padded = np.pad(c, 1, mode="edge")
+        lap = (padded[:-2, 1:-1] + padded[2:, 1:-1]
+               + padded[1:-1, :-2] + padded[1:-1, 2:] - 4.0 * c)
+        c = c + alpha * lap
+    return c, source_in_mol, exchange_loss_mol
+
+
+def _vent_flux_schedule(cfg: Config, t: float, n_vents: int) -> np.ndarray:
+    """時刻tにおける各vent slotの供給flux [mol/s] (docs §5)。
+
+    `h2_vent_temporal_enabled=False` なら全vent常時 `h2_vent_flux_mol_s`。
+    Trueなら"paired_staggered": slot 0,1が周期前半、slot 2,3が後半でON
+    (n_vents=4前提、Config.__post_init__で検証済み)。ON中は
+    `h2_vent_on_flux_multiplier`倍、OFF中は0。duty_fraction=0.5・
+    on_flux_multiplier=2.0のformal設定では常に2 ventがONで瞬間総fluxが
+    static controlと一致する (docs §5)。
+    """
+    base = cfg.h2_vent_flux_mol_s
+    flux = np.full(n_vents, base, dtype=float)
+    if not cfg.h2_vent_temporal_enabled:
+        return flux
+    period = cfg.h2_vent_cycle_period_s
+    half = period * cfg.h2_vent_duty_fraction
+    phase = t % period
+    first_half_active = phase < half
+    on_value = base * cfg.h2_vent_on_flux_multiplier
+    for i in range(n_vents):
+        in_first_group = i in (0, 1)
+        active = in_first_group == first_half_active
+        flux[i] = on_value if active else 0.0
+    return flux
+
+
+def _pick_relocation_position(
+    env_rng: np.random.Generator, gw: int, gh: int,
+    keep_positions: list[tuple[int, int]], min_separation_cells: int,
+) -> tuple[int, int]:
+    """turnoverで別セルへrelocateする新しいvent位置を1つ選ぶ (docs §6)。
+
+    候補は決定的な順序 (行優先) で構築し、world端から1 cell以上内側、かつ
+    残っている他ventとの距離が `min_separation_cells` を超えるものだけを
+    残す。その中からenvironment RNGで一様に選ぶ (`_place_vents`と同じ
+    決定的候補+RNG選択pattern)。
+    """
+    min_sep2 = min_separation_cells * min_separation_cells
+    candidates = [
+        (x, y) for x in range(1, gw - 1) for y in range(1, gh - 1)
+        if all((x - ox) ** 2 + (y - oy) ** 2 > min_sep2 for ox, oy in keep_positions)
+    ]
+    if not candidates:
+        raise ValueError(
+            "turnover: h2_vent_min_separation_cells / world sizeに対して "
+            "relocation候補セルがありません。")
+    idx = int(env_rng.integers(0, len(candidates)))
+    return candidates[idx]
+
+
+def _precompute_turnover_schedule(
+    cfg: Config, env_rng: np.random.Generator,
+    initial_positions: list[tuple[int, int]],
+) -> list[dict]:
+    """turnover eventを`_TURNOVER_SCHEDULE_EVENTS`件、run開始時に一括生成する。
+
+    各eventは {event_index, time_s, slot, position}。同一seed/configで
+    完全再現可能 (env_rngだけを消費し、organism側RNG列には触れない)。
+    turnover対象slotはindex順にrotationする (docs §6)。
+    """
+    positions = list(initial_positions)
+    n = len(positions)
+    count = cfg.h2_vent_turnover_count
+    interval = cfg.h2_vent_turnover_interval_s
+    events: list[dict] = []
+    next_slot = 0
+    for event_index in range(1, _TURNOVER_SCHEDULE_EVENTS + 1):
+        t = event_index * interval
+        retiring = [(next_slot + k) % n for k in range(count)]
+        for slot in retiring:
+            keep = [p for i, p in enumerate(positions) if i != slot]
+            new_pos = _pick_relocation_position(
+                env_rng, cfg.grid_w, cfg.grid_h, keep, cfg.h2_vent_min_separation_cells)
+            positions[slot] = new_pos
+            events.append({"event_index": event_index, "time_s": t,
+                          "slot": slot, "position": new_pos})
+        next_slot = (next_slot + count) % n
+    return events
+
+
 # --- V1.10: C/N/P resource fields (docs/V1.10_CNP資源分解_実装仕様.md §5) ---
 #
 # H2と異なり、C/N/PはDirichlet source cellを持たない。world全体が
@@ -305,7 +438,29 @@ class World:
         self.h2_source_total = float(self.h2_source_flux.sum())
         # voxel体積 [m^3] (physical_modeのH2 concentration<->amount変換用)。
         self.voxel_volume_m3 = cfg.cell_size * cfg.cell_size * cfg.effective_depth_m
-        if cfg.physical_mode:
+        # V1.10.1: dynamic vent state (docs/V1.10.1_動的熱水噴出口_実装方針.md)。
+        # h2_source_mode="dirichlet" (既定) では以下を一切使わない。
+        self.vent_slot_positions: list[tuple[int, int]] = []
+        self._turnover_events: list[dict] = []
+        self._turnover_applied_idx = 0
+        self.vent_turnover_count_cum = 0
+        self._elapsed_s = 0.0
+        self.h2_source_mode = cfg.h2_source_mode
+
+        if cfg.physical_mode and cfg.h2_source_mode == "flux":
+            # finite-flux mode: legacy disk-based Dirichlet warm-upは行わない
+            # (docs §3: 旧13-cell disk sourceをformal V1.10.1へ混ぜない)。
+            # 初期fieldはゼロで構築し、harnessが`configure_flux_vents()`
+            # (vent位置決定) と、必要ならt=0 common field (docs §7) を
+            # `world.h2 = ...` で明示的に設定する。
+            self.h2 = np.zeros((gw, gh))
+            # organism RNG列を消費しない独立streamからenvironment RNGを作る
+            # (docs §6: RNG isolation)。SeedSequence.spawn()はrngが既に
+            # 消費した乱数個数と無関係に、そのrngの root seed からの
+            # 決定的な子streamを返す。
+            env_seed_seq = rng.bit_generator.seed_seq.spawn(1)[0]
+            self.env_rng = np.random.Generator(np.random.PCG64(env_seed_seq))
+        elif cfg.physical_mode:
             # physical_mode: h2はconcentration場 [mol/m^3]。source cellは
             # Dirichlet境界 (docs/V1.9_検証実装仕様_物理スケール版.md §5-6)。
             self.h2 = _equilibrium_h2_physical(cfg, self.h2_mask, (gw, gh))
@@ -401,6 +556,91 @@ class World:
                 best = d2
         return math.sqrt(best) / c
 
+    # --- V1.10.1: dynamic vent geometry (docs/V1.10.1_動的熱水噴出口_実装方針.md) ---
+
+    def configure_flux_vents(self, positions: list[tuple[int, int]]) -> None:
+        """finite-flux vent位置を設定する (h2_source_mode="flux"専用)。
+
+        Exp15/16/17の`set_sources()`と同じ「World構築後にharnessが明示的に
+        geometryを与える」patternを踏襲する。`h2_vent_turnover_enabled`なら
+        ここでturnover scheduleを一括precomputeする (docs §6: 同一seed/
+        configで完全再現、environment RNGだけを消費)。観測用の
+        `vent_centers`/`h2_mask`/`vent_band`もこの時点の位置で更新する。
+        """
+        cfg = self.cfg
+        if cfg.h2_source_mode != "flux":
+            raise ValueError("configure_flux_vents() は h2_source_mode='flux' 専用です。")
+        positions = [(int(x), int(y)) for x, y in positions]
+        if len(positions) != cfg.n_vents:
+            raise ValueError(
+                f"positions数 ({len(positions)}) が n_vents ({cfg.n_vents}) と一致しません。")
+        self.vent_slot_positions = positions
+        self._initial_vent_positions = tuple(positions)
+        self._turnover_applied_idx = 0
+        self.vent_turnover_count_cum = 0
+        if cfg.h2_vent_turnover_enabled:
+            self._turnover_events = _precompute_turnover_schedule(
+                cfg, self.env_rng, positions)
+        else:
+            self._turnover_events = []
+        self._refresh_vent_observation_fields()
+
+    def _refresh_vent_observation_fields(self) -> None:
+        """現在のvent_slot_positionsから観測用field (vent_centers/h2_mask/
+        vent_band/h2_source_total) を再構築する。turnoverでvent位置が
+        変わった時だけ呼ぶ (毎step呼ぶには重すぎる粗視化)。"""
+        gw, gh = self.cfg.grid_w, self.cfg.grid_h
+        positions = self.vent_slot_positions
+        self.vent_centers = list(positions)
+        mask = np.zeros((gw, gh), dtype=bool)
+        for ix, iy in positions:
+            mask[ix, iy] = True
+        self.h2_mask = mask
+        self.vent_band = np.full((gw, gh), len(VENT_BAND_EDGES), dtype=np.int8)
+        if positions:
+            ii, jj = np.meshgrid(np.arange(gw), np.arange(gh), indexing="ij")
+            d = np.full((gw, gh), np.inf)
+            for vx, vy in positions:
+                d = np.minimum(d, np.hypot(ii - vx, jj - vy))
+            self.vent_band = np.digitize(d, VENT_BAND_EDGES).astype(np.int8)
+        # flux modeの"nominal" total (temporal ON/OFFは考慮しないbaseline)。
+        # 瞬間値は vent_state() で得る。
+        self.h2_source_total = float(self.cfg.h2_vent_flux_mol_s * len(positions))
+
+    def _apply_turnover_up_to(self, t: float) -> None:
+        """時刻tまでに発生したturnover eventを適用し、vent位置を更新する。"""
+        events = self._turnover_events
+        idx = self._turnover_applied_idx
+        changed = False
+        while idx < len(events) and events[idx]["time_s"] <= t:
+            ev = events[idx]
+            self.vent_slot_positions[ev["slot"]] = ev["position"]
+            self.vent_turnover_count_cum += 1
+            idx += 1
+            changed = True
+        self._turnover_applied_idx = idx
+        if changed:
+            self._refresh_vent_observation_fields()
+
+    def current_vent_flux_mol_s(self, t: float | None = None) -> np.ndarray:
+        """時刻tでの各vent slotの供給flux [mol/s] (docs §5)。"""
+        if t is None:
+            t = self._elapsed_s
+        return _vent_flux_schedule(self.cfg, t, len(self.vent_slot_positions))
+
+    def vent_state(self, t: float | None = None) -> dict:
+        """V1.10.1観測: vent state (docs §9)。h2_source_mode="flux"専用。"""
+        if t is None:
+            t = self._elapsed_s
+        flux = self.current_vent_flux_mol_s(t)
+        return {
+            "active_vent_count": int((flux > 0.0).sum()),
+            "vent_positions": [list(p) for p in self.vent_slot_positions],
+            "per_vent_flux_mol_s": flux.tolist(),
+            "world_source_flux_mol_s": float(flux.sum()),
+            "vent_turnover_count_cum": self.vent_turnover_count_cum,
+        }
+
     # --- 毎tick更新 ---
 
     def update(self) -> tuple[float, float]:
@@ -420,7 +660,17 @@ class World:
         """
         cfg = self.cfg
         h2_before = self.h2
-        if cfg.physical_mode:
+        self._elapsed_s += cfg.dt_seconds
+        if cfg.physical_mode and cfg.h2_source_mode == "flux":
+            # V1.10.1: finite-flux vent (docs/V1.10.1_動的熱水噴出口_実装方針.md §2/5/6)。
+            # turnoverはstep粒度で適用 (48hは十分dt=10sより粗いため、
+            # substep単位では追跡しない)。
+            if cfg.h2_vent_turnover_enabled:
+                self._apply_turnover_up_to(self._elapsed_s)
+            flux_per_vent = self.current_vent_flux_mol_s(self._elapsed_s)
+            self.h2, h2_influx, h2_loss = _diffuse_h2_flux_physical(
+                h2_before, cfg, self.vent_slot_positions, flux_per_vent)
+        elif cfg.physical_mode:
             self.h2, h2_influx, h2_loss = _diffuse_h2_physical(
                 h2_before, cfg, self.h2_mask)
         else:

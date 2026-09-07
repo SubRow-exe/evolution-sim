@@ -330,6 +330,33 @@ class Config:
     # formal open-environment run向け。
     cnp_background_exchange_enabled: bool = True
 
+    # --- V1.10.1: 動的熱水噴出口 (docs/V1.10.1_動的熱水噴出口_実装方針.md) ---
+    # h2_source_mode="dirichlet" (既定) ではV1.10以前のsource cell Dirichlet
+    # 復元を完全に維持する (既存test・既存挙動に一切影響しない)。"flux"の
+    # ときだけ、下記のfinite-flux/temporal/turnover機構を使う。
+    h2_source_mode: str = "dirichlet"  # "dirichlet" | "flux"
+    # 1 ventあたりのbaseline供給flux [mol/s] (flux modeのみ)。恣意的に置かず、
+    # Exp18 Phase 0 P0-Aでlegacy Dirichlet sourceの定常補給量から実測する
+    # (F0 = 定常source_in_mol/s / n_vents. docs §4)。
+    h2_vent_flux_mol_s: float = 0.0
+
+    # temporal ON/OFF (§5)。"paired_staggered"はn_vents=4専用: slot 0,1が
+    # 前半、slot 2,3が後半でON。瞬間ON vent数を一定に保ち、総flux量を
+    # static controlと揃える。
+    h2_vent_temporal_enabled: bool = False
+    h2_vent_cycle_period_s: float = 43200.0   # 12 h
+    h2_vent_duty_fraction: float = 0.5        # ON期間が周期に占める割合
+    h2_vent_on_flux_multiplier: float = 2.0   # ON中はbaseline*このfactor
+    h2_vent_phase_mode: str = "paired_staggered"  # 現状これのみ実装
+
+    # spatial turnover (§6)。48hごとに1 ventを別セルへrelocateする。
+    # vent位置更新はrun seedから独立したenvironment RNGで決め、organism側
+    # RNG列を一切消費しない (docs §6: RNG isolation)。
+    h2_vent_turnover_enabled: bool = False
+    h2_vent_turnover_interval_s: float = 172800.0  # 48 h
+    h2_vent_turnover_count: int = 1
+    h2_vent_min_separation_cells: int = 4
+
     # --- 災害 ---
     disaster_kill_frac: float = 0.9
 
@@ -462,6 +489,41 @@ class Config:
                     f"vent_radius_cells={r} がworld ({self.grid_w}x{self.grid_h}) "
                     "に対して大きすぎ、edgeから内側へventを配置できません。"
                 )
+        # --- V1.10.1 dynamic vent validation (docs/V1.10.1_動的熱水噴出口_実装方針.md §10) ---
+        if self.h2_source_mode not in ("dirichlet", "flux"):
+            raise ValueError(
+                f"未知の h2_source_mode: {self.h2_source_mode!r} (dirichlet | flux)")
+        if self.h2_source_mode == "flux":
+            if not self.physical_mode:
+                raise ValueError("h2_source_mode='flux' には physical_mode=True が必要です。")
+            if self.h2_vent_flux_mol_s < 0.0:
+                raise ValueError("h2_vent_flux_mol_s は0以上でなければなりません。")
+            if self.h2_vent_temporal_enabled:
+                if self.h2_vent_phase_mode != "paired_staggered":
+                    raise ValueError(
+                        f"未実装の h2_vent_phase_mode: {self.h2_vent_phase_mode!r} "
+                        "(paired_staggered のみ実装)")
+                if self.n_vents != 4:
+                    raise ValueError(
+                        "h2_vent_phase_mode='paired_staggered' は n_vents=4 前提です "
+                        f"(n_vents={self.n_vents})。")
+                if self.h2_vent_cycle_period_s <= 0.0:
+                    raise ValueError("h2_vent_cycle_period_s は正でなければなりません。")
+                if not (0.0 < self.h2_vent_duty_fraction < 1.0):
+                    raise ValueError("h2_vent_duty_fraction は 0 < x < 1 でなければなりません。")
+                if self.h2_vent_on_flux_multiplier <= 0.0:
+                    raise ValueError("h2_vent_on_flux_multiplier は正でなければなりません。")
+            if self.h2_vent_turnover_enabled:
+                if self.h2_vent_turnover_interval_s <= 0.0:
+                    raise ValueError("h2_vent_turnover_interval_s は正でなければなりません。")
+                if self.h2_vent_turnover_count < 1:
+                    raise ValueError("h2_vent_turnover_count は1以上でなければなりません。")
+                if self.h2_vent_turnover_count > self.n_vents:
+                    raise ValueError(
+                        "h2_vent_turnover_count は n_vents 以下でなければなりません "
+                        f"(turnover_count={self.h2_vent_turnover_count}, n_vents={self.n_vents})。")
+                if self.h2_vent_min_separation_cells < 0:
+                    raise ValueError("h2_vent_min_separation_cells は0以上でなければなりません。")
 
     def to_json(self, path: str | Path) -> None:
         p = Path(path)
