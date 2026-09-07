@@ -1,0 +1,165 @@
+{
+  "status": "V1.10 Exp17 Phase 0 preflight; NOT formal Exp17",
+  "no_parameter_tuning": true,
+  "P0_A": {
+    "pass": true,
+    "delta_matter": 0.030753297300191718,
+    "c_uptake_cum_mol": 3.3695228746192974e-16,
+    "c_expected_mol": 3.3695228746192905e-16,
+    "n_uptake_cum_mol": 6.762344233925212e-17,
+    "n_expected_mol": 6.762344233925216e-17,
+    "p_uptake_cum_mol": 5.5600976587161454e-18,
+    "p_expected_mol": 5.560097658716136e-18,
+    "stoichiometric_relative_error": {
+      "c": 2.048519383167489e-15,
+      "n": 5.468200619945527e-16,
+      "p": 1.6626441297423795e-15
+    },
+    "ledger_residual_relative": {
+      "c": -7.219030746533562e-16,
+      "n": 2.0679508492998305e-16,
+      "p": -1.0339754852820997e-15
+    },
+    "concentration_nonnegative": true
+  },
+  "P0_B": {
+    "pass": true,
+    "cases": {
+      "carbon": {
+        "pass": true,
+        "limiting_resource": "carbon",
+        "background_scarcity_factor": 1e-09,
+        "growth_limiter_counts": {
+          "energy": 0,
+          "kinetic": 0,
+          "carbon": 432000,
+          "nitrogen": 0,
+          "phosphorus": 0,
+          "room": 0
+        },
+        "max_limiter": "carbon",
+        "initial_stock_mol": {
+          "carbon": 4.4000000000000005e-16,
+          "nitrogen": 1.9999999999999997e-09,
+          "phosphorus": 2.0000000000000008e-10
+        },
+        "final_stock_mol": {
+          "carbon": 5.732262533356852e-44,
+          "nitrogen": 1.9999999116957615e-09,
+          "phosphorus": 1.999999927394969e-10
+        },
+        "final_population": 50
+      },
+      "nitrogen": {
+        "pass": true,
+        "limiting_resource": "nitrogen",
+        "background_scarcity_factor": 1e-09,
+        "growth_limiter_counts": {
+          "energy": 0,
+          "kinetic": 0,
+          "carbon": 0,
+          "nitrogen": 432000,
+          "phosphorus": 0,
+          "room": 0
+        },
+        "max_limiter": "nitrogen",
+        "initial_stock_mol": {
+          "carbon": 4.399999999999999e-07,
+          "nitrogen": 2.0000000000000005e-18,
+          "phosphorus": 2.0000000000000008e-10
+        },
+        "final_stock_mol": {
+          "carbon": 4.3999999999003415e-07,
+          "nitrogen": 7.709322774204987e-47,
+          "phosphorus": 1.9999999983555505e-10
+        },
+        "final_population": 50
+      },
+      "phosphorus": {
+        "pass": true,
+        "limiting_resource": "phosphorus",
+        "background_scarcity_factor": 1e-09,
+        "growth_limiter_counts": {
+          "energy": 0,
+          "kinetic": 0,
+          "carbon": 0,
+          "nitrogen": 0,
+          "phosphorus": 432000,
+          "room": 0
+        },
+        "max_limiter": "phosphorus",
+        "initial_stock_mol": {
+          "carbon": 4.399999999999999e-07,
+          "nitrogen": 1.9999999999999997e-09,
+          "phosphorus": 2e-19
+        },
+        "final_stock_mol": {
+          "carbon": 4.399999999878826e-07,
+          "nitrogen": 1.9999999975675428e-09,
+          "phosphorus": 7.766455736272397e-45
+        },
+        "final_population": 50
+      }
+    }
+  },
+  "P0_C": {
+    "pass": true,
+    "corpse_remaining": 0,
+    "carbon": {
+      "initial_mol": 4.4000008765298465e-07,
+      "final_mol": 4.400000876529847e-07
+    },
+    "nitrogen": {
+      "initial_mol": 2.0000175912043974e-09,
+      "final_mol": 2.000017591204398e-09
+    },
+    "phosphorus": {
+      "initial_mol": 2.0000144637437859e-10,
+      "final_mol": 2.000014463743786e-10
+    }
+  },
+  "P0_D": {
+    "pass": true,
+    "prey_matter_loss": 0.6000000000000001,
+    "predator_matter_gain": 0.0,
+    "waste_matter": 0.6000000000000001,
+    "carbon_residual": 0.0,
+    "nitrogen_residual": -4.1359030627651384e-25,
+    "phosphorus_residual": 0.0
+  },
+  "P0_E": {
+    "pass": true,
+    "growth_increment_relative_error_5s_vs_10s": 1.7036481158239114e-12,
+    "cnp_field_relative_error_5s_vs_10s": 3.0920393841910613e-09,
+    "cases": {
+      "2.5": {
+        "dt_s": 2.5,
+        "alive": true,
+        "growth_increment_matter": 2.039999999996816,
+        "total_biomass_kgdw": 1.077749609723631e-15,
+        "dic_total_mol": 4.399999633050152e-07,
+        "fixed_n_total_mol": 1.9999926356495044e-09,
+        "phosphate_total_mol": 1.999993944924058e-10
+      },
+      "5.0": {
+        "dt_s": 5.0,
+        "alive": true,
+        "growth_increment_matter": 2.0400000000034106,
+        "total_biomass_kgdw": 1.0773565480375245e-15,
+        "dic_total_mol": 4.399999633204901e-07,
+        "fixed_n_total_mol": 1.99999263873632e-09,
+        "phosphate_total_mol": 1.9999939474620677e-10
+      },
+      "10.0": {
+        "dt_s": 10.0,
+        "alive": true,
+        "growth_increment_matter": 2.039999999999935,
+        "total_biomass_kgdw": 1.0765690935073713e-15,
+        "dic_total_mol": 4.3999996335130225e-07,
+        "fixed_n_total_mol": 1.999992644920376e-09,
+        "phosphate_total_mol": 1.9999939525466898e-10
+      }
+    }
+  },
+  "dispatch_gate_pass": true
+}
