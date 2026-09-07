@@ -1,0 +1,162 @@
+name: Exp17 V1.10 C/N/P Resource Decomposition
+
+on:
+  push:
+    branches: [claude/v1-9-v1-10-setup-wmqec0]
+    paths:
+      - '.github/workflows/exp17_v110_cnp.yml'
+      - 'experiments/exp17_v110_cnp/**'
+      - 'experiments/luca_proxy/**'
+      - 'experiments/exp15_v19/**'
+      - 'experiments/exp15_v19_preflight/**'
+      - 'evosim/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Full unit test suite (incl. tests/test_v110_cnp.py)
+        run: uv run pytest -q
+      - name: Exp17 harness wiring smoke
+        run: uv run pytest -q experiments/exp17_v110_cnp/test_exp17_conditions.py
+      - name: Phase 0 mechanical/ledger preflight
+        run: uv run python experiments/exp17_v110_cnp/phase0.py phase0_ci_results.json
+      - name: Validate Phase 0 gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("phase0_ci_results.json"))
+          assert r["dispatch_gate_pass"] is True, r
+          print("EXP17_PHASE0_PASS")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp17-phase0-results
+          path: phase0_ci_results.json
+          retention-days: 30
+
+  phaseA_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        seed: [17001, 17002, 17003, 17004, 17005]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Phase A reference open environment — 10 physical days
+        run: >-
+          uv run python experiments/exp17_v110_cnp/run_exp17.py
+          --phase A --seed ${{ matrix.seed }} --days 10
+          --outdir result_phaseA_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp17-phaseA-${{ matrix.seed }}
+          path: result_phaseA_${{ matrix.seed }}
+          retention-days: 30
+
+  phaseA_aggregate:
+    needs: phaseA_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      gate_pass: ${{ steps.agg.outputs.gate_pass }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp17-phaseA-*
+          path: all_phaseA
+      - name: Aggregate Phase A + evaluate scientific viability gate
+        id: agg
+        shell: bash
+        run: |
+          uv run python experiments/exp17_v110_cnp/aggregate_exp17.py \
+            --root all_phaseA --phase A \
+            --out phaseA_aggregate.json --csv phaseA_aggregate.csv
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          r = json.load(open("phaseA_aggregate.json"))
+          print(f"gate_pass={'true' if r['gate_pass'] else 'false'}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp17-phaseA-aggregate
+          path: |
+            phaseA_aggregate.json
+            phaseA_aggregate.csv
+          retention-days: 30
+
+  # Phase BはPhase A PASS時のみ (docs/Exp17_V1.10_CNP資源分解_実験計画.md §4)。
+  phaseB_runs:
+    needs: phaseA_aggregate
+    if: needs.phaseA_aggregate.outputs.gate_pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        condition: [B0_reference, B1_low_dic, B2_low_fixed_n, B3_low_phosphate]
+        seed: [17101, 17102, 17103]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Phase B resource identity — 3 physical days
+        run: >-
+          uv run python experiments/exp17_v110_cnp/run_exp17.py
+          --phase B --condition ${{ matrix.condition }} --seed ${{ matrix.seed }} --days 3
+          --outdir result_phaseB_${{ matrix.condition }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp17-phaseB-${{ matrix.condition }}-${{ matrix.seed }}
+          path: result_phaseB_${{ matrix.condition }}_${{ matrix.seed }}
+          retention-days: 30
+
+  phaseB_aggregate:
+    needs: [phaseA_aggregate, phaseB_runs]
+    if: always() && needs.phaseA_aggregate.outputs.gate_pass == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp17-phaseB-*
+          path: all_phaseB
+      - name: Aggregate Phase B + evaluate resource identity gate
+        run: >-
+          uv run python experiments/exp17_v110_cnp/aggregate_exp17.py
+          --root all_phaseB --phase B
+          --out phaseB_aggregate.json --csv phaseB_aggregate.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp17-phaseB-aggregate
+          path: |
+            phaseB_aggregate.json
+            phaseB_aggregate.csv
+          retention-days: 30
