@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from pathlib import Path
 
-import run_phase_c1 as c1
-import core
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import core  # noqa: E402
+import run_phase_c1 as c1  # noqa: E402
 
 
 def test_condition_grid_is_preregistered() -> None:
