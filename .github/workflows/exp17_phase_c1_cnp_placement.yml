@@ -1,0 +1,91 @@
+name: Exp17 Phase C1 C/N/P Placement Calibration
+
+on:
+  push:
+    branches: [exp17-phase-c1-cnp-placement]
+    paths:
+      - '.github/workflows/exp17_phase_c1_cnp_placement.yml'
+      - 'experiments/exp17_v110_cnp/run_phase_c1.py'
+      - 'experiments/exp17_v110_cnp/aggregate_phase_c1.py'
+      - 'experiments/exp17_v110_cnp/test_phase_c1.py'
+      - 'docs/Exp17_PhaseC1_CNP配置量校正_実験計画.md'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Relevant V1.10 and Exp17 tests
+        run: >-
+          uv run pytest -q
+          tests/test_v110_cnp.py
+          experiments/exp17_v110_cnp/test_exp17_conditions.py
+          experiments/exp17_v110_cnp/test_phase_c1.py
+      - name: Compile Phase C1 tools
+        run: >-
+          uv run python -m py_compile
+          experiments/exp17_v110_cnp/run_phase_c1.py
+          experiments/exp17_v110_cnp/aggregate_phase_c1.py
+
+  phaseC1_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        condition: [C10, C30, C50, C100]
+        seed: [17201, 17202, 17203]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Run finite C/N/P placement condition — 10 physical days
+        run: >-
+          uv run python experiments/exp17_v110_cnp/run_phase_c1.py
+          --condition ${{ matrix.condition }}
+          --seed ${{ matrix.seed }}
+          --days 10
+          --outdir result_phaseC1_${{ matrix.condition }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp17-phaseC1-${{ matrix.condition }}-${{ matrix.seed }}
+          path: result_phaseC1_${{ matrix.condition }}_${{ matrix.seed }}
+          retention-days: 30
+
+  phaseC1_aggregate:
+    needs: phaseC1_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp17-phaseC1-*
+          path: all_phaseC1
+      - name: Aggregate Phase C1 and validate integrity
+        run: >-
+          uv run python experiments/exp17_v110_cnp/aggregate_phase_c1.py
+          --root all_phaseC1
+          --out phaseC1_aggregate.json
+          --csv phaseC1_aggregate.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp17-phaseC1-aggregate
+          path: |
+            phaseC1_aggregate.json
+            phaseC1_aggregate.csv
+          retention-days: 30
