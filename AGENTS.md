@@ -6,19 +6,20 @@
 
 # 1. 現在の最優先参照順
 
-1. `docs/V1.9_現状ステータス.md` — **現在地の正本**
-2. `docs/次の実験計画.md` — **直近作業の司令塔**
-3. `docs/長期ロードマップ.md` — **中長期phaseの正本**
-4. `docs/Exp16_V1.9_結果考察.md`
-5. `docs/V1.9_LUCA_proxy設計.md`
-6. `docs/V1.9_iLUCA再設計仕様.md`
-7. `docs/環境因子追加・校正方針.md`
-8. `docs/バージョニング方針.md`
-9. `docs/メインストリーム開発ストーリー.md`
-10. `docs/実験結果保存方針.md`
-11. `docs/数値再現性・Actions実行環境方針.md`
+1. `docs/V1.9_総括.md` — **直前versionのclose正本**
+2. `docs/次の実験計画.md` — **現在作業の司令塔**
+3. `docs/V1.10_CNP資源分解_実装仕様.md` — **V1.10実装正本**
+4. `docs/Exp17_V1.10_CNP資源分解_実験計画.md` — **次formal experiment正本**
+5. `docs/長期ロードマップ.md`
+6. `docs/V1.9_現状ステータス.md`
+7. `docs/Exp16_V1.9_結果考察.md`
+8. `docs/V1.9_LUCA_proxy設計.md`
+9. `docs/環境因子追加・校正方針.md`
+10. `docs/バージョニング方針.md`
+11. `docs/実験結果保存方針.md`
+12. `docs/数値再現性・Actions実行環境方針.md`
 
-旧Exp15計画・V1.9旧draft・historical experimentより上記正本を優先する。
+旧V1.9 draft・旧Exp15計画より上記正本を優先する。
 
 ---
 
@@ -26,35 +27,48 @@
 
 ```text
 V1.8                         CLOSED
-V1.9 implementation          IMPLEMENTED
+V1.9                         CLOSED
 Exp15 Attempt 2 Phase A      SCIENTIFIC PASS
+Exp15 Attempt 2 Phase B      NOT RUN / DEFERRED
 Exp16                        COMPLETE / 55 runs analyzed
-Exp15 Attempt 2 Phase B      NEXT
-V1.9 Origin Lock             CURRENT PHASE
+V1.10 C/N/P resource closure NEXT
+Exp17                        PLAN READY
 ```
 
-Exp15 Phase B後はOrigin Audit / mutation-innovation auditを必要範囲で行い、V1.9 close判断へ進む。
+V1.9を再オープンして細部校正を続けない。
+V1.10は独立versionとして扱う。
 
 ---
 
-# 3. V1.9の目的
+# 3. 現在の作業
 
-V1.9 = **今後の進化を始めるのに十分妥当なchemical-first LUCA-like iLUCA originの構築**。
+## V1.10
 
-主要構造:
+environmental generic `nutrient/Matter`を:
 
 ```text
-INITIAL phototrophy OFF
-INITIAL predation OFF
-Energy = 1-pool
-storage_capacity / starvation_horizon / reproduction_horizon
-runway homeostasis
-H2 explicit substrate / CO2 implicit
-physical H2 diffusion + exchange/loss
-LUCA-like acetogen proxy
-maintenance-first growth allocation
-phototrophy = structural innovation gated
+DIC / CO2-equivalent inorganic carbon
+fixed nitrogen
+phosphate phosphorus
 ```
+
+へ分解する。
+
+`Organism.matter`はdry biomassとして維持。
+水およびS/Fe/Mg/K/Na/Ca/trace metalsは当面implicit/non-limiting。
+
+fixed biomass stoichiometryでgrowth / corpse / waste / predationをC/N/P ledgerへ接続する。
+
+## Exp17
+
+```text
+Phase 0  C/N/P conservation + limiter mechanical tests
+Phase A  fixed iLUCA reference / 5 seeds x 10 physical days
+Phase B  low-C / low-N / low-P identity tests
+Phase C  depletion diagnostic only if needed; auto-runしない
+```
+
+V1.9 final populationを再現するためのC/N/P調整は禁止。
 
 ---
 
@@ -69,21 +83,7 @@ iLUCAはoriginの妥当性を上げるためLUCA-likeへ寄せるが、以下の
 3. 現仕様が明らかに非生物学的
 4. 物理scale・保存則・解釈性を大きく改善する
 
-分子詳細の未実装を理由にmainstreamを無期限延期しない。
-
-例:
-
-```text
-重要なら実装:
-  movementがH2到達を不自然に支配
-  temperatureが次のselection axisに必要
-  carbon balanceがMatter解釈を支配
-
-原則後回し:
-  WLP全酵素反応
-  ATP/ADP分子個別追跡
-  LUCA膜脂質組成の完全再現
-```
+分子詳細の未実装を理由にmainstreamを延期しない。
 
 ---
 
@@ -98,26 +98,15 @@ iLUCAはoriginの妥当性を上げるためLUCA-likeへ寄せるが、以下の
 原則:
 
 ```text
-fixed ancestor sanity
-+
-evolution ON
+mechanism test
+-> fixed ancestor sanity
+-> 必要ならevolution ON
+-> minimal interaction
+-> close
 ```
 
-を分離する。
-
-成立域がrobustなら細かなglobal optimum探索を行わない。
-
-通常は1 world-rule軸あたり:
-
-```text
-mechanism
- -> fixed sanity
- -> evolution ON
- -> minimal interaction
- -> close
-```
-
-の1〜3 experiment程度を目安とする。
+成立域がrobustならglobal optimum探索をしない。
+実験結果を見てreference値を生存側へ自動最適化しない。
 
 ---
 
@@ -126,31 +115,23 @@ mechanism
 V1.9のH2はEnergyそのものではなくsubstrate。
 
 ```text
-H2
- -> uptake
- -> metabolism
- -> usable Energy + heat
+H2 -> uptake -> metabolism -> usable Energy + heat
 ```
 
-physical field:
-
-- source concentration
-- diffusion
-- exchange/loss
-- biological uptake
-
-Exp16から、iLUCA成立性はsource peakだけでなくH2-rich areaの面積・連結性・到達性へ強く依存することが確認された。
-
-baseline referenceは当面:
+V1.9 reference:
 
 ```text
 H2 source = 10 mM
 D = 5e-9 m2/s
 exchange/loss tau = 900 s
-4-source square layout
+4-source distributed layout
 ```
 
-Exp16結果を見て生存側へ最適化し直さない。
+既知制約:
+
+- sourceはDirichlet concentration boundaryで実質無限供給
+- 現状はH2 depletion competitionよりpatch accessが主要圧
+- dynamic source化はV1.11予定
 
 ---
 
@@ -160,14 +141,12 @@ continuous mutationと能力起源を分離する。
 
 ```text
 PHOTOTROPHY: innovation-gated
-PREDATION:   V1.9 locked
+PREDATION:   V1.9ではlocked
 ```
 
-PHOTOTROPHY OFFならLIGHT_ABSは常に0として機能する。
-PREDATION OFFならpredation geneが正値でも機能しない。
+現状のlight routeはphysical scale未対応なので、**V1.12以前にphototrophy formal experimentを開始しない。**
 
-innovation probabilityはfitness・環境・観測値を参照しない。
-run中に「出現させるため」確率を調整しない。
+innovation probabilityを結果を見ながら調整しない。
 
 ---
 
@@ -176,8 +155,8 @@ run中に「出現させるため」確率を調整しない。
 ```text
 NG: 日没が近いからEnergyを貯める
 NG: 将来収益を予測して行動する
-OK: 現在Energyと現在支出からrunwayを計算する
-OK: 現在runway不足に応じて代謝を調節する
+OK: 現在Energyと現在支出からrunwayを計算
+OK: 現在runway不足に応じて生理を調節
 ```
 
 ---
@@ -193,22 +172,33 @@ OK: 現在runway不足に応じて代謝を調節する
 - 能力起源をcontinuous mutationの裏口で起こさない
 - 歴史的experimentを現在仕様へ書き換えない
 - 過去worldの再現はversion ref/tagから行う
-- 生存するようにenvironment parameterを自動校正しない
+- 生存するようenvironment parameterを自動校正しない
 - LUCA fidelityを目的化しない
+- version境界を跨いだ変更を同一versionへ後付けしない
 
 ---
 
-# 10. 直近作業
+# 10. Formal experiment運用
+
+- `effective_config.json` / `initial_genome.json` を成果物へ必ず保存
+- preregistered gateでartifact不足があればsilent SKIPせずFAIL
+- formal開始後にreference parameterを変更しない
+- 変更が必要ならAttempt 2として履歴を残す
+- Phase C等の条件付きrunを勝手に開始しない
+
+---
+
+# 11. 直近作業
 
 ```text
-1. Exp15 Phase B gate/artifact handling修正
-2. Phase B実行・考察
-3. Origin Audit（必要なlegacy/proxy parameterのみ粗い感度）
-4. mutation / innovation scale audit
-5. V1.9 close / main merge判断
-6. 次world-rule phaseへ
+1. V1.9 branch/PR状態を確認しversion境界を確定
+2. V1.10 C/N/P実装
+3. unit / conservation / determinism tests
+4. Exp17 Phase 0
+5. Exp17 Phase A
+6. Exp17 Phase B
+7. 結果保存・考察
+8. Phase Cは必要時のみ人間判断
 ```
 
-formal experimentの新規追加・parameter sweep・新world-rule実装は人間の明示判断なしに開始しない。
-
-長期順序は `docs/長期ロードマップ.md` を参照し、直前結果で更新する。
+長期順序は `docs/長期ロードマップ.md` を参照する。
