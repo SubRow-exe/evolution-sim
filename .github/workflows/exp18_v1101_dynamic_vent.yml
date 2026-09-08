@@ -1,4 +1,4 @@
-name: Exp18 V1.10.1 Dynamic Hydrothermal Vent (Phase 0-A)
+name: Exp18 V1.10.1 Dynamic Hydrothermal Vent (Phase 0-B)
 
 on:
   push:
@@ -113,4 +113,71 @@ jobs:
           path: |
             phaseA_aggregate.json
             phaseA_aggregate.csv
+          retention-days: 30
+
+  # Phase B dynamic arm: Phase Aのselect_dynamic_arm() (docs §5) は
+  # A3 (temporal+turnover) を選択済み (survive_fraction=2/3, median_max_generation=6.0
+  # で基準 >=2/3 / >=3 をA3が最初に満たした)。選択順で再評価しても値は変わらないため
+  # 固定条件として渡す。selection ruleとcandidate値そのものは変更しない (docs §9)。
+  phaseB_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 480
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        arm: [B0_STATIC_FIXED, B1_STATIC_EVOLVE, B2_DYNAMIC_FIXED, B3_DYNAMIC_EVOLVE]
+        seed: [18101, 18102, 18103, 18104, 18105]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp18-phase0-calibration
+          path: calibration
+      - name: Phase B ${{ matrix.arm }} — 20 physical days
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/run_exp18_phase_b.py
+          --arm ${{ matrix.arm }}
+          --dynamic-condition A3
+          --seed ${{ matrix.seed }}
+          --days 20
+          --calibration-dir calibration
+          --outdir result_phaseB_${{ matrix.arm }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp18-phaseB-${{ matrix.arm }}-${{ matrix.seed }}
+          path: result_phaseB_${{ matrix.arm }}_${{ matrix.seed }}
+          retention-days: 30
+
+  phaseB_aggregate:
+    needs: phaseB_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp18-phaseB-*
+          path: all_phaseB
+      - name: Aggregate Phase B (mechanical readout only, no interpretation)
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/aggregate_phase_b.py
+          --root all_phaseB
+          --out phaseB_aggregate.json
+          --csv phaseB_aggregate.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp18-phaseB-aggregate
+          path: |
+            phaseB_aggregate.json
+            phaseB_aggregate.csv
           retention-days: 30

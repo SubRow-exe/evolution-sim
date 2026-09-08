@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import aggregate_phase_a  # noqa: E402
+import aggregate_phase_b  # noqa: E402
 import exp18_core as core  # noqa: E402
 import run_exp18  # noqa: E402
 import run_exp18_phase_b  # noqa: E402
@@ -81,3 +82,25 @@ def test_tiny_phase_a_and_phase_b_runs_produce_required_artifacts(tmp_path):
         days=0.005, write_snapshots=False)
     assert b_summary["phase"] == "B"
     assert b_summary["environment"] == "DYNAMIC"
+
+
+def test_aggregate_phase_b_reads_run_dirs_and_summarizes_by_arm(tmp_path):
+    f0_res = core.measure_legacy_f0(warmup_s=600.0, measure_s=100.0)
+    h2_field = core.common_initial_h2_field(f0_res)
+    f0 = f0_res["f0_mol_s"]
+
+    root = tmp_path / "all_phaseB"
+    for arm, spec in run_exp18_phase_b.ARMS.items():
+        dyn_cond = "A3" if spec["dynamic"] else None
+        run_exp18_phase_b.run_phase_b(
+            arm, dyn_cond, 18101, root / arm, f0, h2_field,
+            days=0.005, write_snapshots=False)
+
+    rows = aggregate_phase_b.load_runs(root)
+    assert len(rows) == len(run_exp18_phase_b.ARMS)
+    result = aggregate_phase_b.aggregate(rows)
+    assert set(result["by_arm"]) == set(run_exp18_phase_b.ARMS)
+    for arm, stats in result["by_arm"].items():
+        assert stats["artifacts_complete"] is True
+        for gene in aggregate_phase_b.GENES:
+            assert gene in stats["final_gene_stats_across_seeds"]
