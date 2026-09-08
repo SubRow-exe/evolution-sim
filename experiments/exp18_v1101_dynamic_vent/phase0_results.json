@@ -1,0 +1,42 @@
+{
+  "status": "Exp18 V1.10.1 Phase 0 preflight; NOT formal Exp18",
+  "no_parameter_tuning": true,
+  "P0_A": {
+    "pass": true,
+    "f0_mol_s": 4.890000722073717e-11,
+    "f_total_legacy_mol_s": 1.9560002888294868e-10,
+    "warmup_s": 21600.0,
+    "measure_s": 3600.0
+  },
+  "P0_B": {
+    "pass": true,
+    "source_in_mol": 7.041601039786112e-07,
+    "expected_mol": 7.041601039786153e-07,
+    "ledger_relative_error": 5.713766623137334e-15,
+    "nonnegative": true,
+    "finite": true,
+    "gradient_formed": true
+  },
+  "P0_C": {
+    "pass": true,
+    "static_total_mol": 8.44992124774325e-06,
+    "temporal_total_mol": 8.44992124774325e-06,
+    "relative_error": 0.0
+  },
+  "P0_D": {
+    "pass": true,
+    "vent_count_always_n_vents": true,
+    "boundary_constraint_ok": true,
+    "same_seed_same_schedule": true,
+    "diff_seed_diff_schedule": true,
+    "organism_rng_isolated": true,
+    "turnover_events_over_20d": 10
+  },
+  "P0_E": {
+    "pass": true,
+    "source_total_relative_error": 3.728984532994811e-14,
+    "final_stock_relative_error": 0.005586592176482003,
+    "radial_concentration_relative_error": 0.003780557756041965
+  },
+  "dispatch_gate_pass": true
+}
