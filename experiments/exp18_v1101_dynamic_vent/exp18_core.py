@@ -46,7 +46,9 @@ DT = 10.0
 LEGACY_FOUR_CENTERS = ((10, 10), (10, 30), (30, 10), (30, 30))
 SAMPLE_EVERY_S = 600.0
 SNAPSHOT_EVERY_S = 21600.0
-H2_HABITABILITY_MOLM3 = 248e-6  # V1.9 diagnostic threshold (docs V1.10.1 §9)
+# V1.9 diagnostic threshold: 248 uM (docs V1.10.1 §9)。1 mol/m^3 == 1 mM
+# なので 248 uM = 248e-3 mM = 248e-3 mol/m^3 (248e-6は1000倍小さい誤り)。
+H2_HABITABILITY_MOLM3 = 248e-3
 
 # Exp17 Phase C1 human-decision working baseline (docs V1.10.1 §8):
 # initial C/N/P = 50x initial-100-organism biomass requirement, exchange OFF.
