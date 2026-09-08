@@ -1,0 +1,106 @@
+name: Exp18 V1.10.1 Dynamic Hydrothermal Vent (Phase 0-A)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Full unit test suite (incl. tests/test_v1101_dynamic_vent.py)
+        run: uv run pytest -q
+      - name: Exp18 Phase 0 (source calibration + mechanical validation)
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/phase0.py
+          phase0_ci_results.json
+      - name: Validate Phase 0 gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("phase0_ci_results.json"))
+          assert r["dispatch_gate_pass"] is True, r
+          print("EXP18_PHASE0_PASS")
+          print("F0 =", r["P0_A"]["f0_mol_s"], "mol/s per vent")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp18-phase0-results
+          path: phase0_ci_results.json
+          retention-days: 30
+      - name: Upload F0/common-H2-field calibration (consumed by Phase A runs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp18-phase0-calibration
+          path: |
+            f0_calibration.json
+            common_initial_h2_field.npy
+          retention-days: 30
+
+  phaseA_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        condition: [A0, A1, A2, A3]
+        seed: [18001, 18002, 18003]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp18-phase0-calibration
+          path: calibration
+      - name: Phase A ${{ matrix.condition }} — 10 physical days
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/run_exp18.py
+          --condition ${{ matrix.condition }}
+          --seed ${{ matrix.seed }}
+          --days 10
+          --calibration-dir calibration
+          --outdir result_phaseA_${{ matrix.condition }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp18-phaseA-${{ matrix.condition }}-${{ matrix.seed }}
+          path: result_phaseA_${{ matrix.condition }}_${{ matrix.seed }}
+          retention-days: 30
+
+  phaseA_aggregate:
+    needs: phaseA_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp18-phaseA-*
+          path: all_phaseA
+      - name: Aggregate Phase A + evaluate Phase B dynamic-arm selection
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/aggregate_phase_a.py
+          --root all_phaseA
+          --out phaseA_aggregate.json
+          --csv phaseA_aggregate.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exp18-phaseA-aggregate
+          path: |
+            phaseA_aggregate.json
+            phaseA_aggregate.csv
+          retention-days: 30
