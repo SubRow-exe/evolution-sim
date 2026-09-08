@@ -1,6 +1,16 @@
 name: Exp18 V1.10.1 Dynamic Hydrothermal Vent (Phase 0-A)
 
 on:
+  push:
+    branches: [v1.10.1-implementation]
+    paths:
+      - '.github/workflows/exp18_v1101_dynamic_vent.yml'
+      - 'experiments/exp18_v1101_dynamic_vent/**'
+      - 'experiments/exp17_v110_cnp/**'
+      - 'experiments/luca_proxy/**'
+      - 'experiments/exp15_v19/**'
+      - 'experiments/exp15_v19_preflight/**'
+      - 'evosim/**'
   workflow_dispatch:
 
 jobs:
