@@ -108,7 +108,7 @@ jobs:
           --root all_runs
           --out exp19_aggregate.json
           --csv exp19_aggregate.csv
-      - name: Fail loudly on missing/incomplete artifacts (docs §13: no silent skip)
+      - name: "Fail loudly on missing/incomplete artifacts (docs §13: no silent skip)"
         shell: bash
         run: |
           python - <<'PY'
