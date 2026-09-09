@@ -38,7 +38,8 @@ import run_phase_c1  # noqa: E402
 
 from evosim import physiology  # noqa: E402
 from evosim.config import Config  # noqa: E402
-from evosim.genome import GENE_NAMES, REPRO_INVEST, STARV_HORIZON, STORAGE_CAP  # noqa: E402
+from evosim.genome import (GENE_NAMES, REPRO_HORIZON, REPRO_INVEST,  # noqa: E402
+                           STARV_HORIZON, STORAGE_CAP)
 from evosim.simulation import Simulation  # noqa: E402
 from evosim.world import World  # noqa: E402
 
@@ -247,6 +248,16 @@ def sample(sim: Simulation, t_s: float) -> dict:
         "mean_distance_to_nearest_active_vent_m": float(np.mean(dists)),
         "total_biomass_kgdw": sum(o.matter for o in orgs) * sim.cfg.matter_unit_to_kgdw,
     })
+    # Exp19 §9.2: 3 Energy戦略geneのtime-series (mean/median)。既存Exp18
+    # readoutには影響しない追加列 (docs/Exp19_...実験計画.md §13)。
+    row.update({
+        "storage_capacity_mean": float(np.mean([o.genome[STORAGE_CAP] for o in orgs])),
+        "storage_capacity_median": float(np.median([o.genome[STORAGE_CAP] for o in orgs])),
+        "starvation_horizon_mean": float(np.mean([o.genome[STARV_HORIZON] for o in orgs])),
+        "starvation_horizon_median": float(np.median([o.genome[STARV_HORIZON] for o in orgs])),
+        "reproduction_horizon_mean": float(np.mean([o.genome[REPRO_HORIZON] for o in orgs])),
+        "reproduction_horizon_median": float(np.median([o.genome[REPRO_HORIZON] for o in orgs])),
+    })
     return row
 
 
@@ -259,6 +270,7 @@ def write_snapshot(gz, sim: Simulation, t_s: float) -> None:
             "energy_j": o.energy, "matter": o.matter,
             "storage_capacity": float(o.genome[STORAGE_CAP]),
             "starvation_horizon_s": float(o.genome[STARV_HORIZON]),
+            "reproduction_horizon_s": float(o.genome[REPRO_HORIZON]),
             "starve_state": float(o.starve_state),
             "local_h2_molm3": float(sim.world.sample(sim.world.h2, o.x, o.y)),
         })
