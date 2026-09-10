@@ -1,27 +1,29 @@
 # Exp20 結果・考察 — V1.11 Primitive Phototrophy Seeded Invasion
 
 更新: 2026-09-10  
-状態: **本番完了 / 結果レビュー済み / 次段階方針確定**
+状態: **Attempt 1 完了 / 生態学的結論は撤回 / Attempt 2 再実験が必要**
 
 正本実験計画: `docs/Exp20_V1.11_PrimitivePhototrophy_SeededInvasion_実験計画.md`  
-V1.11仕様正本: `docs/V1.11_原始Phototrophy_実装仕様_rev2.md`
+V1.11仕様正本: `docs/V1.11_原始Phototrophy_実装仕様_rev2.md`  
+Opus 5レビュー: Issue #71 / `docs/Exp20_Opus5レビュー.md`  
+次の正本: `docs/Exp20_Attempt2_修正・再実験計画.md`
 
 ---
 
 ## 1. 用語
 
-- **phototroph**: V1.11で追加したprimitive phototrophy能力を持つ個体。光から得たEnergyをmaintenance/activity補助に利用できる。
+- **phototroph**: V1.11で追加したprimitive phototrophy能力を持つ個体。
 - **ancestor**: phototrophy能力を持たない祖先型個体。
-- **A0_STATIC**: 4 ventが常時ONの一定H2供給環境。各vent fluxはF0。
-- **A1_TEMPORAL**: 4 ventを2組に分け、6 hごとにactive pairを交代する時間変動H2環境。瞬間総H2供給量と積算総H2供給量はA0と同じ。
-- **s48_per_day**: 0–48 hでのphototroph/ancestorの相対log-ratio変化を1日あたりに換算した指標。正ならphototrophがancestorに対して相対的に有利。
-- **Delta_s48**: `s48_A1 - s48_A0`。正なら、phototrophyの相対fitnessがSTATICよりTEMPORAL環境で高いことを示す。
+- **A0_STATIC**: 4 ventが常時ONの一定H2供給環境。
+- **A1_TEMPORAL**: 4 ventを2組に分け、6 hごとにactive pairを交代する時間変動H2環境。総H2供給量はA0と同じ。
+- **legacy light route**: V1.11以前の任意単位の `world.light` を `_absorb_light()` で直接 `org.energy` に加算する旧経路。
+- **physical phototrophy route**: V1.11 rev2で導入した photon flux -> absorbed -> usable -> maintenance/activity credit の物理単位経路。
 
 ---
 
-## 2. 実験成立性
+## 2. Attempt 1で確認できた事実
 
-formal designどおり:
+formal designどおり24 runは全完走し、aggregate artifactも生成された。
 
 ```text
 Environment: A0_STATIC / A1_TEMPORAL
@@ -31,259 +33,236 @@ Duration: 120 h
 Total: 24 runs
 ```
 
-結果:
+成立性として保持できる結果:
 
 - 24/24 run完走
-- aggregate artifact生成成功
-- C/N/P ledger valid
-- phototrophy Energy identity valid
-- `photo_used <= photo_usable_max <= photo_absorbed <= photo_incident` を満足
+- C/N/P ledger closure
+- V1.11 phototrophy chain内部のEnergy identity成立
+- A1 ancestor-only controlは約43–46 hで全滅
+- 実験pipeline・artifact生成系が動作
 
-したがって、以下の生態的結果は少なくとも保存則破綻やrun欠損による見かけの結果ではない。
+一方、以下の生態学的結論は撤回する。
 
----
-
-## 3. A0_STATIC — 一定環境での結果
-
-48 h時点:
-
-| 初期phototroph頻度 | P0 | A0 | P48 | A48 | s48/day |
-|---|---:|---:|---:|---:|---:|
-| 1% | 1 | 99 | 16 | 99 | 1.199 |
-| 10% | 10 | 90 | 160 | 90 | 1.363 |
-| 50% | 50 | 50 | 800 | 50 | 1.382 |
-
-3 seedすべてで同じ結果となった。
-
-### 解釈
-
-A0ではancestor数が48 hまでほぼ変化しない一方、phototrophは全頻度で16倍になった。これは48 hで4回のnet doublingに相当する。
-
-したがって現在のparameter setでは、phototrophyはH2 interruption時だけの耐久能力ではなく、**H2が安定している通常環境でも大きな一般的fitness advantageを与えている**。
-
-V1.11 rev2ではlightは直接biomassを作るEnergy源ではなくmaintenance/activity補助である。そのためA0での増殖差は、photo maintenance creditによってH2由来Energyのmaintenance消費が減り、その分が成長・繁殖側へ残ることで生じている可能性が高い。
-
-これは機構上あり得る挙動であり直ちにbugとはしない。ただし、進化モデルとしてはphototrophyが「環境依存の選択肢」ではなく「持てば常に得な必勝形質」になる危険を示す。
-
-事前登録したInterpretation Patternでは、これは **Pattern 2 — A0でもstrong positive sweep** に相当する。
+- A0でphototrophが48 hで16倍になったことを「phototrophyの一般的fitness advantage」とした解釈
+- `Delta_s48 > 0` を主根拠として「TEMPORAL環境でphototrophyの相対fitnessが高い」とした判定
+- A0の強い利益を弱めるためにphototrophy benefit / costを調整するというExp21方針
 
 ---
 
-## 4. A1_TEMPORAL — 時間変動環境での結果
+## 3. 重大な原因1 — physical modeにlegacy light routeが混入
 
-### 4.1 ancestor-only control
+Opus 5レビューとコード照合により、`Simulation._absorb_fields()` がphysical modeでも旧 `_absorb_light()` を呼び続けていることを確認した。
 
-初期phototroph 0%では、ancestor 100個体は約43–46 hで全滅した。
+この旧経路は任意単位の `world.light` と `light_uptake_coef` から得た値を、現在Joule建てとなっている `org.energy` に直接加算する。
 
-これはExp18と整合し、A1が局所H2 source interruptionに対する厳しい環境として再現されていることを示す。
+そのため、phototrophではV1.11の物理光機構とは別に巨大なEnergy流入が起き、需要が `E_max - energy` でclampされる結果、毎stepに近い頻度でEnergy tankが満タンになる。
 
-### 4.2 phototroph seeded arm
-
-phototrophを1 / 10 / 50%でseedした9 runは、すべて120 hまで集団が存続した。
-
-48 h時点のphototroph数:
-
-- 1%: 1 -> 1–3
-- 10%: 10 -> 7–10
-- 50%: 50 -> 39–55
-
-120 h時点では:
-
-- 1%: phototroph 1–12
-- 10%: phototroph 26–48
-- 50%: phototroph 124–156
-- ancestor: 最終的に全条件で0
-
-### 解釈
-
-A1ではphototroph自身が最初から急増したわけではない。48 hまでは横ばい〜減少したrunも多い。
-
-一方ancestorは急速に減少し、ほぼ全滅する。このためA1におけるphototrophyの主要な効果は、
-
-> **増殖ブーストというより、H2供給が局所的に途切れる期間を耐えるための絶滅回避・生存延長効果**
-
-と解釈するのが妥当である。
-
-その後120 hまで存続したphototroph lineageは再増殖しているため、
+診断結果:
 
 ```text
-H2 interruption
--> ancestorは耐えられず消失
--> phototrophは低個体数でも生存
--> 条件が許す局面で再増殖
+V1.11 physical photo credit（30 step） : 5.1474e-16 J
+legacy routeの余分なEnergy           : 1.3895e-11 J
+legacy / V1.11                        : 約2.70e4倍
 ```
 
-というecological rescueが成立したと考えられる。
-
-したがってV1.11 phototrophy機構は、想定していた「H2 interruption耐性」を実際の集団存続まで反映できている。
-
----
-
-## 5. 48 h相対fitness結果
-
-phototroph founderありの正式な比較対象である1 / 10 / 50%について、A1とA0を同一seedでpaired comparisonした結果:
-
-| 初期phototroph頻度 | median Delta_s48 [/day] | 3 seedの方向 |
-|---|---:|---|
-| 1% | +0.730 | 3/3 positive |
-| 10% | +1.068 | 3/3 positive |
-| 50% | +0.803 | 3/3 positive |
-
-全9 paired comparisonsで `Delta_s48 > 0`。
-
-したがって、
-
-> **phototrophyのancestorに対する相対的優位性は、H2が一定なA0より、H2 sourceが時間的に途切れるA1で一貫して高い**
-
-というExp20の主質問には肯定的に答えられる。
-
-ただしこれは「A1でphototroph自身の絶対増殖速度が高い」という意味ではない。実際にはA1でphototrophも苦しんでおり、ancestorがさらに大きく減少するため相対fitnessが高くなっている。
-
----
-
-## 6. 重要な解析上の修正 — 0%群でs48を解釈しない
-
-current aggregateでは0% phototroph群についてもR48 / s48 / Delta_s48が機械計算される。
-
-A1 0%群では:
+legacy routeのみ無効化してA0 50%条件を48 h再現すると:
 
 ```text
-P0 = 0
-P48 = 0
-A0 = 100
-A48 = 0
+phototroph: 50 -> 50
+ancestor:   50 -> 50
 ```
 
-であるにもかかわらず、pseudocount 0.5のため `s48 = +2.652/day` が算出される。
+となり、Attempt 1の `50 -> 800`、すなわち16倍増殖は完全に消えた。
 
-これはphototrophが存在しないため、**phototrophのfitnessを意味しない数学的artifact**である。
+したがって、Attempt 1のA0 strong sweepはV1.11 primitive phototrophyの効果ではない。
 
-事前登録のPrimary endpoint自体も「phototroph founderありarm（1/10/50%）」を対象としているため、今後の正式解析では:
+---
 
-- 0%群はR48 / s48 / Delta_s48の解釈対象から除外する
-- 0%群はecological rescue評価用のancestor-only controlとして扱う
-- aggregate側でも可能なら0%をprimary estimand集計から除外、またはNA表示に修正する
+## 4. 重大な原因2 — 48 h相対fitness指標がlineage extinctionに支配された
+
+Attempt 1では0–48 hのphototroph/ancestor log-ratio変化 `s48` と、A1-A0差 `Delta_s48` を主指標としていた。
+
+しかしA1ではancestor-onlyが43–46 hで全滅し、10% / 50% founder armでも48 h時点のancestor数が実質0となるrunがあった。
+
+その結果、48 hのlog-ratioは生物学的な増殖速度差よりも、`log(0)` 回避用pseudocount 0.5に強く支配された。
+
+従って:
+
+- 0% armだけでなく、ancestorが0またはほぼ0となるfounder armでも48 h相対指標は主評価に使用しない
+- `A48 = 0` をpseudocountで有限値化してprimary estimandへ押し込まない
+- lineage extinctionは相対fitness指標ではなく、生存時間・絶滅時刻として別に評価する
 
 とする。
 
-Exp20 formal run自体をやり直す必要はない。
+Attempt 1の `Delta_s48 > 0` は正式な生態学的結論として採用しない。
 
 ---
 
-## 7. Exp20の最終判断
+## 5. テスト上の問題
 
-### 7.1 V1.11 phototrophy機構の成立性
-
-**合格。**
-
-理由:
-
-1. photon -> usable Energy -> maintenance creditのledgerが成立
-2. C/N/P保存則も成立
-3. A1 ancestor-onlyでは従来どおり絶滅
-4. phototrophを少数seedすると全9 runで120 h survivalを達成
-5. 全9 paired comparisonsでTEMPORAL環境における相対fitness上昇を確認
-
-したがってphototrophy実装を撤回・再設計する必要はない。
-
-### 7.2 現parameter setの生態的バランス
-
-**未確定 / 調整必要。**
-
-A0でもphototrophが48 hで16倍となり、強いgeneral advantageが存在する。
-
-このまま自然innovationを有効化すると、phototrophyが一度出現した後に環境条件とほぼ無関係にsweepする可能性がある。
-
-本シミュレーションで狙うべき状態は:
-
-```text
-安定H2環境:
-ancestor ~= phototroph
-または
-ancestor > phototroph
-
-H2 interruption環境:
-phototroph >> ancestor
-```
-
-すなわち、phototrophyを常時有利な「必勝形質」ではなく、**環境によって価値が変化する進化戦略**にすることである。
-
----
-
-## 8. 次段階の方針
-
-次はExp21として、phototrophyの利益―コストbalanceを診断・調整する。
-
-### Step 1 — A0 strong advantageのmechanism decomposition
-
-いきなりparameterを弱体化する前に、A0で16倍になる原因を定量化する。
-
-最低限、photo / ancestor別に:
-
-```text
-maintenance expenditure
-photo maintenance offset
-H2 biological uptake per capita
-H2-derived usable Energy
-stored Energy
-births
-matter / biomass trajectory
-photo_structural_n cost
-```
-
-を比較する。
+`tests/test_v111_phototrophy.py` の主要テストはproductionの `Simulation.step()` を通さず、旧Energy入口を検出できない構造だった。
 
 特に:
 
-```text
-photo maintenance offset / baseline maintenance
-```
+- T4はテスト自身がphoto creditを個体へ加算してからassertしている
+- T5は「light alone does not fund growth」のbehaviorを検査せず、関数signatureのみを確認している
+- dark testはV1.11 physical photon fluxを0にしても、別fieldであるlegacy `world.light` を止めない
+- phototrophy OFF testでは、capability OFF時に休眠するlegacy経路を原理的に検出できない
 
-がどの程度かを確認し、phototrophyによって節約されたEnergyが繁殖差をほぼ説明できるかを検証する。
-
-### Step 2 — benefit / cost sensitivity
-
-mechanism確認後、以下のparameterを候補としてsensitivity sweepする。
-
-- `phototrophy_radiant_to_usable_eff` : 光Energy変換効率
-- photon flux : 環境側の光供給量
-- phototrophy structural N cost : 光合成装置維持の構造コスト
-
-ただし複数parameterを同時に無秩序に変更せず、どの項がfitness balanceを支配しているかを切り分ける。
-
-### Step 3 — calibration target
-
-目標は単にA0のphototroph増殖を止めることではなく、
-
-1. A0では強い一方向sweepを起こさない
-2. A1ではancestor-onlyが不利
-3. phototrophはA1で絶滅回避能力を維持
-4. A1-A0の環境依存差が残る
-
-というtrade-off領域を探すこと。
-
-### Step 4 — Exp21の評価指標
-
-Exp21では相対指標だけに依存せず、以下を並列に評価する。
-
-- phototroph absolute population trajectory
-- ancestor absolute population trajectory
-- lineage-specific births / deaths
-- extinction time
-- survival at endpoint
-- final population
-- population AUC
-- s48（founderありarmのみ）
-- Delta_s48（founderありarmのみ）
-
-これにより「phototrophが増えた」のか「ancestorが減ったため相対的に有利に見えた」のかを分離する。
+よって今後は、機構内部counterだけでなくproduction stepを通した外部的な上界検査を追加する。
 
 ---
 
-## 9. 結論
+## 6. 修正方針
 
-Exp20から得られた最終結論は以下。
+コード修正はClaude Code / Codexが担当する。修正要求は以下。
 
-> **V1.11 primitive phototrophy機構は物理・保存則上成立し、H2 source interruption環境でancestorの絶滅を回避する実効的な生存利益を与えた。phototrophの相対fitnessはSTATICよりTEMPORAL環境で全paired comparison一貫して高かった。一方、現行parameterではSTATIC環境でもphototrophが強く増殖し、general advantageになっている。そのためV1.11機構自体は採用し、次段階ではA0での強い利益の内訳を診断した上で、光Energy利益と構造コストのbalanceを調整し、環境依存trade-offを形成する。**
+### R1. physical modeからlegacy light routeを除去
 
-Exp20 formal runの再実行は不要。次はExp21へ進む。
+physical modeでは旧 `_absorb_light()` によるEnergy加算を使用しない。
+
+重要なのは「phototrophy capabilityがOFFなら呼ばない」というgate追加ではなく、**physical modeのEnergy経路から旧任意単位light routeそのものを排除すること**。
+
+またphysical modeで `light_max` / `light_uptake_coef` 等のlegacy parameterがEnergy収支へ影響しないことをtestで固定する。
+
+### R2. production `Simulation.step()` を通すbehavioral testへ変更
+
+最低限:
+
+1. 同一条件のphototroph / ancestorを実stepで進める
+2. 実測Energy差を得る
+3. V1.11機構が物理的に説明できる最大Energy差を独立計算する
+4. 実測差が上界を超えないことをassertする
+
+概念的には:
+
+```text
+DeltaE_photo - DeltaE_ancestor
+<= physical_photo_usable_upper_bound + maintenance_difference + tolerance
+```
+
+とする。
+
+このassertはV1.11内部counterを真として再利用せず、「説明できない第2のEnergy入口」が存在しないことを検出するためのもの。
+
+### R3. T5を実behavior検証へ置換
+
+「lightだけでは持続的net biomass growthをfundしない」を、signatureではなく実simulation behaviorとして検査する。
+
+### R4. 異常な完全一致を診断対象にする
+
+今後の実験レビューchecklistへ以下を追加する。
+
+```text
+[ ] 複数seedで完全同一のtrajectory / endpointになっていないか
+[ ] 増加率が2^nの整数倍など同期分裂を示していないか
+[ ] 観測効果量が新機構の理論上限を超えていないか
+```
+
+確率的simulationでseed間分散が0の場合は「再現性が高い」と即解釈せず、決定論的なhidden routeやclampを先に疑う。
+
+---
+
+## 7. Exp20 Attempt 1の最終扱い
+
+**Attempt 1は削除しないが、生態学的結論はINVALIDとする。**
+
+保持目的:
+
+- legacy light route混入を発見した再現可能な失敗例
+- regression testを設計する根拠
+- 解析指標のlineage extinction問題を示す事例
+- pipeline / ledger成立確認
+
+したがって「Exp20 formal runは成功、再実行不要」という旧結論は撤回する。
+
+---
+
+## 8. 次の実験 — Exp20 Attempt 2
+
+コード修正とtest合格後、**同一の生物学的問いをAttempt 2として再実行する**。
+
+基本条件はAttempt 1から変更しない。
+
+```text
+A0_STATIC / A1_TEMPORAL
+photo founder = 0 / 1 / 10 / 50%
+seed = 20001 / 20002 / 20003
+photon flux = 0.015 umol/m2/s
+radiant_to_usable_eff = 0.10
+light_absorption = 0.01
+Duration = 120 h
+Total = 24 runs
+```
+
+これはparameter calibrationではなく、**バグ修正後に当初の問いを再検証する実験**である。
+
+### Attempt 2の主評価
+
+48 h単一点ではなく、ancestorの全滅より前のearly windowを使う。
+
+```text
+6 h / 12 h / 18 h / 24 h
+```
+
+各時点でP>0かつA>0の場合に:
+
+```text
+L(t) = ln(P_t / A_t)
+```
+
+を計算し、時間に対する回帰傾きをearly relative fitnessとする。
+
+- pseudocountはprimary endpointに使用しない
+- lineageがwindow途中で0になった場合、その後のlog-ratioを補完しない
+- valid pointが不足するrunはrelative-fitness slopeをNAとし、extinction outcomeとして扱う
+- A1-A0差は同一seed・founder頻度でpairedに比較する
+
+### ecological rescueは別estimand
+
+以下を独立評価する。
+
+- ancestor lineage extinction time
+- phototroph lineage extinction time
+- total population extinction time
+- survival at 120 h
+- population trajectory / AUC
+- lineage-specific births / deaths
+
+「phototrophが相対的に有利」と「phototrophyが集団を絶滅から救う」を混同しない。
+
+### A0 negative control
+
+修正後A0では、Attempt 1のような決定論的16倍sweepが消失していることを確認する。
+
+ただし `P48 == P0` を固定の合否基準にはしない。重要なのは:
+
+- legacy route由来Energy = 0
+- 観測されたphoto由来Energy差がphysical上界内
+- seed間完全同期の不自然な2^n sweepがない
+
+ことである。
+
+---
+
+## 9. Attempt 2後の次段階
+
+Attempt 2でphysical phototrophyによるecological rescueが再現した場合、次段階で光量を校正する。
+
+現時点ではphototrophy効率やN構造コストを先に変更しない。まず環境量であるphoton fluxを1軸で振り、A1 rescueが成立する最小光量を探す方向を第一候補とする。
+
+候補:
+
+```text
+0.015 / 0.05 / 0.15 / 0.5 / 1.5 umol/m2/s
+```
+
+ただしこれはExp20 Attempt 2の結果確認後に正式preregistrationする。
+
+Attempt 2でrescueが消える場合は、まずphysical mechanismの効果量とH2 interruption時のmaintenance deficitを比較し、必要光量を理論計算してから次のsweepを設計する。
+
+---
+
+## 10. 現時点の結論
+
+> **Exp20 Attempt 1で観測されたA0の16倍増殖は、V1.11 phototrophyではなくlegacy light routeからの単位不整合Energy流入である。また48 h相対fitness指標はA1のancestor extinctionとpseudocountに支配されていた。したがってAttempt 1の生態学的結論と「phototrophyを弱める」方針を撤回する。physical modeからlegacy routeを除去し、production stepを通すEnergy上界testを追加した上で、同条件のExp20 Attempt 2を再実行する。Attempt 2では6–24 hのearly relative-fitness slopeとlineage survivalを別々に評価する。光量calibrationはAttempt 2の結果を確認してから行う。**
