@@ -1,0 +1,129 @@
+name: Exp20 Attempt2 Paired Fitness Effect 72h
+
+on:
+  pull_request:
+    branches: [v1.11-phototrophy-plan]
+    paths:
+      - 'run_triggers/exp20_attempt2/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Attempt2 harness
+        run: >-
+          uv run python -m py_compile
+          experiments/exp20_attempt2_paired_fitness/run_attempt2.py
+          experiments/exp20_attempt2_paired_fitness/run_attempt2_72h.py
+          experiments/exp20_attempt2_paired_fitness/aggregate_attempt2.py
+      - name: Full unit test suite
+        run: uv run pytest -q
+      - name: Exp18 source calibration reused without retuning
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/phase0.py
+          phase0_ci_results.json
+      - name: Validate calibration gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("phase0_ci_results.json"))
+          assert r["dispatch_gate_pass"] is True, r
+          print("ATTEMPT2_CALIBRATION_PASS")
+          print("F0 =", r["P0_A"]["f0_mol_s"], "mol/s per vent")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp20-attempt2-72h-calibration-check
+          path: phase0_ci_results.json
+          retention-days: 30
+      - name: Upload calibration for paired runs
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp20-attempt2-72h-calibration
+          path: |
+            f0_calibration.json
+            common_initial_h2_field.npy
+          retention-days: 30
+
+  paired_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        environment: [A0_STATIC, A2_DYNAMIC_VENT]
+        seed: [20001, 20002, 20003]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp20-attempt2-72h-calibration
+          path: calibration
+      - name: "Paired assay ${{ matrix.environment }} seed ${{ matrix.seed }} — 72 h"
+        run: >-
+          uv run python experiments/exp20_attempt2_paired_fitness/run_attempt2_72h.py
+          --environment ${{ matrix.environment }}
+          --seed ${{ matrix.seed }}
+          --hours 72
+          --calibration-dir calibration
+          --outdir result_${{ matrix.environment }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp20-attempt2-72h-${{ matrix.environment }}-${{ matrix.seed }}
+          path: result_${{ matrix.environment }}_${{ matrix.seed }}
+          retention-days: 30
+
+  aggregate:
+    needs: paired_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp20-attempt2-72h-*
+          path: all_runs
+      - name: Aggregate paired fitness effects
+        run: >-
+          uv run python experiments/exp20_attempt2_paired_fitness/aggregate_attempt2.py
+          --root all_runs
+          --out exp20_attempt2_aggregate.json
+          --csv exp20_attempt2_pairs.csv
+      - name: Formal completeness gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("exp20_attempt2_aggregate.json"))
+          assert r["artifacts_complete"] is True, r
+          assert r["all_gates_pass"] is True, r
+          assert r["n_environment_seed_artifacts"] == 6, r
+          assert r["n_pair_contrasts"] == 72, r
+          print("EXP20_ATTEMPT2_72H_COMPLETE")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp20-attempt2-72h-aggregate
+          path: |
+            exp20_attempt2_aggregate.json
+            exp20_attempt2_pairs.csv
+          retention-days: 30
