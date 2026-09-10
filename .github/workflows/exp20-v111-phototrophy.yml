@@ -1,0 +1,134 @@
+name: Exp20 V1.11 Primitive Phototrophy Seeded Invasion
+
+on:
+  push:
+    branches: [v1.11-phototrophy-plan]
+    paths:
+      - '.github/workflows/exp20-v111-phototrophy.yml'
+      - 'experiments/exp20_v111_phototrophy_invasion/**'
+      - 'experiments/exp18_v1101_dynamic_vent/**'
+      - 'experiments/exp17_v110_cnp/**'
+      - 'experiments/luca_proxy/**'
+      - 'experiments/exp15_v19/**'
+      - 'experiments/exp15_v19_preflight/**'
+      - 'evosim/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: "Full unit test suite (incl. rev2 T1-T10 and Exp20 T20-1..T20-11 wiring)"
+        run: uv run pytest -q
+      - name: Exp20 source calibration (reuse Exp18 Phase 0 method, no re-tuning)
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/phase0.py
+          phase0_ci_results.json
+      - name: Validate calibration gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("phase0_ci_results.json"))
+          assert r["dispatch_gate_pass"] is True, r
+          print("EXP20_CALIBRATION_PASS")
+          print("F0 =", r["P0_A"]["f0_mol_s"], "mol/s per vent")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp20-calibration-check
+          path: phase0_ci_results.json
+          retention-days: 30
+      - name: Upload F0/common-H2-field calibration (consumed by Exp20 runs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp20-calibration
+          path: |
+            f0_calibration.json
+            common_initial_h2_field.npy
+          retention-days: 30
+
+  exp20_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        environment: [A0_STATIC, A1_TEMPORAL]
+        frequency: ["0.0", "0.01", "0.10", "0.50"]
+        seed: [20001, 20002, 20003]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp20-calibration
+          path: calibration
+      - name: "Exp20 ${{ matrix.environment }} freq=${{ matrix.frequency }} seed ${{ matrix.seed }} — 5 physical days"
+        run: >-
+          uv run python experiments/exp20_v111_phototrophy_invasion/run_exp20.py
+          --environment ${{ matrix.environment }}
+          --frequency ${{ matrix.frequency }}
+          --seed ${{ matrix.seed }}
+          --days 5
+          --calibration-dir calibration
+          --outdir result_${{ matrix.environment }}_${{ matrix.frequency }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp20-run-${{ matrix.environment }}-${{ matrix.frequency }}-${{ matrix.seed }}
+          path: result_${{ matrix.environment }}_${{ matrix.frequency }}_${{ matrix.seed }}
+          retention-days: 30
+
+  aggregate:
+    needs: exp20_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp20-run-*
+          path: all_runs
+      - name: Aggregate Exp20 (mechanical readout only, no PASS/FAIL gate on direction)
+        run: >-
+          uv run python experiments/exp20_v111_phototrophy_invasion/aggregate_exp20.py
+          --root all_runs
+          --out exp20_aggregate.json
+          --csv exp20_aggregate.csv
+      - name: "Fail loudly on missing/incomplete artifacts or broken identities (docs §12: no silent skip)"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("exp20_aggregate.json"))
+          if not r["artifacts_complete"]:
+              raise SystemExit(f"Exp20 aggregate: artifacts incomplete or n_runs != 24: {r['n_runs']} runs")
+          if not r["cnp_ledgers_valid"]:
+              raise SystemExit("Exp20 aggregate: a C/N/P ledger residual exceeded tolerance")
+          if not r["photo_energy_identities_valid"]:
+              raise SystemExit("Exp20 aggregate: photo_used<=usable_max<=absorbed<=incident violated")
+          print("EXP20_ARTIFACTS_COMPLETE n_runs =", r["n_runs"])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp20-aggregate
+          path: |
+            exp20_aggregate.json
+            exp20_aggregate.csv
+          retention-days: 30
