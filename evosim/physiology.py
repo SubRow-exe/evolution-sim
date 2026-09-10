@@ -163,6 +163,100 @@ def _physical_v_max_m_s(org: Organism, cfg: Config) -> float:
     return cfg.speed_coef * g[MOVE_POWER] / (m ** 0.5) * phi
 
 
+# ---------------------------------------------------------------------------
+# V1.11: 原始phototrophy (docs/V1.11_原始Phototrophy_実装仕様_rev2.md)
+#
+# physical_light_enabled=False (既定) では一切呼ばれない。photoは
+# cyclic photophosphorylationによるATP/PMF供給として粗視化し、同tick内の
+# maintenance/repair/movement expenditureだけを肩代わりできる「credit」
+# として扱う (§5)。growth/reproduction costへは直接使わせない。
+# ---------------------------------------------------------------------------
+
+_PLANCK_J_S = 6.62607015e-34
+_LIGHT_SPEED_M_S = 2.99792458e8
+_AVOGADRO_PER_MOL = 6.02214076e23
+
+
+def photon_energy_j(wavelength_nm: float) -> float:
+    """1 photonのEnergy [J] = h*c/lambda (rev2 §4)。"""
+    lam_m = wavelength_nm * 1e-9
+    return _PLANCK_J_S * _LIGHT_SPEED_M_S / lam_m
+
+
+def physical_light_incident_power_w(org: Organism, cfg: Config) -> float:
+    """個体投影面積へ入射する光power P_incident [W] (rev2 §4)。"""
+    if not cfg.physical_light_enabled:
+        return 0.0
+    import math
+    r = physical_radius_m(org.matter, cfg)
+    a_projected = math.pi * r * r
+    photon_rate = cfg.light_photon_flux_umol_m2_s * 1e-6 * _AVOGADRO_PER_MOL * a_projected
+    return photon_rate * photon_energy_j(cfg.light_effective_wavelength_nm)
+
+
+def photo_bchl_sigma_m2(cfg: Config) -> float:
+    """BChl 1分子あたりの光吸収断面積 [m^2] (rev2 §7.1)。
+
+    sigma = epsilon[M^-1 cm^-1] * ln(10) * 1000[cm^3/L] / N_A * 1e-4[cm^2->m^2]
+    """
+    import math
+    eps_m_cm = cfg.bchl_extinction_mM_cm * 1000.0  # mM^-1 cm^-1 -> M^-1 cm^-1
+    return eps_m_cm * math.log(10.0) * 1000.0 / _AVOGADRO_PER_MOL * 1e-4
+
+
+def photo_n_target_mol(org: Organism, cfg: Config) -> float:
+    """phototrophy apparatus (pigment + RC/antenna) が必要とする構造N量
+    [mol N] (rev2 §7.1-7.2)。genome[LIGHT_ABS] (構造上のtarget absorption、
+    assembly-limitedなeffective値ではない) から求める。
+    """
+    import math
+    a = float(org.genome[LIGHT_ABS])
+    if a <= 0.0:
+        return 0.0
+    r = physical_radius_m(org.matter, cfg)
+    a_projected = math.pi * r * r
+    sigma = photo_bchl_sigma_m2(cfg)
+    n_bchl_min = a * a_projected / sigma
+    pigment_n_mol = n_bchl_min * 4.0 / _AVOGADRO_PER_MOL  # BChl tetrapyrrole = 4 N atoms
+    return pigment_n_mol * cfg.photo_apparatus_n_multiplier
+
+
+def photo_assembly_fraction(org: Organism, cfg: Config) -> float:
+    """構造N poolがtargetへどれだけ到達しているか (0..1) (rev2 §7.3)。"""
+    target = photo_n_target_mol(org, cfg)
+    if target <= 0.0:
+        return 1.0
+    return min(1.0, org.photo_structural_n_mol / target)
+
+
+def light_absorptance_effective(org: Organism, cfg: Config) -> float:
+    """1 - exp(-light_absorption_effective) (rev2 §4.1/§7.3)。
+
+    phototrophy_on=Falseの個体、またはapparatus未組立の個体は0。
+    """
+    import math
+    if not org.phototrophy_on:
+        return 0.0
+    a_eff = float(org.genome[LIGHT_ABS]) * photo_assembly_fraction(org, cfg)
+    if a_eff <= 0.0:
+        return 0.0
+    return 1.0 - math.exp(-a_eff)
+
+
+def photo_power_chain_w(org: Organism, cfg: Config) -> tuple[float, float, float]:
+    """(P_incident, P_absorbed, P_usable_max) [W] (rev2 §4)。
+
+    phototrophy OFFまたはphysical_light_enabled=Falseなら全て0。
+    """
+    if not (cfg.physical_light_enabled and org.phototrophy_on):
+        return 0.0, 0.0, 0.0
+    p_incident = physical_light_incident_power_w(org, cfg)
+    absorptance = light_absorptance_effective(org, cfg)
+    p_absorbed = p_incident * absorptance
+    p_usable = p_absorbed * cfg.phototrophy_radiant_to_usable_eff
+    return p_incident, p_absorbed, p_usable
+
+
 def density_response(x: float, k: float) -> float:
     """局所密度依存の一次Energy吸収応答 (V1.8で導入、V1.9では常時適用)。
 

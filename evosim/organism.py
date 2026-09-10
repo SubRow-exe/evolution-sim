@@ -28,13 +28,18 @@ class Organism:
         # (evosim/physiology.py)。observation専用のtransient cacheで、
         # 進化ロジックへは影響しない。
         "starve_state",
+        # V1.11: primitive phototrophy apparatus (BChl + RC/antenna) の
+        # explicit structural N pool [mol N] (docs/V1.11_原始Phototrophy_
+        # 実装仕様_rev2.md §7.3)。phototrophy_on=Falseな個体は常に0。
+        "photo_structural_n_mol",
     )
 
     def __init__(self, oid: int, parent_id: int, lineage_id: int,
                  generation: int, birth_tick: int, genome: np.ndarray,
                  x: float, y: float, heading: float,
                  energy: float, matter: float,
-                 phototrophy_on: bool = False, predation_on: bool = False):
+                 phototrophy_on: bool = False, predation_on: bool = False,
+                 photo_structural_n_mol: float = 0.0):
         self.id = oid
         self.parent_id = parent_id
         self.lineage_id = lineage_id
@@ -58,6 +63,7 @@ class Organism:
         self.phototrophy_on = phototrophy_on
         self.predation_on = predation_on
         self.starve_state = 1.0  # 最初のstep()で上書きされるまでの安全な既定値
+        self.photo_structural_n_mol = photo_structural_n_mol
 
     @property
     def capability(self) -> dict[str, bool]:

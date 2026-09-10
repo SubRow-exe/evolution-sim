@@ -357,6 +357,31 @@ class Config:
     h2_vent_turnover_count: int = 1
     h2_vent_min_separation_cells: int = 4
 
+    # --- V1.11: 原始Phototrophy (docs/V1.11_原始Phototrophy_実装仕様_rev2.md) ---
+    # physical_light_enabled=False (既定) ではlight/phototrophyへ一切新しい
+    # 経路を追加しない (V1.10.1 baselineと完全一致。HARD RULE P1)。Trueの
+    # ときだけ、下記SI photon fluxからcyclic photophosphorylationの
+    # maintenance creditを計算する。
+    physical_light_enabled: bool = False
+    # rev2 §3.1 working reference: 初期地球の真値ではなく、Overmann et al.
+    # のgreen sulfur bacteria実験的利用限界 (~0.015 umol quanta/m^2/s) を
+    # 物理単位を持つlow-light referenceとして採用する。
+    light_photon_flux_umol_m2_s: float = 0.015
+    light_effective_wavelength_nm: float = 800.0
+    # 現状"uniform"のみ実装 (rev2 §3.2: Exp20 first formal testは空間
+    # nicheを作らずtemporal structureへのphototrophy応答だけを見る)。
+    light_physical_pattern: str = "uniform"
+    # absorbed radiant Energy -> cellular ATP/PMFのcoarse-grained efficiency
+    # (rev2 §4.2)。祖先RCの精密量子収率ではない。
+    phototrophy_radiant_to_usable_eff: float = 0.10
+    # BChl a のB800付近molar extinction coefficient working reference
+    # (rev2 §7.1: 約213 mM^-1 cm^-1)。
+    bchl_extinction_mM_cm: float = 213.0
+    # pigment-onlyのN量はRC/antenna膜蛋白質を含まないため過小評価になる。
+    # 拡張するworking coarse-grained multiplier (rev2 §7.2)。historical
+    # truthではなく、formal結果を見て調整しない (§14)。
+    photo_apparatus_n_multiplier: float = 10.0
+
     # --- 災害 ---
     disaster_kill_frac: float = 0.9
 
@@ -524,6 +549,31 @@ class Config:
                         f"(turnover_count={self.h2_vent_turnover_count}, n_vents={self.n_vents})。")
                 if self.h2_vent_min_separation_cells < 0:
                     raise ValueError("h2_vent_min_separation_cells は0以上でなければなりません。")
+
+        # --- V1.11 primitive phototrophy validation
+        #     (docs/V1.11_原始Phototrophy_実装仕様_rev2.md §3/§7) ---
+        if self.physical_light_enabled:
+            if not self.physical_mode:
+                raise ValueError("physical_light_enabled=True には physical_mode=True が必要です。")
+            if not self.explicit_cnp_resources:
+                raise ValueError(
+                    "physical_light_enabled=True には explicit_cnp_resources=True が必要です "
+                    "(phototrophy apparatusのstructural N costをV1.10 fixed-N poolへ接続するため)。")
+            if self.light_photon_flux_umol_m2_s <= 0.0:
+                raise ValueError("light_photon_flux_umol_m2_s は正でなければなりません。")
+            if self.light_effective_wavelength_nm <= 0.0:
+                raise ValueError("light_effective_wavelength_nm は正でなければなりません。")
+            if self.light_physical_pattern != "uniform":
+                raise ValueError(
+                    f"未実装の light_physical_pattern: {self.light_physical_pattern!r} "
+                    "(uniform のみ実装。rev2 §3.2)")
+            if not (0.0 < self.phototrophy_radiant_to_usable_eff <= 1.0):
+                raise ValueError(
+                    "phototrophy_radiant_to_usable_eff は 0 < x <= 1 でなければなりません。")
+            if self.bchl_extinction_mM_cm <= 0.0:
+                raise ValueError("bchl_extinction_mM_cm は正でなければなりません。")
+            if self.photo_apparatus_n_multiplier <= 0.0:
+                raise ValueError("photo_apparatus_n_multiplier は正でなければなりません。")
 
     def to_json(self, path: str | Path) -> None:
         p = Path(path)

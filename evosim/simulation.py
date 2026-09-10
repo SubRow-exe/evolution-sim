@@ -96,6 +96,19 @@ class Simulation:
         # 区間rateはbirths_cum等と同様、呼び出し側が差分を取る)。
         self.growth_limiter_cum = {k: 0 for k in GROWTH_LIMITERS}
 
+        # V1.11: 原始phototrophy Energy ledger diagnostics
+        # (docs/V1.11_原始Phototrophy_実装仕様_rev2.md §6)。
+        self.photo_incident_j_cum = 0.0
+        self.photo_absorbed_j_cum = 0.0
+        self.photo_usable_max_j_cum = 0.0
+        self.photo_used_j_cum = 0.0
+        self.photo_unused_j_cum = 0.0
+        self.photo_conversion_loss_j_cum = 0.0
+        # structural N assembly/release (internal transfer; N ledgerはfixed
+        # N field + organism/corpse structural poolの総量で閉じる。§7.3)。
+        self.photo_n_assembly_cum = 0.0
+        self.photo_n_released_cum = 0.0
+
         # 世界全体の光供給量/tick (未利用光量の算出用・不変。昼夜cycle適用前のbase値)
         self.light_supply_per_tick = float(self.world.light.sum())
         # V1.8: そのtickのdaylight factor。step()冒頭で一度だけ決め、
@@ -291,7 +304,11 @@ class Simulation:
 
     def system_nitrogen(self) -> float:
         _, n_bio, _ = self._biomass_element_totals()
-        return self.world.total_fixed_nitrogen() + n_bio
+        # V1.11: phototrophy apparatus構造N (organism/corpse) もbiomass N
+        # とは別枠のN inventoryなので明示的に加える (rev2 §7.3)。
+        photo_n = (sum(o.photo_structural_n_mol for o in self.organisms)
+                  + sum(c.photo_structural_n_mol for c in self.corpses))
+        return self.world.total_fixed_nitrogen() + n_bio + photo_n
 
     def system_phosphorus(self) -> float:
         _, _, p_bio = self._biomass_element_totals()
@@ -365,6 +382,12 @@ class Simulation:
         # 5. 環境フィールドからの吸収 (セル単位の需要比例配分・個体順に非依存)
         self._absorb_fields()
 
+        # 5.5 V1.11: phototrophy apparatus構造Nのassembly (docs/V1.11_原始
+        #     Phototrophy_実装仕様_rev2.md §7.3)。maintenance/repairより先に
+        #     行い、そのtickのeffective absorptionへ反映する。
+        if cfg.physical_light_enabled:
+            self._assemble_photo_structural_n()
+
         # 6. 局所相互作用〜繁殖 (従来どおり個体逐次・リスト順で決定的)
         newborns: list[Organism] = []
         for org, v in moved:
@@ -374,9 +397,27 @@ class Simulation:
             self._predate(org)
 
             # 生理 (維持コスト・損傷・修復)
-            self.energy_out_cum += physiology.maintenance_and_movement(
-                org, cfg, v, org.starve_state)
-            self.energy_out_cum += physiology.repair(org, cfg, org.starve_state)
+            m_cost = physiology.maintenance_and_movement(org, cfg, v, org.starve_state)
+            r_cost = physiology.repair(org, cfg, org.starve_state)
+            self.energy_out_cum += m_cost + r_cost
+
+            # V1.11: 光からのmaintenance credit (docs §5)。当tickの
+            # maintenance+repair支出を上限にのみ肩代わりし、余剰は次tickへ
+            # 繰り越さず散逸する (growth/reproductionへは絶対に使わせない)。
+            if cfg.physical_light_enabled and org.phototrophy_on:
+                p_inc, p_abs, p_use = physiology.photo_power_chain_w(org, cfg)
+                dt = cfg.dt_seconds
+                photo_credit_j = p_use * dt
+                self.photo_incident_j_cum += p_inc * dt
+                self.photo_absorbed_j_cum += p_abs * dt
+                self.photo_usable_max_j_cum += photo_credit_j
+                self.photo_conversion_loss_j_cum += max(0.0, p_abs - p_use) * dt
+                photo_used = min(photo_credit_j, m_cost + r_cost)
+                if photo_used > 0.0:
+                    org.energy += photo_used
+                    self.energy_in_cum += photo_used
+                    self.photo_used_j_cum += photo_used
+                self.photo_unused_j_cum += photo_credit_j - photo_used
 
             # 死亡判定
             if org.energy <= 0.0:
@@ -800,6 +841,44 @@ class Simulation:
         self.p_uptake_cum += p_used
         self.flows["nutrient"] += dm_actual
 
+    def _assemble_photo_structural_n(self) -> None:
+        """phototrophy apparatus構造Nのassembly (docs/V1.11_原始Phototrophy_
+        実装仕様_rev2.md §7.3)。
+
+        実装簡略化: 仕様は同一cell内での競合配分を明示していないため、ここ
+        では個体を順に処理する非競合 (greedy) 方式を取る (既存H2/nutrient
+        吸収の需要比例配分より単純)。総量保存 (N ledger closure) は
+        fixed_nitrogen fieldからの直接減算/organismへの直接加算で保たれる。
+        """
+        cfg = self.cfg
+        vv = self.world.voxel_volume_m3
+        for org in self.organisms:
+            if not org.phototrophy_on:
+                continue
+            target = physiology.photo_n_target_mol(org, cfg)
+            need = target - org.photo_structural_n_mol
+            if need <= 0.0:
+                continue
+            key = self.world.cell_index(org.x, org.y)
+            avail_mol = max(0.0, float(self.world.fixed_nitrogen[key])) * vv
+            take = min(need, avail_mol)
+            if take <= 0.0:
+                continue
+            org.photo_structural_n_mol += take
+            self.world.fixed_nitrogen[key] = max(
+                0.0, float(self.world.fixed_nitrogen[key]) - take / vv)
+            self.photo_n_assembly_cum += take
+
+    def _release_photo_n_to_field(self, x: float, y: float, n_mol: float) -> None:
+        """phototrophy構造Nをfixed-N fieldへ戻す (capability loss / death /
+        corpse decay時の共通経路。silent lossを禁止する。rev2 §7.3)。"""
+        if n_mol <= 0.0:
+            return
+        key = self.world.cell_index(x, y)
+        vv = self.world.voxel_volume_m3
+        self.world.fixed_nitrogen[key] = float(self.world.fixed_nitrogen[key]) + n_mol / vv
+        self.photo_n_released_cum += n_mol
+
     def _return_matter_to_field(self, ix: int, iy: int, matter_amount: float) -> None:
         """decay/waste由来のmatterを環境へ戻す共通経路 (V1.9 nutrient /
         V1.10 C/N/P)。corpse decay・predation waste・corpse捕食の排泄は
@@ -951,7 +1030,9 @@ class Simulation:
             org.energy = 0.0
         self.deaths_cum += 1
         self.deaths_by_cause[cause] += 1
-        self.corpses.append(Corpse(org.x, org.y, org.matter, org.energy))
+        self.corpses.append(Corpse(org.x, org.y, org.matter, org.energy,
+                                   photo_structural_n_mol=org.photo_structural_n_mol))
+        org.photo_structural_n_mol = 0.0
         if self.recorder:
             self.recorder.death(self.tick, org, cause)
 
@@ -963,12 +1044,20 @@ class Simulation:
             decay_m = c.matter * cfg.corpse_decay
             c.matter -= decay_m
             self._return_matter_to_field(ix, iy, decay_m)
+            # V1.11: corpseが保持するphototrophy構造Nもbiomassと同じ割合で
+            # decayし、fixed-N fieldへ戻す (silent loss禁止。rev2 §7.3)。
+            if c.photo_structural_n_mol > 0.0:
+                n_decay = c.photo_structural_n_mol * cfg.corpse_decay
+                c.photo_structural_n_mol -= n_decay
+                self._release_photo_n_to_field(c.x, c.y, n_decay)
             decay_e = c.energy * cfg.corpse_energy_decay
             c.energy -= decay_e
             self.energy_out_cum += decay_e
             if c.matter < cfg.corpse_min_matter:
                 self._return_matter_to_field(ix, iy, c.matter)
                 self.energy_out_cum += c.energy
+                self._release_photo_n_to_field(c.x, c.y, c.photo_structural_n_mol)
+                c.photo_structural_n_mol = 0.0
                 continue
             survivors.append(c)
         self.corpses = survivors
@@ -1017,6 +1106,16 @@ class Simulation:
         m_child = cfg.child_matter_frac * org.matter
         org.matter -= m_child
 
+        # V1.11: phototrophy構造Nをmatter比率と同じchild_matter_fracで
+        # 親から子へ譲渡する (rev2 §7.3)。childがphototrophy capabilityを
+        # 失った場合、譲渡分の構造material machineryは維持できないため
+        # 局所fixed-N fieldへ戻す (silent loss禁止)。
+        n_transfer = org.photo_structural_n_mol * cfg.child_matter_frac
+        org.photo_structural_n_mol -= n_transfer
+        child_photo_n = n_transfer if child_capability["phototrophy"] else 0.0
+        if not child_capability["phototrophy"] and n_transfer > 0.0:
+            self._release_photo_n_to_field(org.x, org.y, n_transfer)
+
         # 7-9. Energy offer → child capacity clamp
         # child_emaxはphysiology.energy_max()経由 (physical_modeではJ、
         # arbitrary modeでは旧arbitrary unit) で求めるため、先にe_child=0の
@@ -1032,7 +1131,8 @@ class Simulation:
                          org.generation + 1, self.tick, child_genome,
                          cx, cy, ang, 0.0, m_child,
                          phototrophy_on=child_capability["phototrophy"],
-                         predation_on=child_capability["predation"])
+                         predation_on=child_capability["predation"],
+                         photo_structural_n_mol=child_photo_n)
         child_emax = physiology.energy_max(child, cfg)
         e_child = min(e_offer, child_emax)
         child.energy = e_child
