@@ -12,6 +12,17 @@ on:
       - 'experiments/exp15_v19/**'
       - 'experiments/exp15_v19_preflight/**'
       - 'evosim/**'
+  pull_request:
+    branches: [v1.11-phototrophy-plan]
+    paths:
+      - '.github/workflows/exp20-attempt2-paired-fitness.yml'
+      - 'experiments/exp20_attempt2_paired_fitness/**'
+      - 'experiments/exp18_v1101_dynamic_vent/**'
+      - 'experiments/exp17_v110_cnp/**'
+      - 'experiments/luca_proxy/**'
+      - 'experiments/exp15_v19/**'
+      - 'experiments/exp15_v19_preflight/**'
+      - 'evosim/**'
   workflow_dispatch:
 
 jobs:
