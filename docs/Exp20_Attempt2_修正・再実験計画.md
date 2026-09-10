@@ -1,14 +1,19 @@
 # Exp20 Attempt 2 — V1.11 Phototrophy 修正・再実験計画
 
 更新: 2026-09-10  
-状態: **PREREGISTRATION / 実装修正後に実行**
+状態: **SUPERSEDED / 24-run formal planは実行しない**
+
+> **2026-09-10 方針変更**  
+> Opus 5 Issue #72の診断により、本計画のprimary endpoint（6/12/18/24 h のlineage比傾き）は、A0では恒等的に0、低頻度A1ではNA化しやすく、A1/50%でもV1.11の理論効果量に対してseed雑音が桁違いに大きいことが確認された。したがって、以下の24-run invasion計画は**歴史的preregistrationとして保持するが実行しない**。  
+> 現在の正本は `docs/V1.11_選択圧直接測定_実験ロードマップ.md`。まずpaired fitness-effect assayで既存3形質のfitness effectを直接測定し、その後phototrophy calibration、competition、必要に応じてinvasion/evolutionへ進む。
 
 関連:
 
+- `docs/V1.11_選択圧直接測定_実験ロードマップ.md` **← 現在の正本**
 - `docs/Exp20_結果考察.md`
 - `docs/Exp20_V1.11_PrimitivePhototrophy_SeededInvasion_実験計画.md`
 - `docs/V1.11_原始Phototrophy_実装仕様_rev2.md`
-- Opus 5 Review Issue #71
+- Opus 5 Review Issue #71 / #72
 
 ---
 
