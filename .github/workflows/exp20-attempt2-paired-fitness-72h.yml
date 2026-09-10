@@ -21,6 +21,8 @@ jobs:
           uv run python -m py_compile
           experiments/exp20_attempt2_paired_fitness/run_attempt2.py
           experiments/exp20_attempt2_paired_fitness/run_attempt2_72h.py
+          experiments/exp20_attempt2_paired_fitness/attempt2_init_fix.py
+          experiments/exp20_attempt2_paired_fitness/preflight_initial_state.py
           experiments/exp20_attempt2_paired_fitness/aggregate_attempt2.py
       - name: Full unit test suite
         run: uv run pytest -q
@@ -38,11 +40,18 @@ jobs:
           print("ATTEMPT2_CALIBRATION_PASS")
           print("F0 =", r["P0_A"]["f0_mol_s"], "mol/s per vent")
           PY
+      - name: Exhaustive t=0 paired-state gate
+        run: >-
+          uv run python experiments/exp20_attempt2_paired_fitness/preflight_initial_state.py
+          --calibration-dir .
+          --out attempt2_initial_state_preflight.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: exp20-attempt2-72h-calibration-check
-          path: phase0_ci_results.json
+          name: exp20-attempt2-72h-preflight
+          path: |
+            phase0_ci_results.json
+            attempt2_initial_state_preflight.json
           retention-days: 30
       - name: Upload calibration for paired runs
         uses: actions/upload-artifact@v4
