@@ -12,9 +12,18 @@ physiology; those are genuine consequences of the trait and must not be masked.
 """
 from __future__ import annotations
 
-import exp18_core
-from evosim import physiology
-from evosim.genome import INITIAL_GENOME, STORAGE_CAP
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[2]
+for _p in (_ROOT, _ROOT / "experiments" / "exp18_v1101_dynamic_vent"):
+    _sp = str(_p)
+    if _sp not in sys.path:
+        sys.path.insert(0, _sp)
+
+import exp18_core  # noqa: E402
+from evosim import physiology  # noqa: E402
+from evosim.genome import INITIAL_GENOME, STORAGE_CAP  # noqa: E402
 
 _ORIGINAL_SETUP_SIM = exp18_core.setup_sim
 _INSTALLED = False
