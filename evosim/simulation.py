@@ -397,9 +397,16 @@ class Simulation:
             self._predate(org)
 
             # 生理 (維持コスト・損傷・修復)
+            # V1.9/V1.10.1時点と同じ2回separateの += 順を保つ (m_cost+r_cost
+            # とまとめて1回で加算すると浮動小数非結合性でenergy_out_cumの
+            # 最終bitが変わり、tools/golden.pyのfingerprintが変わってしまう。
+            # energy_out_cumはsimulationロジックへ一切フィードバックしない
+            # 観測専用台帳だが、golden fingerprintはこの値を直接ハッシュに
+            # 含むため、結果不変性検証上は意味のある差になる)。
             m_cost = physiology.maintenance_and_movement(org, cfg, v, org.starve_state)
             r_cost = physiology.repair(org, cfg, org.starve_state)
-            self.energy_out_cum += m_cost + r_cost
+            self.energy_out_cum += m_cost
+            self.energy_out_cum += r_cost
 
             # V1.11: 光からのmaintenance credit (docs §5)。当tickの
             # maintenance+repair支出を上限にのみ肩代わりし、余剰は次tickへ
