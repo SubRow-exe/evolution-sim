@@ -1,0 +1,133 @@
+name: Exp21 Starvation-Horizon Direct Competition
+
+on:
+  push:
+    branches: [v1.11-phototrophy-plan]
+    paths:
+      - '.github/workflows/exp21-starvation-horizon-competition.yml'
+      - 'experiments/exp21_starvation_horizon_competition/**'
+      - 'experiments/exp18_v1101_dynamic_vent/**'
+      - 'experiments/exp17_v110_cnp/**'
+      - 'experiments/luca_proxy/**'
+      - 'experiments/exp15_v19/**'
+      - 'experiments/exp15_v19_preflight/**'
+      - 'evosim/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Full unit test suite (incl. Exp21 harness wiring tests)
+        run: uv run pytest -q
+      - name: Exp21 source calibration (reuse Exp18 Phase 0 method, no re-tuning)
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/phase0.py
+          phase0_ci_results.json
+      - name: Validate calibration gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("phase0_ci_results.json"))
+          assert r["dispatch_gate_pass"] is True, r
+          print("EXP21_CALIBRATION_PASS")
+          print("F0 =", r["P0_A"]["f0_mol_s"], "mol/s per vent")
+          PY
+      - name: "Exp21 lineage/config gate (docs Exp21 §11 G1-G9, 16 combinations)"
+        run: >-
+          uv run python experiments/exp21_starvation_horizon_competition/preflight_exp21.py
+          --calibration-dir .
+          --out exp21_preflight.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp21-calibration-check
+          path: |
+            phase0_ci_results.json
+            exp21_preflight.json
+          retention-days: 30
+      - name: Upload F0/common-H2-field calibration (consumed by Exp21 runs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp21-calibration
+          path: |
+            f0_calibration.json
+            common_initial_h2_field.npy
+          retention-days: 30
+
+  exp21_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        environment: [A0_STATIC, A2_DYNAMIC_VENT]
+        seed: [21001, 21002, 21003, 21004, 21005, 21006, 21007, 21008]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp21-calibration
+          path: calibration
+      - name: "Exp21 ${{ matrix.environment }} seed ${{ matrix.seed }} — 120 physical hours"
+        run: >-
+          uv run python experiments/exp21_starvation_horizon_competition/run_exp21.py
+          --environment ${{ matrix.environment }}
+          --seed ${{ matrix.seed }}
+          --hours 120
+          --calibration-dir calibration
+          --outdir result_${{ matrix.environment }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp21-run-${{ matrix.environment }}-${{ matrix.seed }}
+          path: result_${{ matrix.environment }}_${{ matrix.seed }}
+          retention-days: 30
+
+  aggregate:
+    needs: exp21_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp21-run-*
+          path: all_runs
+      - name: Aggregate Exp21 (mechanical f_long readout only, no PASS/FAIL gate on direction)
+        run: >-
+          uv run python experiments/exp21_starvation_horizon_competition/aggregate_exp21.py
+          --root all_runs
+          --out exp21_aggregate.json
+      - name: "Fail loudly on missing/incomplete artifacts (docs §11: no silent skip)"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("exp21_aggregate.json"))
+          if not r["artifacts_complete"]:
+              raise SystemExit(f"Exp21 aggregate: artifacts incomplete or n_runs != 16: {r['n_runs']} runs")
+          print("EXP21_ARTIFACTS_COMPLETE n_runs =", r["n_runs"])
+          print("comparison_A2_vs_A0_at_120h =", r["comparison_A2_vs_A0_at_120h"])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp21-aggregate
+          path: exp21_aggregate.json
+          retention-days: 30
