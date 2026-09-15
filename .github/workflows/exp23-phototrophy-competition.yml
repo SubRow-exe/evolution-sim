@@ -1,0 +1,135 @@
+name: Exp23 Phototrophy Competition
+
+on:
+  push:
+    branches: [v1.11-phototrophy-plan]
+    paths:
+      - '.github/workflows/exp23-phototrophy-competition.yml'
+      - 'experiments/exp23_phototrophy_competition/**'
+      - 'experiments/exp18_v1101_dynamic_vent/**'
+      - 'experiments/exp17_v110_cnp/**'
+      - 'experiments/luca_proxy/**'
+      - 'experiments/exp15_v19/**'
+      - 'experiments/exp15_v19_preflight/**'
+      - 'evosim/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: "Full unit test suite (incl. Exp23 harness regressions)"
+        run: uv run pytest -q
+      - name: "Exp23 source calibration (reuse Exp18 Phase 0 method, no re-tuning)"
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/phase0.py
+          phase0_ci_results.json
+      - name: "Validate calibration gate"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("phase0_ci_results.json"))
+          assert r["dispatch_gate_pass"] is True, r
+          print("EXP23_CALIBRATION_PASS")
+          print("F0 =", r["P0_A"]["f0_mol_s"], "mol/s per vent")
+          PY
+      - name: "Exp23 G0-G10 gate (docs Exp23 §12)"
+        run: >-
+          uv run python experiments/exp23_phototrophy_competition/preflight_exp23.py
+          --calibration-dir .
+          --out exp23_preflight.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp23-calibration-check
+          path: |
+            phase0_ci_results.json
+            exp23_preflight.json
+          retention-days: 30
+      - name: "Upload F0/common-H2-field calibration (consumed by Exp23 runs)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp23-calibration
+          path: |
+            f0_calibration.json
+            common_initial_h2_field.npy
+          retention-days: 30
+
+  exp23_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        seed: [23001, 23002, 23003, 23004, 23005, 23006, 23007, 23008]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp23-calibration
+          path: calibration
+      - name: "Exp23 seed ${{ matrix.seed }} — 3 flux levels, 120h each, A2_DYNAMIC_VENT"
+        shell: bash
+        run: |
+          set -euo pipefail
+          for flux in 0.0 0.5 1.5; do
+            uv run python experiments/exp23_phototrophy_competition/run_exp23.py \
+              --seed ${{ matrix.seed }} \
+              --flux "$flux" \
+              --hours 120 \
+              --calibration-dir calibration \
+              --outdir "result_${{ matrix.seed }}/flux${flux}"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp23-run-${{ matrix.seed }}
+          path: result_${{ matrix.seed }}
+          retention-days: 30
+
+  aggregate:
+    needs: exp23_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp23-run-*
+          path: all_runs
+      - name: "Aggregate Exp23"
+        run: >-
+          uv run python experiments/exp23_phototrophy_competition/aggregate_exp23.py
+          --root all_runs
+          --out-dir exp23_aggregate
+      - name: "Fail loudly on missing/incomplete artifacts (docs §13: 24/24 required)"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("exp23_aggregate/exp23_aggregate.json"))
+          if not r["artifacts_complete"]:
+              raise SystemExit(f"Exp23 aggregate: incomplete runs {r['n_runs']}/{r['n_expected']}")
+          print("EXP23_ARTIFACTS_COMPLETE")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp23-aggregate
+          path: exp23_aggregate/
+          retention-days: 30
