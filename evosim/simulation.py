@@ -514,8 +514,19 @@ class Simulation:
         さらにstarvation uptake_factorを掛ける
         (docs/V1.9_iLUCA再設計仕様.md §6.2/§11)。PHOTOTROPHY OFFの個体は
         light_absorption=0が強制されているため、需要は自動的に0になる。
+
+        V1.11 Exp22 G0: physical_modeではこのarbitrary-unit経路 (world.light
+        [E/tick] * light_uptake_coef) を完全に止める。physical_modeの光
+        Energyは`physiology.photo_power_chain_w`経由のSI photon flux
+        (`physical_light_enabled`) だけを使う。止めないと、light_absorption
+        >0のphototrophy ON個体がarbitrary-unit経路からも二重にEnergyを
+        得てしまう (Exp20 Attempt 1のlegacy light混入bug。
+        docs/Exp22_実験計画.md §3 G0)。旧arbitrary mode
+        (physical_mode=False) の後方互換性は維持する。
         """
         cfg = self.cfg
+        if cfg.physical_mode:
+            return
         flux = float(self.world.light[key]) * self.daylight_factor_now
         if flux <= 0.0:
             return

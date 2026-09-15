@@ -53,6 +53,28 @@ def _org(genome=None, matter=1.0, energy=1.0, phototrophy_on=False,
 
 # --- T1: physical_light_enabled=False regression ------------------------
 
+def test_g0_legacy_absorb_light_does_not_leak_energy_in_physical_mode():
+    """Exp22 §3 G0回帰test: physical_modeでは、phototrophy ON個体が
+    light_absorption>0でも、legacy arbitrary-unit `_absorb_light()`
+    (world.light [E/tick] * light_uptake_coef) からEnergyを得ない
+    (Exp20 Attempt 1のlegacy light混入bug)。world.lightはdefaultで
+    非zero (light_max=1.2) なので、gateしないとこのtestは失敗する。
+    """
+    cfg = _cfg(physical_light_enabled=False, initial_population=1,
+               phototrophy_innovation_prob=0.0, phototrophy_loss_prob=0.0)
+    assert cfg.light_max > 0.0  # world.lightが非zeroであることが前提
+    sim = Simulation(cfg, seed=1)
+    o = sim.organisms[0]
+    o.phototrophy_on = True
+    o.genome = o.genome.copy()
+    o.genome[LIGHT_ABS] = 0.5  # legacy経路がgateされていなければ需要が生じる値
+    for _ in range(50):
+        sim.step()
+        if not sim.organisms:
+            break
+    assert sim.flows["light"] == 0.0
+
+
 def test_t1_light_disabled_gives_zero_power_chain():
     cfg = _cfg(physical_light_enabled=False)
     o = _org(phototrophy_on=True)
