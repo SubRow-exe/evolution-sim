@@ -1,7 +1,7 @@
 # Exp22 実験計画 — V1.11 primitive phototrophy photon-flux calibration
 
 更新: 2026-09-15  
-状態: **DRAFT FOR REVIEW / 実行前にClaudeレビューを行う**  
+状態: **REVIEWED / READY FOR IMPLEMENTATION**  
 対象version: **V1.11**
 
 関連:
@@ -11,28 +11,33 @@
 - `docs/Exp20_結果考察.md`
 - `docs/Exp20_Attempt2_Opus5レビュー.md`
 - `docs/Exp21_実験計画.md`
+- `docs/Exp21_結果考察.md`
+- `docs/Exp21_Exp22_Opus5レビュー.md`
+- Issue #75
 
 ---
 
 # 0. Exp22の位置付け
 
-V1.11はまだ継続する。
+V1.11を継続する。
 
-Exp20 Attempt 2で既存生理形質のfitness effectを直接測定し、Exp21では `starvation_horizon=1800 s` と `2700 s` の2系統を同一世界で競争させた結果、A2 dynamic ventで2700 s系統の頻度上昇を確認した。
+Exp20 Attempt 2で既存生理形質のfitness-related effectを直接測定し、Exp21ではstanding variationとして置いた2 lineageを同一世界で競争させ、A2 dynamic ventでlineage frequency変化を確認した。
 
 したがって、
 
-> **physical modeでも、環境変化 → 形質依存fitness差 → 系統頻度変化という自然選択が成立する**
+> **physical modeでstanding variationに対して自然選択が働くこと**
 
-ことは確認できた。
+は確認できた。
+
+一方、突然変異から機能形質が生成され、短いrun内で選択されることは未確認である。
 
 ここからV1.11本題のprimitive phototrophyへ戻る。
 
-ただしExp20 Attempt 1はlegacy light経路の混入により無効であり、当時の `0.015 umol m^-2 s^-1` をそのまま正式値として採用してはいけない。
+Exp20 Attempt 1はlegacy light経路混入により無効であり、当時の `0.015 umol photons m^-2 s^-1` を正式値として採用しない。
 
-Exp22はphototrophyの競争・進化実験ではなく、
+Exp22は競争・進化実験ではなく、
 
-> **どのphoton fluxなら、V1.11 rev2の正しいphysical phototrophy経路で、次段のcompetition assayに使える大きさのfitness-related effectが生じるかを校正するStage-1 paired fitness-effect assay**
+> **正しいphysical phototrophy経路について、photon fluxとmechanistic / fitness-related effectの関係を校正し、次段competition assayを現実的なseed数で設計できるfluxを選ぶStage-1 assay**
 
 とする。
 
@@ -40,11 +45,7 @@ Exp22はphototrophyの競争・進化実験ではなく、
 
 # 1. 主質問
 
-Exp22で答えるのは次の3点。
-
 ## Q1 — physical phototrophy経路は正しく作動しているか
-
-photon fluxを増やしたとき、
 
 ```text
 incident light
@@ -53,38 +54,32 @@ incident light
 -> actually used maintenance credit
 ```
 
-が物理上界とledger identityを守りながら増加するか。
+が独立した物理上界とledger identityを守りながらfluxに応じて増えるか。
 
-## Q2 — どの光量から生理的に意味のある効果が出るか
+## Q2 — 光Energyが生態的効果へどう変換されるか
 
-phototrophy OFFとONを同一seed・同一初期状態で比較し、
+phototrophy OFF / ONを同一seed・同一初期状態でpaired比較し、
 
 ```text
-stored Energy保護
-starvation exposure低下
-total living matter / population維持
-starvation death低下
+A2: stored Energy保護 / starvation exposure / death / population
+A0: growth / total living matter
 ```
 
-がどのfluxから観測可能になるか。
+へどの程度翻訳されるかを見る。
 
-## Q3 — 次のcompetition assayへ進める光量域はどこか
+## Q3 — 次のcompetition assayを現実的な検出力で実行できるか
 
-弱すぎて検出不能でも、強すぎて一般的な必勝能力になる条件でもなく、
+R_Eだけで候補を選ばず、人口統計効果から**Exp23に必要なseed数を事前推定**する。
 
-> **現実的なseed数・run時間でcompetitionとして検出可能な中程度の効果量**
-
-を持つflux域を特定する。
-
-Exp22単体では「phototrophyが進化する」とは結論しない。
+Exp22単体では「phototrophyが自然選択で増える」とは結論しない。
 
 ---
 
-# 2. 仮説
+# 2. 仮説と主張範囲
 
 ## H1 — mechanistic monotonicity
 
-photon flux増加に伴い、phototrophy ON群の
+photon flux増加に伴いON群の
 
 ```text
 photo_incident_j_cum
@@ -95,59 +90,54 @@ photo_used_j_cum
 
 は原則として単調非減少する。
 
-## H2 — Energy protection
+## H2 — A2 Energy protection
 
-phototrophy ONではOFFよりstored Energyが保護される。
+A2ではphototrophy ONにより、vent turnover後のstored Energy低下・starvation exposureが緩和される。
 
-効果は低fluxでは微小、高fluxほど大きくなる。
+## H3 — demographic rescue
 
-## H3 — dynamic-environment rescue
-
-A2_DYNAMIC_VENTでは48 hのvent turnover後にH2供給条件が変わるため、phototrophyによるmaintenance補助が
+十分なfluxではA2で
 
 ```text
-starvation exposure
-starvation death
-population / total living matter
+starvation death低下
+population維持
+total living matter維持
 ```
 
-へ現れやすい。
+へ効果が波及する。
 
-A0_STATICでは主としてEnergy温存効果として現れ、A2より生存上の差は小さいことを期待する。
+## H4 — near-zero-light control
 
-## H4 — zero-light cost control
+`1e-6 umol photons m^-2 s^-1` では、理論上phototrophy benefitは実質0であり、ON/OFFの光Energy効果は検出不能水準になる。
 
-flux=0でphototrophy ONに利益はない。
+### structural N costについて
 
-一方、phototrophy apparatusのstructural N costが実際に効けば、ON群はOFF群と同等またはわずかに不利になり得る。
+Issue #75の検算では、現行50x CNP stockに対してphototrophy apparatusのstructural N要求は小さすぎる。
 
-これは正常なtrade-offとして扱う。
+```text
+apparatus structural N / organism biomass N ~= 0.565%
+初期100個体のapparatus N / environmental fixed N ~= 0.0113%
+```
+
+したがって**Exp22は実質的にbenefit側の校正であり、N costとのtrade-off検証ではない。**
+
+Exp22で得るworking fluxは、N costが非律速な条件での値であり、trade-off検証は将来のN-limited条件（例: Exp17由来10x/30x stock）を用いた別実験へ分離する。
 
 ---
 
 # 3. Exp22開始前のMUST-FIX / preflight gate
 
-以下はformal runより先に通す。1つでも失敗した場合、Exp22本計算を開始しない。
+1つでも失敗した場合、formal runを開始しない。
 
 ## G0 — legacy `_absorb_light()` Energy経路をphysical modeから排除
 
-Exp20 Attempt 1を無効化した旧light Energy流入をphysical modeで完全に止める。
-
-formal physical runでは:
-
-```text
-legacy light flow = 0
-```
-
-を必須とする。
+physical modeではlegacy light Energy流入を完全に0とする。
 
 旧arbitrary modeの後方互換性は維持する。
 
-## G1 — production `Simulation.step()` test
+## G1 — production `Simulation.step()` physical upper-bound test
 
-実際の `Simulation.step()` を通してphototrophy ON/OFFを比較する。
-
-独立計算したphysical上界に対して:
+実際の `Simulation.step()` を通して:
 
 ```text
 0 <= photo_used
@@ -156,43 +146,63 @@ photo_usable_max <= photo_absorbed
 photo_absorbed <= photo_incident
 ```
 
-を全tick/累積で満たすこと。
+を全tick / 累積で満たす。
 
-旧light経路由来Energyが混入していないことも同時にassertする。
+さらに、V1.11内部counter同士の比較だけでは第2のEnergy入口を検出できないため、**機構非依存の上界**を追加する。
+
+ON/OFFの短いpaired testについて、configとgeometryから独立計算した上界を使い:
+
+```text
+DeltaE_ON - DeltaE_OFF
+<= independent_physical_usable_light_upper_bound
+ + abs(maintenance_difference)
+ + tolerance
+```
+
+をassertする。
+
+独立上界のabsorptanceはN制限後の値ではなく:
+
+```text
+1 - exp(-light_absorption)
+```
+
+を使用する。
 
 ## G2 — effective config一致
 
-実際にrunへ渡された `effective_config.json` と本書の条件表をfield単位で比較する。
+`effective_config.json` と本書をfield単位で照合する。
 
-特に:
+必須:
 
 ```text
 physical_mode = True
 physical_light_enabled = True
 light_cycle_enabled = False
 light_physical_pattern = uniform
-phototrophy innovation/loss = 0
+phototrophy innovation = 0
+phototrophy loss = 0
 continuous mutation = OFF
 ```
 
-を必ず確認する。
+flux値も各runについて事前登録値と完全一致させる。
 
 ## G3 — light-only growth禁止
 
-H2=0、light>0の短いmechanical controlで、phototrophyがmaintenanceを補助しても、light単独で持続的なnet biomass growth / reproductionを作らないことを確認する。
-
-これはV1.11 rev2 HARD RULE P3の回帰テストとする。
+H2=0 / light>0の短いcontrolで、光がmaintenanceを補助してもlight単独で持続的net biomass growth / reproductionを作らないことを確認する。
 
 ## G4 — structural N ledger
 
-phototrophy apparatus assembly/releaseを含めてもN ledgerが既存許容誤差内で閉じること。
+apparatus assembly / releaseを含めてN ledgerが既存許容誤差内で閉じること。
 
 ## G5 — t=0 paired-state一致
 
-同一environment / seed / fluxのOFF・ON pairについて、開始時点で以下を一致させる。
+同一environment / seed / fluxのOFF・ON pairで、開始時点の外生条件を一致させる。
+
+一致対象:
 
 ```text
-organism position / orientation
+position / orientation
 matter
 absolute stored Energy
 damage
@@ -202,48 +212,65 @@ RNG state
 対象外genes
 ```
 
-許容する差は:
+許容差:
 
 ```text
 phototrophy capability
 light_absorption (OFF=0 / ON=0.01)
 ```
 
-のみ。
+`photo_structural_n_mol` は両群0から開始し、ONだけrun開始後にenvironment fixed-Nからassemblyする。
 
-`photo_structural_n_mol` は両者とも0から開始し、ON群だけがrun開始後に環境fixed-Nからassemblyする。
+## G6 — legacy parameter independence property test
+
+physical modeでlegacy parameter
+
+```text
+light_max
+light_uptake_coef
+```
+
+を大きく変更しても、physical phototrophyのEnergy trajectory / resultが変化しないことをproperty testで確認する。
+
+## G7 — competition power handoff
+
+formal aggregate時に、各fluxの人口統計効果から**Exp23必要seed数の見積もり**を必ず生成する。
+
+G7はpreflightではなくExp22完了条件である。
 
 ---
 
 # 4. light cycleの扱い
 
-Exp22はfluxそのものの1軸校正が目的なので:
+Exp22では:
 
 ```text
 light_cycle_enabled = False
 ```
 
-とし、24 h常時一定のuniform photon fluxを与える。
+とし、24 h一定のuniform photon fluxを与える。
 
-これにより既知のdaylight coupling問題をExp22のflux calibrationから切り離す。
+重要な実装事実として、**現状のphysical phototrophy経路 `physical_light_incident_power_w()` は `daylight_factor` を参照していない。**
 
-**これは「V1.11では夜間も光合成する」という仕様決定ではない。**
+したがって現時点では `light_cycle_enabled` の値にかかわらずV1.11 physical光路は昼夜cycleの影響を受けない。
 
-昼夜cycleを使うformal ecological experimentへ進む前に、physical phototrophy経路へ `daylight_factor` を接続するかを別途明示的に決定する。
+Exp22でFalseとするのは、この状態をconfig上も明示して1軸flux calibrationに限定するためである。
+
+昼夜cycleを使うformal ecological experimentへ進む前に、この未接続問題を別途解決する。
 
 ---
 
 # 5. phototrophy phenotype
 
-V1.11 rev2のprimitive phenotypeを固定する。
+ON phenotypeを固定する。
 
 ```text
-phototrophy capability OFF:
-    light_absorption = 0
+OFF:
+  light_absorption = 0
 
-phototrophy capability ON:
-    light_absorption = 0.01
-    phototrophy_seed_absorption = 0.01
+ON:
+  light_absorption = 0.01
+  phototrophy_seed_absorption = 0.01
 ```
 
 mapping:
@@ -252,7 +279,7 @@ mapping:
 absorptance = 1 - exp(-0.01) ~= 0.995%
 ```
 
-その他のphototrophy parameterはrev2正本を固定使用する。
+固定parameter:
 
 ```text
 light_effective_wavelength_nm = 800
@@ -261,7 +288,7 @@ photo_apparatus_n_multiplier = 10
 bchl_extinction_mM_cm = 213
 ```
 
-Exp22中に結果を見てこれらを調整しない。
+Exp22中に結果を見て変更しない。
 
 ---
 
@@ -270,7 +297,7 @@ Exp22中に結果を見てこれらを調整しない。
 事前固定:
 
 ```text
-0
+0.000001
 0.015
 0.05
 0.15
@@ -279,22 +306,41 @@ Exp22中に結果を見てこれらを調整しない。
 umol photons m^-2 s^-1
 ```
 
+`0` はConfig validationを通らないため使用しない。`1e-6` を**実質zero-light control**とする。
+
 意味:
 
-- `0`: negative control + structural costのみを見る
-- `0.015`: rev2 original working reference
+- `1e-6`: near-zero benefit control
+- `0.015`: rev2 original reference
 - `0.05 / 0.15`: low-to-moderate calibration
-- `0.5 / 1.5`: positive-control寄りの高flux
+- `0.5 / 1.5`: positive-control寄り高flux
 
-結果を見て途中で水準を追加・削除しない。
-
-この範囲にcompetitionへ進める条件が存在しない場合、Exp22は「working flux未決定」として終了し、次の別preregistered sensitivityで範囲を拡張する。
+結果を見て同じExp22内で水準を追加・削除しない。
 
 ---
 
-# 7. 環境
+# 7. 理論効果量の事前予測
 
-Exp20/21で使用した既存環境をそのまま利用し、環境側を再調整しない。
+ON phenotype `light_absorption=0.01`、absorptance約0.995%、maintenance `P_full ~= 0.4327 fW` に対し、理論上のusable light / maintenance比は概ね以下。
+
+| photon flux (umol m^-2 s^-1) | expected usable / maintenance | 事前解釈 |
+|---:|---:|---|
+| 0.000001 | ~0.000026% | 実質0 |
+| 0.015 | ~0.39% | +1%閾値未満予測 |
+| 0.05 | ~1.31% | mechanistic候補の最有力 |
+| 0.15 | ~3.93% | 0.05が実測閾値を外した場合の次候補 |
+| 0.5 | ~13.09% | 強いpositive control |
+| 1.5 | ~39.28% | 支配的効果寄り |
+
+この表は**実測結果に合わせて変更しない事前予測**である。
+
+実測mechanistic countersが大きく逸脱した場合、biologyではなくimplementation / ledger問題を優先して疑う。
+
+また、0.05が +1% criterionを満たさなくてもcriterionを下げない。事前ルール通り次の0.15を評価する。
+
+---
+
+# 8. 環境
 
 ## A0_STATIC
 
@@ -303,7 +349,7 @@ H2 vent static
 vent turnover OFF
 ```
 
-phototrophyの平常時Energy温存効果を見る基準環境。
+A0では個体がprotective reserve付近へ張り付くため、phototrophy効果はstored Energyより**growth / total living matter**に出る可能性が高い。
 
 ## A2_DYNAMIC_VENT
 
@@ -312,43 +358,37 @@ H2 vent turnover ON
 turnover interval = 48 h
 ```
 
-Exp21で実際に形質依存の自然選択を発生させた環境。
-
-72 h runとすることで:
+72 h run:
 
 ```text
 0-48 h  : turnover前
 48-72 h : 最初のvent移動後
 ```
 
-を同一runで観測する。
+A2ではEnergy protection / starvation rescueを主に見る。
 
-H2 source calibration、C/N/P条件、world geometry等はExp21/Exp18由来のformal値を再利用し、Exp22結果に合わせてretuneしない。
+H2 source、C/N/P stock、world geometry等は既存formal値を再利用し、結果に合わせてretuneしない。
 
 ---
 
-# 8. paired run設計
+# 9. paired run設計
 
-各 `environment × seed × photon flux` について、必ず同じfluxで2 runを作る。
+各 `environment × seed × photon flux` について:
 
 ```text
 Run OFF: phototrophy capability OFF
 Run ON : phototrophy capability ON, light_absorption=0.01
 ```
 
-**OFF runにも同じphysical photon fluxを設定する。**
+**OFF runにもONと同じphysical photon fluxを設定する。**
 
-「OFFなら光を利用できないから同じはず」と仮定してbaselineを別fluxから使い回さない。
-
-これにより各pairの外部環境差をphototrophy capabilityだけに限定する。
-
-common-random-number paired runとして同一seed・同一初期配置を使うが、run分岐後までRNG差が0とは仮定しない。
+同一seed・同一初期配置で開始するが、死亡等でrunが分岐した後までRNG系列が一致するとは仮定しない。
 
 ---
 
-# 9. seed / run数 / duration
+# 10. seed / run数 / duration
 
-seedはExp22専用番号帯として事前固定する。
+seed:
 
 ```text
 22001
@@ -356,15 +396,17 @@ seedはExp22専用番号帯として事前固定する。
 22003
 ```
 
-Stage-1 calibrationであり、連続量のpaired effectとflux-responseを測ることが目的なので3 seedとする。
+Stage-1 calibrationとして3 seedを維持する。
 
-formal run総数:
+A2ではrun分岐後にCRN advantageが弱まるため、3/3符号一致は強い統計証拠ではない。**偶然でも3/3一致する確率は12.5%**であることを結果考察へ明記する。
+
+formal run数:
 
 ```text
 2 environments
 x 6 flux levels
 x 3 seeds
-x 2 capability states (OFF / ON)
+x 2 capability states
 = 72 runs
 ```
 
@@ -381,15 +423,13 @@ phototrophy loss = 0
 predation innovation = OFF
 ```
 
-GitHub Actionsでは `environment × seed` を1 jobとし、各job内で6 flux × OFF/ONを順に実行する構成を推奨する。
-
-6 jobsを並列化できる。
+GitHub Actionsでは `environment × seed` を1 jobとし、6 jobs並列を基本とする。
 
 ---
 
-# 10. 保存するreadout
+# 11. 保存するreadout
 
-各runについて最低限:
+各run:
 
 ```text
 time
@@ -416,7 +456,7 @@ photo_usable_max_j_cum
 photo_used_j_cum
 photo_unused_j_cum
 photo_conversion_loss_j_cum
-photo_structural_n_mol (population total / mean)
+photo_structural_n_mol
 photo_n_assembly_cum
 photo_n_released_cum
 legacy light flow
@@ -424,20 +464,16 @@ legacy light flow
 
 ---
 
-# 11. paired effect指標
+# 12. paired effect指標
 
-平均matter単独はsurvivor biasを持つためprimaryにはしない。
+平均matter単独はsurvivor biasがあるため単独primaryにしない。
 
-## 11.1 Primary continuous readout — stored Energy protection
-
-各pairで:
+## 12.1 A2 primary — stored Energy protection
 
 ```text
 R_E(window)
 = integral(E_ON - E_OFF) dt / integral(E_OFF) dt
 ```
-
-を計算する。
 
 window:
 
@@ -447,35 +483,42 @@ window:
 0-72 h
 ```
 
-特にA2の `48-72 h` をvent turnover後の主要calibration windowとして扱う。
+A2では `48-72 h` を主要calibration windowとする。
 
-## 11.2 Primary stress readout — starvation exposure
+## 12.2 A2 stress readout
 
 ```text
 Delta starvation_exposure_AUC
 = integral(frac_ON - frac_OFF) dt
 ```
 
-負値ほどphototrophyが飢餓状態を減らしたことを示す。
+負値ほどphototrophyがstarvation exposureを減らす。
 
-A2では48-72 hを重点評価する。
-
-## 11.3 Ecological secondary readout
+加えて:
 
 ```text
-relative delta final total living matter
-Delta population
-Delta births
-Delta deaths
 Delta starvation deaths
-first-birth timing
+Delta deaths
+Delta population
 ```
 
-population差や死亡差が0でも、continuous primary readoutでflux-responseを評価できるようにする。
+を必ず保存する。
 
-## 11.4 Mechanistic readout
+## 12.3 A0 primary — growth / living matter
 
-各fluxで:
+A0ではstored Energyへ効果が残らずgrowthへ流れる可能性が高いため:
+
+```text
+relative delta total living matter
+relative delta mean matter
+birth timing / births
+```
+
+をprimary ecological readoutとする。
+
+A0のR_Eはmechanistic参考値として扱う。
+
+## 12.4 Mechanistic readout
 
 ```text
 photo_used_j_cum
@@ -484,31 +527,88 @@ structural N investment
 H2 uptake difference
 ```
 
-を確認し、「何が効いて差が出たか」を説明可能にする。
+を確認する。
 
 ---
 
-# 12. flux-responseの事前評価ルール
+# 13. Exp23 competition検出力への変換
 
-Exp22はbiologyのPASS/FAIL実験ではなくcalibrationなので、結果を一つのp値で合否判定しない。
+Exp22のseparate paired runsから、competitionで期待されるlineage差の**粗い人口統計proxy**を作る。
 
-ただし後から都合のよいfluxを選ぶことを避けるため、competition候補の抽出ルールを先に固定する。
+同一seed・同一fluxの72 h final populationを使い:
 
-## 12.1 preferred working-flux candidate
+```text
+W_ON  = N_ON_final / N_initial
+W_OFF = N_OFF_final / N_initial
 
-非zero fluxのうち、低い方から見て最初に以下を全て満たすfluxを **preferred candidate** とする。
+f_proxy = W_ON / (W_ON + W_OFF)
+Delta_proxy_pt = 100 * (f_proxy - 0.5)
+```
 
-1. 全ledger / G0-G5 gate PASS
-2. A2の `R_E(48-72h)` が3/3 seedで正
-3. A2の `median R_E(48-72h) >= +1%`
-4. A2で `Delta starvation_exposure_AUC(48-72h) <= 0` が3/3 seed
-5. A0 / A2ともmax population halt等の人工停止条件へ到達しない
+これは実際の同一世界competition結果ではなく、**別runの人口増減から作る事前検出力proxy**であることを明記する。
 
-`+1%` は「competitionへ進める前に最低限ほしいcontinuous effect」のworking thresholdであり、生物学的普遍値ではない。Claudeレビューでこの閾値の妥当性を重点確認する。
+Exp21の実測seedばらつきから competition frequency のSDを約6.2 percentage pointsと置き、2σ相当の目安として:
 
-## 12.2 general-advantage flag
+```text
+n_required_est
+= ceil((2 * 6.2 / abs(median Delta_proxy_pt))^2)
+```
 
-preferred candidateについて、A0でも72 h時点で
+を計算する。
+
+`Delta_proxy_pt ~= 0` の場合は `n_required_est = INF / not estimable` とする。
+
+参考:
+
+```text
+Delta = 6.3 pt -> n ~= 4
+Delta = 3.0 pt -> n ~= 17
+Delta = 2.0 pt -> n ~= 38
+Delta = 1.0 pt -> n ~= 154
+```
+
+この推定はExp23のpreregistration用であり、Exp22でcompetition効果を証明したことにはしない。
+
+---
+
+# 14. flux-responseの事前評価ルール
+
+## 14.1 mechanistic working flux
+
+非near-zero fluxを低い方から見て、最初に以下を全て満たすfluxを `MECHANISTIC_WORKING_FLUX` とする。
+
+1. G0-G6およびledger gate PASS
+2. A2 `R_E(48-72h) > 0` が3/3 seed
+3. A2 `median R_E(48-72h) >= +1%`
+4. A2 `Delta starvation_exposure_AUC(48-72h) <= 0` が3/3 seed
+5. A0 / A2とも人工的max-population halt等へ到達しない
+
+`+1%` はworking thresholdであり、結果を見て変更しない。
+
+## 14.2 competition-ready preferred candidate
+
+`MECHANISTIC_WORKING_FLUX` のうち低い方から見て、さらに以下を満たす最初のfluxを `PREFERRED_COMPETITION_FLUX` とする。
+
+6. A2で人口統計効果がphototrophy有利方向に整合すること
+   - starvation deathsが増えない
+   - final populationが悪化しない
+   - 3 seedの多数（>=2/3）が同方向
+7. `median Delta_proxy_pt >= +3.0 percentage points`
+8. `n_required_est <= 20`
+
+`+3 pt` はExp21の実測雑音床から、次段を概ね20 seed以内で設計するための実務的下限である。
+
+mechanistic working fluxは得られたが7–8を満たさない場合:
+
+```text
+MECHANISTIC_WORKING_BUT_COMPETITION_UNDERPOWERED
+```
+
+として、Exp23へ自動的には進まない。
+
+## 14.3 GENERAL_ADVANTAGE_FLAG
+
+preferred candidateでA0 72 h時点の
 
 ```text
 median relative delta total living matter >= +10%
@@ -516,25 +616,23 @@ median relative delta total living matter >= +10%
 
 なら `GENERAL_ADVANTAGE_FLAG` を付ける。
 
-これは即失格ではないが、「dynamic環境特有の適応」ではなく常時強い能力である可能性を次段competition設計で明示する。
+これは失格ではないが、dynamic環境特異的rescueではなく常時強いbenefitである可能性を明示する。
 
-## 12.3 candidateなしの場合
+## 14.4 candidateなし
 
-6水準のどれも12.1を満たさない場合:
+どのfluxもmechanistic criterionを満たさない場合:
 
 ```text
 NO_WORKING_FLUX_IN_RANGE
 ```
 
-として終了する。
-
-結果を見た後に同じExp22内でfluxを追加しない。
+同じExp22内でfluxを追加しない。
 
 ---
 
-# 13. aggregate出力
+# 15. aggregate出力
 
-aggregate artifactには最低限以下を含める。
+最低限:
 
 ```text
 exp22_pair_results.csv
@@ -544,33 +642,57 @@ exp22_gate_summary.json
 exp22_working_flux_recommendation.json
 ```
 
-`exp22_flux_response.csv` は各environment × fluxについて:
+`exp22_flux_response.csv`:
 
 ```text
 median / min / max R_E
-median / min / max starvation-exposure effect
-final total-living-matter effect
-population/birth/death effect
+starvation-exposure effect
+final population effect
+total-living-matter effect
+birth/death/starvation-death effect
 photo_used_j
 photo utilization fraction
 structural N investment
+Delta_proxy_pt
 ```
 
-を3 seedでまとめる。
+`exp22_working_flux_recommendation.json` は最低限:
 
-formal completeness gateとして72/72 runが揃わない場合はaggregate成功扱いにしない。
+```text
+mechanistic_working_flux
+preferred_competition_flux
+status
+median_R_E_post_turnover
+median_Delta_proxy_pt
+n_required_est
+recommended_exp23_seed_count
+GENERAL_ADVANTAGE_FLAG
+notes
+```
+
+`recommended_exp23_seed_count` はpreferred candidateがある場合:
+
+```text
+max(8, n_required_est)
+```
+
+とし、candidate条件により最大20を想定する。
+
+formal completeness gateとして72/72 runが揃わない場合、aggregate成功扱いにしない。
 
 ---
 
-# 14. Exp22で主張してよいこと / いけないこと
+# 16. Exp22で主張してよいこと / いけないこと
 
 ## 主張してよい
 
 ```text
-- physical phototrophy経路がledger上正しく動作した
-- photon fluxに対するmechanistic/fitness-related effect curve
-- どのflux域が次のcompetition検証に適するか
-- A0とA2で効果の現れ方がどの程度違うか
+- physical phototrophy経路が独立物理上界とledgerを守って動作したか
+- photon fluxに対するmechanistic effect curve
+- A2でEnergy benefitがstarvation / populationへどう翻訳されたか
+- A0でgrowthへどう翻訳されたか
+- 次のcompetitionに必要なseed数の事前見積もり
+- N非律速50x条件でのworking flux
 ```
 
 ## まだ主張しない
@@ -578,68 +700,70 @@ formal completeness gateとして72/72 runが揃わない場合はaggregate成�
 ```text
 - phototrophyが自然選択で増える
 - phototrophyが進化的に固定する
+- structural N costとのtrade-offが成立する
 - primitive Earthで実際にこのfluxだった
-- spatial phototrophic nicheが成立した
 - day/night cycle下での適応性
+- spatial phototrophic nicheが成立した
 ```
-
-これらは後段実験の問いとする。
 
 ---
 
-# 15. Exp22後の分岐
+# 17. Exp22後の分岐
 
-## working fluxが得られた場合
+## PREFERRED_COMPETITION_FLUXあり
 
-次段（仮Exp23）:
-
-> **phototrophy OFF vs ONの同一世界competition / rescue assay**
-
-候補設計:
+次段（仮Exp23）を事前登録する。
 
 ```text
-A0_STATIC vs A2_DYNAMIC_VENT
+phototrophy OFF vs ON single-world competition
+A0_STATIC / A2_DYNAMIC_VENT
 50:50 initial lineage ratio
-selected photon flux
-120 h
-multiple seeds
+selected flux
+120 h以上
 mutation / innovation / loss OFF
+seed数 = max(8, n_required_est)
 ```
 
-Exp21と同じStage-2 competition方式で、実際のlineage frequency変化を測る。
+Exp21と同じlineage-frequency方式でphototrophy能力そのものが選択されるかを測る。
 
-## working fluxが得られない場合
+## mechanisticのみ / competition underpowered
 
-competitionへ進まず、Exp22結果に基づき別番号のflux-range sensitivityを事前登録する。
+Exp23へ進まず、run duration・環境ストレス・flux rangeのどれを変えるかを別番号で事前登録する。
 
----
+## N cost trade-off
 
-# 16. Claudeレビューで重点的に確認してほしい点
-
-1. **G0 legacy `_absorb_light()` 排除方法が十分か**
-2. production-step physical upper-bound testに抜けがないか
-3. OFF/ON pairをfluxごとに別runする設計が妥当か
-4. flux水準 `0 / 0.015 / 0.05 / 0.15 / 0.5 / 1.5` の範囲が適切か
-5. Stage-1 calibrationとして3 seed / 72 hが十分か
-6. primaryを `R_E(48-72h)` とstarvation exposure AUCにすることが妥当か
-7. preferred candidateの `median R_E >= +1%` 閾値が妥当か
-8. structural N costを含んだON/OFF比較で初期条件の公平性が保たれているか
-9. `light_cycle_enabled=False` としてdaylight couplingを後段へ分離する判断が妥当か
-10. Exp23 competitionへ進む前に追加すべきmechanical gateがないか
+Exp22とは分離し、N-limited stockを用いる別実験として設計する。
 
 ---
 
-# 17. 実行順
+# 18. Claude実装時の必須確認事項
+
+Claudeは実装前に本計画とIssue #75を読み、少なくとも以下を満たすこと。
+
+1. legacy `_absorb_light()` をphysical Energy経路から除去
+2. mechanism-independent Energy upper-bound testを追加
+3. legacy parameter independence property testを追加
+4. `flux=0` を使わず `1e-6` を使用
+5. effective configをformal条件と照合
+6. A0とA2でprimary readoutを分ける
+7. aggregateで `Delta_proxy_pt` と `n_required_est` を算出
+8. 72/72 run completeness gateを維持
+9. 結果を見てthreshold / flux gridを変更しない
+10. structural N costをExp22の成功条件にしない
+
+---
+
+# 19. 実行順
 
 ```text
-1. Claudeレビュー
-2. レビュー指摘を計画へ反映
-3. G0-G5に必要なproduction code / tests修正
-4. Exp22 harness + workflow実装
-5. preflightのみ実行
-6. preflight全PASSを確認
-7. 72 formal runs実行
-8. aggregate
-9. flux-response考察
-10. working fluxが得られた場合のみphototrophy competitionへ進む
+1. G0-G6に必要なproduction code / tests修正
+2. Exp22 harness + aggregate + workflow実装
+3. preflightのみ実行
+4. preflight全PASSを確認
+5. 72 formal runs実行
+6. aggregate completeness確認
+7. flux-response / demographic translation考察
+8. G7: Exp23必要seed数を算出
+9. PREFERRED_COMPETITION_FLUXがある場合のみExp23を事前登録
+10. structural N cost検証は別実験へ分離
 ```
