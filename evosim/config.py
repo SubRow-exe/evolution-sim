@@ -559,8 +559,8 @@ class Config:
                 raise ValueError(
                     "physical_light_enabled=True には explicit_cnp_resources=True が必要です "
                     "(phototrophy apparatusのstructural N costをV1.10 fixed-N poolへ接続するため)。")
-            if self.light_photon_flux_umol_m2_s <= 0.0:
-                raise ValueError("light_photon_flux_umol_m2_s は正でなければなりません。")
+            if self.light_photon_flux_umol_m2_s < 0.0:
+                raise ValueError("light_photon_flux_umol_m2_s は0以上でなければなりません。")
             if self.light_effective_wavelength_nm <= 0.0:
                 raise ValueError("light_effective_wavelength_nm は正でなければなりません。")
             if self.light_physical_pattern != "uniform":
