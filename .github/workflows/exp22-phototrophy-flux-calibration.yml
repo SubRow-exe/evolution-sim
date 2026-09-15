@@ -1,0 +1,132 @@
+name: Exp22 Phototrophy Photon-Flux Calibration
+
+on:
+  push:
+    branches: [v1.11-phototrophy-plan]
+    paths:
+      - '.github/workflows/exp22-phototrophy-flux-calibration.yml'
+      - 'experiments/exp22_phototrophy_flux_calibration/**'
+      - 'experiments/exp18_v1101_dynamic_vent/**'
+      - 'experiments/exp17_v110_cnp/**'
+      - 'experiments/luca_proxy/**'
+      - 'experiments/exp15_v19/**'
+      - 'experiments/exp15_v19_preflight/**'
+      - 'evosim/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Full unit test suite (incl. Exp22 G0 legacy-light regression)
+        run: uv run pytest -q
+      - name: Exp22 source calibration (reuse Exp18 Phase 0 method, no re-tuning)
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/phase0.py
+          phase0_ci_results.json
+      - name: Validate calibration gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("phase0_ci_results.json"))
+          assert r["dispatch_gate_pass"] is True, r
+          print("EXP22_CALIBRATION_PASS")
+          print("F0 =", r["P0_A"]["f0_mol_s"], "mol/s per vent")
+          PY
+      - name: "Exp22 G0-G5 gate (docs Exp22 §3, all environment x flux x seed combinations)"
+        run: >-
+          uv run python experiments/exp22_phototrophy_flux_calibration/preflight_exp22.py
+          --calibration-dir .
+          --out exp22_preflight.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp22-calibration-check
+          path: |
+            phase0_ci_results.json
+            exp22_preflight.json
+          retention-days: 30
+      - name: Upload F0/common-H2-field calibration (consumed by Exp22 runs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp22-calibration
+          path: |
+            f0_calibration.json
+            common_initial_h2_field.npy
+          retention-days: 30
+
+  exp22_runs:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        environment: [A0_STATIC, A2_DYNAMIC_VENT]
+        seed: [22001, 22002, 22003]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp22-calibration
+          path: calibration
+      - name: "Exp22 ${{ matrix.environment }} seed ${{ matrix.seed }} — 6 flux levels x OFF/ON, 72h each"
+        run: >-
+          uv run python experiments/exp22_phototrophy_flux_calibration/run_exp22.py
+          --environment ${{ matrix.environment }}
+          --seed ${{ matrix.seed }}
+          --hours 72
+          --calibration-dir calibration
+          --outdir result_${{ matrix.environment }}_${{ matrix.seed }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp22-run-${{ matrix.environment }}-${{ matrix.seed }}
+          path: result_${{ matrix.environment }}_${{ matrix.seed }}
+          retention-days: 30
+
+  aggregate:
+    needs: exp22_runs
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp22-run-*
+          path: all_runs
+      - name: Aggregate Exp22 (flux-response calibration, no PASS/FAIL biology gate)
+        run: >-
+          uv run python experiments/exp22_phototrophy_flux_calibration/aggregate_exp22.py
+          --root all_runs
+          --out-dir exp22_aggregate
+      - name: "Fail loudly on missing/incomplete artifacts (docs §13: 72/72 required)"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("exp22_aggregate/exp22_gate_summary.json"))
+          if not r["artifacts_complete"]:
+              raise SystemExit(f"Exp22 aggregate: incomplete pairs {r['n_complete_pairs']}/{r['n_expected_pairs']}")
+          print("EXP22_ARTIFACTS_COMPLETE")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp22-aggregate
+          path: exp22_aggregate/
+          retention-days: 30
