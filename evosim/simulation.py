@@ -44,6 +44,9 @@ class Simulation:
         self.world = World(cfg, self.rng)
         self.tick = 0
         self.next_id = 0
+        # Exp24: photo_founder_id発行用カウンタ (観測専用、next_idと同様の
+        # 単調増加カウンタ)。RNGを消費しない。
+        self.next_photo_founder_id = 0
 
         self.organisms: list[Organism] = []
         self.corpses: list[Corpse] = []
@@ -1117,8 +1120,19 @@ class Simulation:
             org.capability, child_genome, self.rng, cfg)
         if child_capability["phototrophy"] and not org.phototrophy_on:
             self.phototrophy_innovation_events += 1
+            # Exp24: OFF->ON de novo origin。固有founder idを新規発行する
+            # (親のphoto_founder_idはNoneのはずなので継承しない)。観測専用
+            # カウンタでRNGは消費しない (docs/Exp24_実験計画.md §5, G4)。
+            child_photo_founder_id = self.next_photo_founder_id
+            self.next_photo_founder_id += 1
         elif org.phototrophy_on and not child_capability["phototrophy"]:
             self.phototrophy_loss_events += 1
+            # ON->OFF loss: capabilityを失うのでfounder tagもクリアする。
+            # Exp24ではphototrophy_loss_prob=0のため到達しない経路。
+            child_photo_founder_id = None
+        else:
+            # 通常継承 (OFF->OFF: None のまま / ON->ON: 親のfounder idを継承)
+            child_photo_founder_id = org.photo_founder_id
 
         # 5-6. 物質譲渡 (親→子; 保存)
         m_child = cfg.child_matter_frac * org.matter
@@ -1150,7 +1164,8 @@ class Simulation:
                          cx, cy, ang, 0.0, m_child,
                          phototrophy_on=child_capability["phototrophy"],
                          predation_on=child_capability["predation"],
-                         photo_structural_n_mol=child_photo_n)
+                         photo_structural_n_mol=child_photo_n,
+                         photo_founder_id=child_photo_founder_id)
         child_emax = physiology.energy_max(child, cfg)
         e_child = min(e_offer, child_emax)
         child.energy = e_child

@@ -32,6 +32,12 @@ class Organism:
         # explicit structural N pool [mol N] (docs/V1.11_原始Phototrophy_
         # 実装仕様_rev2.md §7.3)。phototrophy_on=Falseな個体は常に0。
         "photo_structural_n_mol",
+        # Exp24: de novo phototrophy origin tag (観測専用)。
+        # OFF個体は常にNone。OFF->ON structural innovation newbornは
+        # 固有のfounder idを新規付与され、そのON子孫は継承する
+        # (docs/Exp24_実験計画.md §5)。行動・生理・fitness・RNG系列には
+        # 一切影響しない (G11)。
+        "photo_founder_id",
     )
 
     def __init__(self, oid: int, parent_id: int, lineage_id: int,
@@ -39,7 +45,8 @@ class Organism:
                  x: float, y: float, heading: float,
                  energy: float, matter: float,
                  phototrophy_on: bool = False, predation_on: bool = False,
-                 photo_structural_n_mol: float = 0.0):
+                 photo_structural_n_mol: float = 0.0,
+                 photo_founder_id: int | None = None):
         self.id = oid
         self.parent_id = parent_id
         self.lineage_id = lineage_id
@@ -64,6 +71,7 @@ class Organism:
         self.predation_on = predation_on
         self.starve_state = 1.0  # 最初のstep()で上書きされるまでの安全な既定値
         self.photo_structural_n_mol = photo_structural_n_mol
+        self.photo_founder_id = photo_founder_id
 
     @property
     def capability(self) -> dict[str, bool]:

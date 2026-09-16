@@ -1,0 +1,189 @@
+name: "Exp24 Phototrophy De Novo Origin"
+
+on:
+  push:
+    branches: [v1.11-phototrophy-plan]
+    paths:
+      - '.github/workflows/exp24-phototrophy-denovo-origin.yml'
+      - 'experiments/exp24_phototrophy_denovo_origin/**'
+      - 'experiments/exp18_v1101_dynamic_vent/**'
+      - 'experiments/exp17_v110_cnp/**'
+      - 'experiments/luca_proxy/**'
+      - 'experiments/exp15_v19/**'
+      - 'experiments/exp15_v19_preflight/**'
+      - 'evosim/**'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: "Full unit test suite (incl. Exp24 harness + photo_founder_id regressions)"
+        run: uv run pytest -q
+      - name: "Golden fingerprint regression check (photo_founder_id must not change results)"
+        run: uv run python tools/verify_vs_ref.py --ref e8d111d
+      - name: "Exp24 source calibration (reuse Exp18 Phase 0 method, no re-tuning)"
+        run: >-
+          uv run python experiments/exp18_v1101_dynamic_vent/phase0.py
+          phase0_ci_results.json
+      - name: "Validate calibration gate"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("phase0_ci_results.json"))
+          assert r["dispatch_gate_pass"] is True, r
+          print("EXP24_CALIBRATION_PASS")
+          print("F0 =", r["P0_A"]["f0_mol_s"], "mol/s per vent")
+          PY
+      - name: "Exp24 G0-G14 gate (docs Exp24 §13) — stopping condition for formal dispatch"
+        run: >-
+          uv run python experiments/exp24_phototrophy_denovo_origin/preflight_exp24.py
+          --calibration-dir .
+          --out exp24_preflight.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp24-calibration-check
+          path: |
+            phase0_ci_results.json
+            exp24_preflight.json
+          retention-days: 30
+      - name: "Upload F0/common-H2-field calibration (consumed by Exp24 runs)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: exp24-calibration
+          path: |
+            f0_calibration.json
+            common_initial_h2_field.npy
+          retention-days: 30
+
+  # docs §9.3: "1 job内で3 fluxを連続実行しない" -> flux は matrix軸として
+  # 別jobにする。1920hはさらに2 stageへsegmented executionし、各stageが
+  # 個別のActions job timeout予算 (最大360分) を持てるようにする
+  # (checkpoint/resume, docs §9.3 / G14)。
+  formal_stage1_0_960h:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        seed: [24001, 24002, 24003, 24004, 24005, 24006, 24007, 24008,
+              24009, 24010, 24011, 24012, 24013, 24014, 24015, 24016]
+        flux: [0.0, 0.5, 1.5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp24-calibration
+          path: calibration
+      - name: "Exp24 seed ${{ matrix.seed }} flux ${{ matrix.flux }} — stage1 0-960h (checkpoint)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "stage1_${{ matrix.seed }}_${{ matrix.flux }}"
+          uv run python experiments/exp24_phototrophy_denovo_origin/run_exp24.py \
+            --seed ${{ matrix.seed }} \
+            --flux "${{ matrix.flux }}" \
+            --hours 1920 \
+            --segment-hours 960 \
+            --calibration-dir calibration \
+            --outdir "stage1_${{ matrix.seed }}_${{ matrix.flux }}" \
+            --checkpoint-out "stage1_${{ matrix.seed }}_${{ matrix.flux }}/checkpoint.pkl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: "exp24-ckpt-${{ matrix.seed }}-${{ matrix.flux }}"
+          path: "stage1_${{ matrix.seed }}_${{ matrix.flux }}"
+          retention-days: 14
+
+  formal_stage2_960_1920h:
+    needs: formal_stage1_0_960h
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        seed: [24001, 24002, 24003, 24004, 24005, 24006, 24007, 24008,
+              24009, 24010, 24011, 24012, 24013, 24014, 24015, 24016]
+        flux: [0.0, 0.5, 1.5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: exp24-calibration
+          path: calibration
+      - uses: actions/download-artifact@v4
+        with:
+          name: "exp24-ckpt-${{ matrix.seed }}-${{ matrix.flux }}"
+          path: "stage1_${{ matrix.seed }}_${{ matrix.flux }}"
+      - name: "Exp24 seed ${{ matrix.seed }} flux ${{ matrix.flux }} — stage2 960-1920h (resume+finalize)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "result_${{ matrix.seed }}_${{ matrix.flux }}"
+          uv run python experiments/exp24_phototrophy_denovo_origin/run_exp24.py \
+            --seed ${{ matrix.seed }} \
+            --flux "${{ matrix.flux }}" \
+            --hours 1920 \
+            --segment-hours 960 \
+            --calibration-dir calibration \
+            --outdir "result_${{ matrix.seed }}_${{ matrix.flux }}" \
+            --checkpoint-in "stage1_${{ matrix.seed }}_${{ matrix.flux }}/checkpoint.pkl" \
+            --checkpoint-out "result_${{ matrix.seed }}_${{ matrix.flux }}/checkpoint_final.pkl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: "exp24-run-${{ matrix.seed }}-${{ matrix.flux }}"
+          path: "result_${{ matrix.seed }}_${{ matrix.flux }}"
+          retention-days: 30
+
+  aggregate:
+    needs: formal_stage2_960_1920h
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exp24-run-*
+          path: all_runs
+      - name: "Aggregate Exp24"
+        run: >-
+          uv run python experiments/exp24_phototrophy_denovo_origin/aggregate_exp24.py
+          --root all_runs
+          --out-dir exp24_aggregate
+      - name: "Fail loudly on missing/incomplete artifacts (docs §14: 48/48 required)"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("exp24_aggregate/exp24_aggregate.json"))
+          if not r["artifacts_complete"]:
+              raise SystemExit(f"Exp24 aggregate: incomplete runs {r['n_runs']}/{r['n_expected']}")
+          print("EXP24_ARTIFACTS_COMPLETE")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: exp24-aggregate
+          path: exp24_aggregate/
+          retention-days: 30
