@@ -1,90 +1,53 @@
-# Exp24 第二レビュー依頼
+# Exp24 レビュー判断・実装指示
 
 対象: `docs/Exp24_実験計画.md`
 
-状態: **Opus5初回レビュー反映済み / 第二レビュー待ち。承認前に実装・formal runを開始しないこと。**
+状態: **初回Opus5レビュー反映済み / 人間判断で改訂案を採用 / READY FOR IMPLEMENTATION**
 
 初回レビュー:
 - Issue #78
 - 原文: `docs/Exp23_Exp24_Opus5レビュー.md` (review branch)
 
-## 人間判断で採用した変更
+## 人間判断
 
-旧single-origin案を破棄し、Exp24を**recurrent-origin establishment assay**へ変更した。
+初回Opus5レビューで指摘されたMUST FIXを採用し、旧single-origin案を破棄してExp24を**recurrent-origin establishment assay**へ変更した。
 
-主な変更:
+追加の第二レビューは実施しない。以下の改訂済み条件を正式方針として採用し、Claudeは実装へ進んでよい。
 
-1. first origin後のinnovation lockを廃止
+## 採用済みformal design
+
+1. first origin後のinnovation lockは行わない
 2. `phototrophy_innovation_prob=0.01/birth` をrun全期間で維持
 3. 各独立OFF→ON eventへ `photo_founder_id` を付与し、子孫が継承
 4. `phototrophy_loss_prob=0`
 5. A2_DYNAMIC_VENT / flux 0, 0.5, 1.5
-6. primary contrastを **1.5 vs 0.0** に変更
-7. seedを **16 (24001–24016)** に増加
-8. formal durationを **1920h** とし、前半960hに生じたoriginを全て+960hまで追跡
-9. primary endpointを `survive_960` / seed-level establishment rateへ変更
+6. primary contrastは **1.5 vs 0.0**
+7. seedは **16 (24001–24016)**
+8. formal durationは **1920h**。前半960hに生じたoriginをprimary cohortとし、各originを+960hまで追跡
+9. primary endpointは `survive_960` / seed-level establishment rate
 10. origin個々を独立replicateとして直接検定せず、seed/runをprimary inferential unitとする
-11. apparatus assembly、同一tick複数origin、degenerate demography、runtime checkpointをGateへ追加
+11. apparatus assembly、同一tick複数origin、degenerate demography、runtime checkpointをGateへ含める
 
-## 第二レビューで特に確認してほしい点
+## Claudeへの実装指示
 
-### MUST REVIEW
+`docs/Exp24_実験計画.md` を正本として、Exp24の実装を開始してよい。
 
-1. **1920h設計の妥当性**
-   - 前半960hをorigin accrual cohort、後半を含め各originの+960h follow-upとする設計でよいか
-   - 960h以降のoriginをprimaryから除外する扱いが妥当か
+実装時に科学条件・seed・flux・成功判定を独自変更しないこと。
 
-2. **primary endpoint**
-   - `N_founder(+960h)>0` をoperational establishmentとするのが適切か
-   - N>=5等の拡大条件をprimaryへ加えるべきか
+順序:
 
-3. **統計単位**
-   - originをそのまま独立replicate扱いせず、seedごとのestablishment rateをprimaryとする方針が適切か
-   - cluster bootstrap方法をどう固定すべきか
+1. `photo_founder_id` と必要なrecording / aggregationを実装
+2. unit test / regression test / observation non-interference testを追加
+3. preflightを実行
+4. lineage inheritance、same-tick multi-origin、apparatus assembly、ledger、determinism、runtime/checkpointをGateで確認
+5. Gate PASS時のみformal 48 runを開始
+6. Gate FAIL時は自動parameter tuningせず停止し、原因を報告
+7. formal完了後にaggregateとExp24結果考察用データを保存
 
-4. **Strong Support proposal**
-   - F2−F0が16 seed中12 seed以上で正
-   - median差 > 0
-   - seed-cluster bootstrap 95% CI下限 > 0
-   の3条件が妥当か
+## 注意
 
-5. **16 seed / origin数 / 検出力**
-   - 改訂後のformal designで事前powerが十分か、正式実装前に再計算すること
-   - origin間相関を考慮したpower estimateを可能な範囲で出すこと
+- `0.01/birth` はorigin供給を観測可能にするためのexperimental accelerationであり、自然界のinnovation率を表さない。
+- Exp24の目的は「Phototrophyが新規出現し、光量によってその系統の定着確率が変わるか」の検証である。
+- 実行時間上Actions timeoutに抵触する場合は、科学条件を変えずcheckpoint/resumeなど技術的分割で対応する。
 
-6. **`photo_founder_id`実装**
-   - OFF→ON newbornで新規付与
-   - ON子孫が継承
-   - 同一tick複数originを区別
-   - recorder専用stateがsimulation挙動へ非干渉
-   が成立する実装案を確認すること
-
-7. **founder apparatus assembly**
-   - innovation founderが局所fixed-Nから装置を組み立てる現行経路
-   - assembly完了前はphoto credit 0
-   - structural N ledger closure
-   をpreflightで十分検証できるか
-
-8. **runtime feasibility**
-   - 48 × 1920h runのwall-clock見積もり
-   - Actions timeoutを超える場合のcheckpoint/resume設計
-   - checkpointがRNG/state/ledgerを完全に再開できるか
-
-### SHOULD REVIEW
-
-9. F1=0.5をsecondary dose-responseとして残す妥当性
-10. degenerate demography runの扱い
-11. per-origin / per-run CSV schema
-12. Exp24成功時にV1.11をcloseできるか
-
-## レビュー出力形式
-
-- MUST FIX
-- SHOULD FIX
-- ACCEPTABLE
-- 推奨する最終formal design
-- 事前power / runtime概算
-
-を分けてください。
-
-**レビュー段階では科学条件・コードを独自に変更せず、変更提案として返してください。**
+**追加レビュー待ちを理由に実装・実行を停止しないこと。preflight Gateを実行上の停止条件とする。**
