@@ -1,165 +1,107 @@
-# Exp24 実験計画 — de novo Phototrophy single-origin invasion assay
+# Exp24 実験計画 — de novo Phototrophy recurrent-origin establishment assay
 
 更新: 2026-09-16  
-状態: **DRAFT / CLAUDE-OPUS REVIEW REQUIRED BEFORE IMPLEMENTATION**  
+状態: **REVISED DRAFT / SECOND CLAUDE-OPUS REVIEW REQUIRED BEFORE IMPLEMENTATION**  
 対象version: **V1.11**
 
 関連:
 
 - `docs/Exp23_結果考察.md`
 - `docs/Exp23_実験計画.md`
-- `docs/Exp22_結果考察.md`
-- `docs/Exp22_Opus5レビュー.md`
+- `docs/Exp24_レビュー依頼.md`
+- Issue #78 Exp23 / Exp24 Opus5 review
 - `evosim/genome.py` structural innovation implementation
+- `evosim/simulation.py`
 
-**この文書はレビュー前のpreregistration draftである。レビュー完了前にformal runを開始しない。**
+> 旧single-origin案は破棄する。Exp24では、複数の独立Phototrophy innovationを自然発生させ、各起源を個別tagして、その定着確率が光量に依存するかを評価する。
+
+**この文書はOpus5レビューを受けた改訂preregistration draftである。再レビュー完了前に実装・formal runを開始しない。**
 
 ---
 
 ## 1. 背景
 
-Exp23では、最初からPhototrophy ONの個体50、OFFの個体50を用意したdirect competitionにより、A2_DYNAMIC_VENTで十分な光があるとPhototrophy系統が自然選択で増えることを確認した。
+Exp23では、Phototrophy OFF 50個体 / ON 50個体を最初から用意したdirect competitionにより、A2_DYNAMIC_VENTでPhototrophyへの正の自然選択を確認した。
 
-しかしこれはstanding variationに対する選択であり、
+一方、Exp23はstanding variationに対する選択であり、
 
-> Phototrophyを持たない集団から能力が新規に生じ、そのrare mutant lineageが生き残り・増える
+> Phototrophyを持たない集団から能力が新規に生じ、そのrare mutant lineageが消滅するか、定着・拡大するか
 
-という「能力の起源」までは検証していない。
+という「de novo originからの進化」は未検証である。
 
-現行コードではPhototrophyはcontinuous mutationとは別のstructural innovationとして実装されている。
+現行コードではPhototrophyはcontinuous mutationとは別のstructural innovationとして、OFF親の出生時にOFF→ONとして発生する。
 
-- 初期iLUCA: Phototrophy capability OFF
-- OFF親からの出生時に `phototrophy_innovation_prob` でOFF→ON
-- innovation直後の子は `light_absorption >= phototrophy_seed_absorption`
-- ON能力は子孫へ継承される
-- 現在のdefault innovation probability: `1e-4 / birth`
-- default loss probability: `1e-3 / birth`
+旧Exp24案では最初の1 originだけを残すsingle-origin designを予定していた。しかしIssue #78のOpus5レビューで、1 founderはdriftの影響が大きく、240h / 8 seed / 6-of-8判定では、機構が正しく働いていてもほぼ確実にInconclusiveになると指摘された。
 
-Exp24では、この実装経路を使ってPhototrophyを**実際の出生時innovationとして発生させる**。
+したがってExp24は、**1回の起源を運試しする設計から、多数の独立originの定着率を測る設計へ変更する。**
 
 ---
 
 ## 2. Exp24の目的
 
-Exp24の主目的は、
+主目的:
 
-> **全個体Phototrophy OFFから開始し、出生時に自然発生した最初のPhototrophy innovation 1系統が、光環境に応じて生存・増殖できるかを直接比較すること**
+> **全個体Phototrophy OFFから開始し、出生時に繰り返し自然発生する独立Phototrophy innovationについて、光量が高いほどそのfounder lineageの長期生存・定着確率が高くなるかを測定する。**
 
-である。
-
-見る流れは以下。
+概念:
 
 ```text
-全個体 OFF
-  ↓
-出生時 structural innovation
-  ↓
-Phototrophy ON newborn が1個体出現
-  ↓
-能力を子孫へ継承
-  ↓
-光なし / 中程度の光 / 強い光で系統の運命を比較
+全個体 Phototrophy OFF
+        ↓
+出生時 structural innovation が複数回発生
+        ↓
+各OFF→ON newbornに固有 founder ID を付与
+        ↓
+各founderの子孫を独立に追跡
+        ↓
+消滅 / 長期生存 / 拡大を光量間で比較
 ```
 
-Exp23の50:50競争より一段自然な、**rare de novo originからのinvasion test**と位置付ける。
+Exp24が測るのは、**innovationが与えられた後のselection / driftを含むestablishment probability**である。
 
-ただしExp24は「structural innovationの現実的な発生率」を推定する実験ではない。計算時間内に起源イベントを確実に観測するため、innovation probabilityを実験上加速する。
+Exp24から、Phototrophyの現実的な起源率そのものを推定してはいけない。
 
 ---
 
-## 3. default innovation率をそのまま使わない理由
+## 3. 旧single-origin案の破棄
 
-現行default:
+以下の旧案は採用しない。
 
-```text
-phototrophy_innovation_prob = 1e-4 per birth
-```
+- first origin後に `phototrophy_innovation_prob=0` とする
+- 1 runにつき1 founderだけを追う
+- 8 seed
+- +240h時点の1 founder fateを6/8で判定する
 
-Exp23のflux=0条件では、120hあたり総出生数は中央値約241 births/runだった。
+理由:
 
-したがって120hでの期待innovation数はおよそ
+- founder 1個体では遺伝的浮動が支配的
+- 240hはvent turnover約5回分で、定着判定として短い
+- 同じ計算量でもrecurrent innovationを捨てるため情報効率が悪い
+- Issue #78の検出力評価で旧判定は不十分
 
-```text
-241 × 1e-4 = 0.0241 events/run
-```
+したがって、**single-origin lockは実装しない。**
 
-であり、1回以上起きる確率は約2.4%にすぎない。
+---
 
-このままでは8 seedを実行しても大半のrunでPhototrophyが一度も出現せず、計算予算内で「出現後の選択」を評価できない。
+## 4. structural innovation条件
 
-よってExp24では、**起源の待ち時間だけを圧縮するexperimental acceleration**として
+### 4.1 innovation probability
+
+Exp24では
 
 ```text
 phototrophy_innovation_prob = 0.01 per birth
 ```
 
-を候補とする。
+をformal run全期間で維持する。
 
-これはdefaultの100倍だが、Phototrophyのfitnessを直接変更する値ではない。
+現行default `1e-4/birth` の100倍であり、これは計算時間内に十分なorigin数を得るためのexperimental accelerationである。
 
-重要:
+この変更はPhototrophy個体のfitnessを直接変更しない。
 
-> Exp24から「Phototrophyが現実に1%/birthで生じる」と解釈してはいけない。
+**結論では必ず「起源供給率を100倍へ加速した実験」と明記する。**
 
-Exp24で評価するのは**innovationが1回起きた後のrare lineageの運命**である。
-
-`0.01`の妥当性はClaude/Opusレビューで必ず再確認する。
-
----
-
-## 4. single-origin design
-
-recurrent innovationが何度も起きると、Phototrophy個体が増えた理由を
-
-- 最初のmutant lineageが自然選択で増えた
-- 新しいinnovationが繰り返し供給された
-
-に分離できなくなる。
-
-そのためExp24では**single-origin design**を採用する。
-
-### waiting phase
-
-- 初期100個体は全てPhototrophy OFF
-- `phototrophy_innovation_prob = 0.01`
-- 最初のOFF→ON innovationを待つ
-- waiting上限: **240 physical hours**
-
-### first origin発生時
-
-最初のinnovationを検知したtickで以下を記録する。
-
-- origin time
-- founder organism ID
-- parent ID
-- founder position
-- founder matter
-- founder Energy
-- founder genome
-- population size
-- vent turnover phase
-
-そしてそのrunでは直ちに
-
-```text
-phototrophy_innovation_prob = 0
-```
-
-へ切り替え、**追加の独立originを禁止する**。
-
-### follow-up phase
-
-最初のorigin発生から **240 physical hours** 追跡する。
-
-したがって1 runの総時間は可変で、最大480h。
-
-この方式なら、以後存在するPhototrophy ON個体は原則として最初のfounderの子孫だけとなる。
-
----
-
-## 5. Phototrophy loss
-
-Exp24ではfirst originの選択・定着を単純化するため、proposalとして
+### 4.2 loss
 
 ```text
 phototrophy_loss_prob = 0
@@ -167,353 +109,439 @@ phototrophy_loss_prob = 0
 
 とする。
 
-理由:
+Exp24ではOFF→ON origin後の定着だけを測り、ON→OFF lossを混ぜない。
 
-- Exp24の新規問いは「OFF→ON originがrare stateから成立するか」
-- ON→OFF lossを同時に入れると起源と喪失の2過程が混ざる
-- recurrent innovationもfirst origin後にOFFにするため、対称性よりも解釈可能性を優先する
+### 4.3 continuous genes
 
-lossをdefault `1e-3/birth` のまま残すべきかはレビュー項目とする。
+Phototrophy capability起源以外の進化を混ぜないため:
 
----
-
-## 6. continuous gene mutation
-
-Exp24ではPhototrophy capabilityの起源だけを検証する。
-
-したがってExp23と同様、continuous genesは全て固定する。
-
-- initial jitter OFF
-- continuous mutationによるgene drift OFF
-- predation innovation OFF
+- initial jitter = OFF
+- continuous mutation = OFF / 全continuous genes固定
+- predation innovation = OFF
 - Phototrophy structural innovationのみON
+- innovation直後の `light_absorption = phototrophy_seed_absorption = 0.01`
 
-innovationでPhototrophyが獲得された瞬間、現行実装どおり
+とする。
+
+---
+
+## 5. per-origin founder tagging — MUST IMPLEMENT
+
+recurrent innovationでは、単純な `lineage_id` だけでは独立originを区別できない。
+
+Exp24用に観測可能なorigin tagを追加する。
 
 ```text
-light_absorption >= phototrophy_seed_absorption = 0.01
+photo_founder_id: int | None
 ```
 
-が与えられる。
+意味:
 
-以後、その値は固定したまま子孫へ継承する。
+- Phototrophy OFF個体: `None`
+- OFF→ON innovationが起きたnewborn: そのnewborn固有のfounder IDを新規付与
+- ON親から生まれたON子孫: 親の `photo_founder_id` を継承
+- 異なるOFF→ON innovation: 必ず異なるfounder ID
 
-これによりExp24は「能力の起源 + その能力への自然選択」に限定される。
+このtagは**観測・集計専用**であり、行動、生理、fitness、RNG系列へフィードバックしてはいけない。
 
----
-
-## 7. 環境
-
-Exp23と同じ **A2_DYNAMIC_VENT** のみを使う。
-
-理由:
-
-- Exp23でPhototrophyへの自然選択を確認済み
-- vent relocationによるH2供給変動がある
-- standing variation実験との直接比較が可能
-
-H2 source calibration、C/N/P倍率、vent turnover設定等はExp23から変更しない。
+同一tickで複数のOFF→ON innovationが起きても、それぞれ別founder IDを持たせる。
 
 ---
 
-## 8. photon flux条件
+## 6. 環境
 
-Exp23と同じ3条件を使う。
+Exp23と同じ **A2_DYNAMIC_VENT** のみを使用する。
 
-| condition | photon flux [µmol photons m^-2 s^-1] | 役割 |
+- dynamic vent relocation: Exp23と同一
+- H2 / C / N / P条件: Exp23から変更しない
+- physical mode: ON
+- light pattern: uniform constant
+- day/night cycle: OFF
+
+これによりExp23のstanding-variation selectionと直接接続する。
+
+---
+
+## 7. photon flux条件
+
+| condition | flux [µmol photons m^-2 s^-1] | 役割 |
 |---|---:|---|
-| F0 | 0.0 | negative control: 装置コストのみ |
-| F1 | 0.5 | primary working flux |
-| F2 | 1.5 | positive control |
+| F0 | 0.0 | negative control |
+| F1 | 0.5 | intermediate / Exp23 bridge |
+| F2 | 1.5 | **primary positive treatment** |
 
-light patternはuniform constant、day/night cycleはOFFのままとする。
-
----
-
-## 9. paired originの重要性
-
-最初のPhototrophy originが出る前は全個体がOFFなので、photon fluxは生理へ影響しない。
-
-したがって同一seedのF0/F1/F2は、first originが起きるまでは
-
-- population
-- positions
-- births/deaths
-- RNG trajectory
-
-が完全一致するはずである。
-
-この性質を利用し、**同じseedの3 fluxで同じfirst originを発生させ、その同一rare mutantの運命だけを光量で比較する**。
-
-formal pair成立条件:
-
-- first origin tick一致
-- founder ID一致
-- parent ID一致
-- founder initial state一致
-
-これが崩れたseedは結果を解釈せず、mechanical failureとして扱う。結果を見てseedを差し替えない。
-
----
-
-## 10. seed数
-
-proposal:
+### primary comparison
 
 ```text
-8 seeds: 24001–24008
+F2 = 1.5  vs  F0 = 0.0
 ```
 
-3 flux × 8 seeds = **24 runs**。
+とする。
 
-Exp21/Exp23と同規模のseed数を維持し、paired designでseed差を抑える。
+理由: rare founderではdriftが強いため、Exp23で最も強いselectionを示した1.5をprimaryにする。
 
-seed数はformal run前に固定し、結果を見た後に追加しない。
+F1=0.5は、Exp23との連続性とdose-response確認のため残すが、Exp24のprimary success判定をF1だけに依存させない。
 
 ---
 
-## 11. primary endpoint
-
-first origin発生を `tau = 0` と定義する。
-
-primaryは **tau=240h時点のfirst-origin Phototrophy lineageの個体数と頻度**。
-
-記録:
+## 8. seed数とrun数
 
 ```text
-N_photo(tau)
-f_photo(tau) = N_photo / N_total
+seeds = 24001–24016  (16 seeds)
+3 flux × 16 seeds = 48 runs
 ```
 
-主要時点:
+結果を見てseedの追加・差し替えはしない。
 
-- tau = 0
-- +24h
-- +48h
-- +96h
-- +120h
-- +168h
-- +192h
-- +240h
-
-initial frequencyは1個体 / その時点の総個体数なので、おおむね1%未満～数%となる。
-
-50:50から始めたExp23と違い、Exp24では**rare mutantのinvasion dynamics**を見る。
+同一seedを3 fluxで使用し、seedをblockとして解析する。
 
 ---
 
-## 12. secondary endpoints
+## 9. run duration とprimary origin cohort
 
-各runで以下を記録する。
+### 9.1 formal duration
 
-### origin event
+各runを
 
-- first innovation time
-- founder ID / parent ID
-- population at origin
-- vent phase at origin
+```text
+1920 physical hours
+```
 
-### founder lineage fate
+実行する。
 
-- lineage extinctionの有無・時間
-- N_photo max
-- final N_photo
-- final f_photo
-- Phototrophy lineage births
-- Phototrophy lineage deaths
-- starvation deaths
-- total living matter of photo lineage
+### 9.2 primary cohort
 
-### milestones（診断）
+formal run前半
 
-- N_photo >= 2 の初回時刻
-- N_photo >= 5
-- N_photo >= 10
-- f_photo >= 1%
-- f_photo >= 5%
+```text
+t_origin <= 960 h
+```
 
-milestone到達を成功判定そのものにはせず、成長速度の説明に使う。
+に発生した独立originだけを**primary eligible origins**とする。
 
----
+これにより、primary cohortの全originを必ず
 
-## 13. proposed success criteria
+```text
+origin後 +960 h
+```
 
-rare originではExp23のように50%から大きく頻度が動くことは期待しない。
+まで追跡できる。
 
-したがって、absolute frequency閾値ではなく**同一originのpaired fate difference**を重視する。
+960h以降に発生したoriginも記録するが、+960h評価ができないためprimary解析からは除外し、secondary / descriptive扱いとする。
 
-### Strong support proposal
+innovation probabilityは1920hを通して0.01のままとし、途中で供給を止めない。
 
-primary F1=0.5について:
+### 9.3 runtime技術要件
 
-1. paired-origin gateが成立したseedのうち、少なくとも **6/8 seed** で
-   `N_photo(+240h, 0.5) > N_photo(+240h, 0.0)`
-2. median `N_photo(+240h)` が F0よりF1で大きい
-3. founder-lineage survival at +240h がF0よりF1で高い
-4. positive control F2=1.5がF1以上の効果を示す
-5. flux増加に伴い、median N_photoまたはmedian f_photoが概ね単調増加する
+48 run × 1920hは計算負荷が大きい。
 
-### Inconclusive
+formal開始前にrepresentative runtime preflightを行う。
 
-- first origin後240hでもほぼ全条件1個体前後
-- seed間方向が大きく不一致
-- F2 positive controlでもF0との差がない
-
-この場合は、すぐinnovation率をさらに上げるのではなく、rare-founder時の選択効果と人口動態を診断する。
-
-### Mechanical failure
-
-- 同一seedのflux間でfirst origin tick / founderが一致しない
-- first origin後に追加innovationが発生する
-- loss=0なのにON→OFFが起きる
-- lineage inheritanceが壊れる
-- ledger gate不成立
+- fluxごとは別matrix jobにする
+- 1 job内で3 fluxを連続実行しない
+- GitHub Actions timeoutに入らない場合は、**科学状態・RNG状態を完全保存するcheckpoint/resume**または等価なsegmented executionを実装する
+- runtime都合でphysical duration、seed数、flux、innovation率を自動変更しない
 
 ---
 
-## 14. preflight / Gate
+## 10. primary endpoint
 
-formal run前に最低限以下を検証する。
+各eligible founder `j` について、origin時刻を `tau=0` とする。
+
+### primary binary endpoint
+
+```text
+survive_960(j) = 1  if N_founder_j(tau=960h) > 0
+                 0  otherwise
+```
+
+すなわち、**origin後960h時点でそのfounder lineageがまだ存在するか**をprimary establishment endpointとする。
+
+ここでいう「establishment」はExp24内のoperational definitionであり、fixationを意味しない。
+
+### run / seed level primary statistic
+
+各seed・fluxについて
+
+```text
+establishment_rate = surviving eligible origins / eligible origins
+```
+
+を算出する。
+
+**origin個々を独立replicateとして直接p値計算しない。** 同一run内のoriginは同じ環境履歴を共有するため、primary inferential unitはseed/runとする。
+
+---
+
+## 11. secondary endpoints
+
+各founderについて:
+
+- `N_founder(+240h)`
+- `N_founder(+480h)`
+- `N_founder(+960h)`
+- founder lineage frequency at +240/+480/+960h
+- extinction time
+- maximum N
+- maximum frequency
+- total living matter
+- births / deaths / starvation deaths
+- first time reaching N>=2 / 5 / 10
+- first time reaching frequency >=1% / 5%
+
+各fluxについて:
+
+- total innovation count
+- eligible origin count
+- establishment rate
+- extinction-time distribution
+- founder-size distribution
+
+を出力する。
+
+---
+
+## 12. primary analysis
+
+### 12.1 primary contrast
+
+同一seedの
+
+```text
+ΔE_seed = establishment_rate(F2=1.5) - establishment_rate(F0=0.0)
+```
+
+をprimaryとする。
+
+### 12.2 Strong support proposal
+
+以下を全て満たす場合、Exp24 primary hypothesisをStrong Supportとするproposalを再レビュー対象とする。
+
+1. integrity / conservation / tracking gateが全PASS
+2. `ΔE_seed > 0` が **16 seed中12 seed以上**
+3. median `ΔE_seed > 0`
+4. seedをcluster単位としたbootstrap 95% CIでF2−F0のestablishment-rate差の下限が0を上回る
+5. F2でfounder apparatusが実際にlight Energyを利用していることをledgerで確認
+
+12/16は「結果を見て設定」した値ではなくformal前に固定する。ただしこの基準自体の妥当性は第二レビューで再確認する。
+
+### 12.3 secondary dose response
+
+F1=0.5を含め、
+
+```text
+F0 <= F1 <= F2
+```
+
+の方向性をseed-level establishment rate、survival curve、founder sizeで確認する。
+
+F1がF0を明確に上回らなくても、primary F2 vs F0が支持されればExp24自体を自動FAILにはしない。
+
+---
+
+## 13. preflight / Gate
 
 ### G0 — initial state
 
 - initial population = 100
 - Phototrophy ON = 0
-- `light_absorption=0` for all initial organisms
+- all initial `light_absorption = 0`
+- all initial `photo_founder_id = None`
 
-### G1 — structural innovation path
+### G1 — structural innovation only
 
-OFF親の出生時innovationでのみPhototrophy ONが生じること。
+Phototrophy OFF→ONは出生時 `structural_mutate()` 経路でのみ生じる。
 
-### G2 — seed phenotype
+### G2 — founder phenotype
 
-innovation直後のnewbornが
+OFF→ON newbornが
 
 ```text
 phototrophy_on = True
 light_absorption = 0.01
+photo_founder_id != None
 ```
 
-を持つこと。
+を持つ。
 
-### G3 — inheritance
+### G3 — founder-tag inheritance
 
-loss=0・追加innovation=0条件で、ON founderの子孫がONを継承すること。
+ON founderのON子孫が同じ `photo_founder_id` を継承する。
 
-### G4 — no continuous bypass
+### G4 — independent recurrent origins
 
-Phototrophy OFF個体がcontinuous mutationだけで `light_absorption > 0` にならないこと。
+異なるOFF→ON eventは異なるfounder IDを持つ。同一tick複数originにも対応する。
 
-### G5 — single-origin lock
+### G5 — no single-origin lock
 
-first innovation検知後にinnovation probabilityが0へ切り替わり、以後innovation event countが増えないこと。
+最初のinnovation後も `phototrophy_innovation_prob=0.01` が維持され、新規originが継続して発生可能。
 
-### G6 — pre-origin flux independence
+### G6 — loss disabled
 
-同一seedのF0/F1/F2がfirst origin直前まで完全一致すること。
+`phototrophy_loss_prob=0` でON→OFFが起きない。
 
-### G7 — paired first origin
+### G7 — no continuous bypass
 
-同一seedで first origin tick / founder ID / parent ID / initial founder stateが一致すること。
+OFF個体がcontinuous mutationだけでPhototrophyを獲得しない。
 
-### G8 — physical light identities
+### G8 — pre-first-origin flux independence
 
-- flux=0ではphoto incident/absorbed/usable/usedが0
-- OFF個体ではfluxに依存せずphoto powerが0
+同一seedのF0/F1/F2は最初のPhototrophy origin直前まで個体状態・population・RNG trajectoryが一致する。
+
+**最初のorigin以降は光量により生態が分岐するため、後続origin tickの一致は要求しない。**
+
+### G9 — founder apparatus assembly
+
+OFF親由来のinnovation founderは、Phototrophy装置を局所fixed-Nから正しくassemblyする。
+
+- assembly前はphoto Energy credit = 0
+- structural N ledgerが閉じる
+- assembly後のみlight利用が始まる
+
+### G10 — physical light identities
+
+- flux=0: incident/absorbed/usable/used photo Energy = 0
+- OFF個体: fluxによらずphoto power = 0
 - legacy light flow = 0
 
-### G9 — C/N/P + Energy ledger
+### G11 — recorder non-interference
 
-Exp22/23と同じ保存則gateをPASSすること。
+`photo_founder_id`追加やfounder別集計がRNG・個体状態・world update順を変えない。
 
-### G10 — completeness
+### G12 — conservation / integrity
 
-- 8 seeds × 3 flux = 24 formal trajectories
-- origin未発生runもsilent skipせず `NO_ORIGIN_WITHIN_WINDOW` として必ずartifactに残す
+- Energy ledger PASS
+- Matter ledger PASS
+- C/N/P ledger PASS
+- formal SHA一致
+- numeric environment一致
+- 48/48 run completeness
 
----
+### G13 — degenerate demography diagnostic
 
-## 15. formal outputs
+Exp23 seed23008型の「死亡0・出生完全対称でfrequencyが構造的に動けない」runを自動flagする。
 
-各run:
+flagged runを恣意的に除外せず、primary seed-level解析に含めた結果とsensitivityを併記する。
 
-- `effective_config.json`
-- `origin_event.json`
-- `timeseries.csv`
-- `summary.json`
-- ledger/gate summary
+### G14 — runtime preflight
 
-aggregate:
-
-- `exp24_per_run.csv`
-- `exp24_origin_pairing.csv`
-- `exp24_flux_response.csv`
-- `exp24_aggregate.json`
-
-aggregateには最低限以下を含める。
-
-- origin occurrence count / condition
-- paired-origin gate results
-- N_photo(+240h) distribution
-- f_photo(+240h) distribution
-- founder survival fraction
-- paired F1-F0 / F2-F0 differences
-- extinction times
-- completeness status
+formal 1920h runのwall-clockを事前推定し、runner timeoutを超える場合はcheckpoint/resumeを実装してからformalへ進む。
 
 ---
 
-## 16. Exp24で言えること / 言えないこと
+## 14. required outputs
 
-### Exp24成功時に言えること
+### per-origin table
 
-> **Phototrophyを持たない集団から、出生時structural innovationとしてPhototrophyが新規出現し、そのrare mutant lineageの運命が光環境によって変わる。十分な光では同一originがより生き残り・増殖しやすい。**
+`exp24_origins.csv` proposal:
 
-これはExp23のstanding variation selectionから一段進み、**de novo origin + inheritance + selection**を一つのrunでつなぐ結果になる。
+- seed
+- flux
+- photo_founder_id
+- founder organism ID
+- parent ID
+- origin tick / hour
+- founder position
+- founder matter / Energy
+- founder genome / light_absorption
+- population at origin
+- vent phase at origin
+- apparatus assembly completion time
+- N at +240/+480/+960h
+- frequency at +240/+480/+960h
+- extinction time
+- max N / max frequency
+- survive_960
+- eligible_primary
 
-### まだ言えないこと
+### per-run summary
 
-- default `1e-4/birth`という低い起源率のまま自然時間でPhototrophyが進化する頻度
-- recurrent innovation/lossを含むmutation-selection balance
-- continuous gene evolutionとの共進化
-- realistic day/night cycleでの長期適応
-- Phototrophyの歴史的起源機構そのもの
+`exp24_per_run.csv` proposal:
 
-特にinnovation probability=0.01は計算時間短縮のためのexperimental accelerationであり、進化速度の物理的推定には使わない。
+- seed / flux
+- total origins
+- eligible origins
+- survived_960 count
+- establishment_rate
+- population / births / deaths
+- photo Energy ledger summary
+- C/N/P / Energy integrity
+- degenerate-demography flag
+
+### aggregate
+
+- seed-level establishment-rate table
+- F2−F0 paired differences
+- F1−F0 secondary differences
+- flux別survival curve
+- origin-count distribution
+- founder-size distribution
+- completeness / integrity verdict
 
 ---
 
-## 17. Exp24後の想定
+## 15. 解釈できること / できないこと
 
-Exp24でsingle rare originの成立が確認できた場合、次段では初めて
+### 成功時に言えること
 
-> **recurrent innovation / lossを止めず、全個体OFFから長時間自由進化させる**
+> Phototrophy capabilityがstructural innovationとしてPhototrophy非保有集団から新規出現し、子孫へ継承され、その独立founder lineageの長期定着確率が光環境に依存する。
 
-実験へ進む。
+これはExp23のstanding-variation selectionより一段進んだ、**de novo capability origin + inheritance + selection-driven establishment**の証拠となる。
 
-これはExp25候補とし、Exp24と混ぜない。
+### 言えないこと
 
----
+- Phototrophyが現実に `0.01/birth` で発生する
+- 現実的な時間尺度でPhototrophyが進化する
+- 現実の光合成起源機構を再現した
+- Phototrophyが集団へ必ず固定する
+- mutation-selection balanceを再現した
 
-## 18. Claude / Opusレビュー依頼項目
-
-実装前に以下を重点レビューする。
-
-1. default `1e-4/birth`をExp24で直接使わない判断は妥当か
-2. accelerated `0.01/birth` はwaiting-time圧縮として妥当か
-3. first origin後にinnovationを0へするsingle-origin designは問いに対して妥当か
-4. `phototrophy_loss_prob=0` とするべきか、default `1e-3`を残すべきか
-5. waiting上限240h + post-origin 240hは十分か
-6. first originがflux間で完全pairingできるという前提はコード上正しいか
-7. first-origin後、全ON個体をfounder descendantsとみなしてよいか
-8. 8 seedで十分か
-9. Strong supportの6/8という基準は妥当か
-10. Exp24で追加すべきmechanical gate / lineage trackingはあるか
-11. single-origin assayよりrecurrent-innovation assayを先にすべき理由があるか
-12. Exp24成功後に「de novo Phototrophy evolution」と呼べる範囲をどう限定すべきか
+innovation probabilityをdefaultの100倍へ加速していることを必ず明記する。
 
 ---
 
-## 19. 一文要約
+## 16. Exp24後
 
-**Exp24は、全個体Phototrophy OFFから開始し、出生時structural innovationで生じた最初のPhototrophy mutant 1系統だけを追跡し、同一originをflux 0 / 0.5 / 1.5でpaired比較することで、rare de novo originが光依存自然選択によって定着方向へ進めるかを検証する実験である。**
+### Exp24が支持された場合
+
+V1.11では以下の連鎖が成立する。
+
+```text
+Exp22: Phototrophyの生理的benefitを校正
+Exp23: standing variationとしてPhototrophyに自然選択が働く
+Exp24: de novo structural innovationとして発生した独立系統の定着確率が光で上昇
+```
+
+この時点でV1.11 Phototrophy origin/selection trackのcloseを検討する。
+
+### Exp24が支持されなかった場合
+
+すぐにinnovation率・光量・判定閾値を変更しない。
+
+まず以下を診断する。
+
+- founder apparatus assembly delay
+- founder数 / eligible origin数
+- extinction-time distribution
+- turnover回数
+- demographic degeneracy
+- Exp23で測ったselectionとの差
+
+---
+
+## 17. 実装順序
+
+第二レビューで承認後、Claudeは以下の順で実装する。
+
+1. `photo_founder_id` state / inheritance / recorder追加
+2. per-origin tracking tests
+3. recurrent-origin config generator
+4. apparatus assembly / same-tick multi-origin tests
+5. conservation / non-interference tests
+6. runtime preflight
+7. formal 48 runs
+8. completeness / integrity gate
+9. aggregate
+10. 結果考察
+
+**レビュー完了前に1–10へ着手しない。**
